@@ -153,10 +153,10 @@ stdio는 MCP 클라이언트가 서버를 자식 프로세스로 띄우고 표�
 ### Claude Code
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/garlickim21/ratatosk-mcp:0.7.4
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4
 ```
 
-`0.7.4` 자리에는 원하는 [릴리스 태그](https://github.com/garlicKim21/ratatosk-mcp/releases)를
+`0.7.4` 자리에는 원하는 [릴리스 태그](https://github.com/basphere/ratatosk-mcp/releases)를
 쓰면 되고, 항상 최신을 따라가려면 `latest`를 쓰세요 —
 [버전 고정](#버전-고정) 참조.
 
@@ -170,7 +170,7 @@ Claude Desktop은 CLI 대신 설정 파일(`claude_desktop_config.json`)로 MCP
   "mcpServers": {
     "ratatosk": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/garlickim21/ratatosk-mcp:0.7.4"]
+      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:0.7.4"]
     }
   }
 }
@@ -195,7 +195,7 @@ stdio를 지원하는 MCP 클라이언트라면 무엇이든 같은 방식입니
 
 ```bash
 claude mcp list
-# ratatosk: docker run -i --rm ghcr.io/garlickim21/ratatosk-mcp:0.7.4 - ✔ Connected
+# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4 - ✔ Connected
 ```
 
 그리고 에이전트에게 이렇게 물어보세요:
@@ -219,7 +219,7 @@ MCP를 제공합니다(`/healthz` 헬스 체크 포함). 차트는 이를 Cluste
 ### 설치
 
 ```bash
-git clone https://github.com/garlicKim21/ratatosk-mcp
+git clone https://github.com/basphere/ratatosk-mcp
 helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp
 ```
 
@@ -297,7 +297,7 @@ helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp \
 설치합니다([상세](../examples/kagent/README.ko.md)):
 
 ```bash
-BASE=https://raw.githubusercontent.com/garlicKim21/ratatosk-mcp/main/examples/kagent
+BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
 kubectl apply -f $BASE/ratatosk-deploy.yaml
 kubectl apply -f $BASE/ratatosk-remote-mcpserver.yaml
 kubectl apply -f $BASE/ratatosk-agent.yaml
@@ -343,7 +343,7 @@ kubectl apply -f $BASE/ratatosk-agent.yaml
 docker로 HTTP 모드를 직접 띄우는 예:
 
 ```bash
-docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/garlickim21/ratatosk-mcp:0.7.4
+docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:0.7.4
 ```
 
 ## 로그와 감사 스트림
@@ -379,7 +379,7 @@ docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/garlickim21/ratatosk
 
 ```bash
 # docker
-docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/garlickim21/ratatosk-mcp:0.7.4
+docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:0.7.4
 
 # Helm
 helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=metadata

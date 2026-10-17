@@ -17,7 +17,7 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | 키 | 기본값 | 의미 |
 | --- | --- | --- |
 | `replicaCount` | `1` | 레플리카 수 — 2개 이상으로 늘리기 전에 `statelessHttp`를 켜세요 |
-| `image.repository` | `ghcr.io/garlickim21/ratatosk-mcp` | 이미지 |
+| `image.repository` | `ghcr.io/basphere/ratatosk-mcp` | 이미지 |
 | `image.tag` | 차트 `appVersion` | 특정 서버 버전 고정 |
 | `ratatoskUrl` | `https://ratatosk.io` | 업스트림 changes API — egress를 프록시·미러로 우회하면 변경 |
 | `statelessHttp` | `false` | 세션 상태 없는 HTTP 제공 — MCP 스펙 2026-07-28 리비전 클라이언트와 레플리카 2개 이상에 필요 |

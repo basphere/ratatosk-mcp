@@ -27,7 +27,7 @@ jobs:
           fi
           # Anchored on the registry path: a bare `ratatosk-mcp:8080` is a
           # service URL in the kagent example, not an image pin.
-          if STALE="$(grep -rn "ghcr.io/garlickim21/ratatosk-mcp:[0-9][^\"' ]*" charts examples | grep -v "ratatosk-mcp:$V")"; then
+          if STALE="$(grep -rn "ghcr.io/basphere/ratatosk-mcp:[0-9][^\"' ]*" charts examples | grep -v "ratatosk-mcp:$V")"; then
             echo "::error::pinned image tags left behind: $STALE"
             exit 1
           fi
@@ -54,8 +54,8 @@ jobs:
           build-args: |
             VERSION=${{ steps.meta.outputs.version }}
           tags: |
-            ghcr.io/garlickim21/ratatosk-mcp:${{ steps.meta.outputs.version }}
-            ghcr.io/garlickim21/ratatosk-mcp:latest
+            ghcr.io/basphere/ratatosk-mcp:${{ steps.meta.outputs.version }}
+            ghcr.io/basphere/ratatosk-mcp:latest
   # The release rehearsal, against the image this tag just built: install every
   # documented path on a throwaway cluster and assert the running server serves
   # this version with every registered tool. The GitHub Release and the registry

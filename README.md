@@ -9,8 +9,8 @@
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
 [![MCP Registry](https://img.shields.io/badge/MCP_Registry-listed-blue)](https://registry.modelcontextprotocol.io/?q=ratatosk&all=1)
-[![Release](https://img.shields.io/github/v/release/garlicKim21/ratatosk-mcp)](https://github.com/garlicKim21/ratatosk-mcp/releases)
-[![License](https://img.shields.io/github/license/garlicKim21/ratatosk-mcp)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/basphere/ratatosk-mcp)](https://github.com/basphere/ratatosk-mcp/releases)
+[![License](https://img.shields.io/github/license/basphere/ratatosk-mcp)](LICENSE)
 [![Glama score](https://glama.ai/mcp/servers/garlicKim21/ratatosk-mcp/badges/score.svg)](https://glama.ai/mcp/servers/garlicKim21/ratatosk-mcp)
 
 
@@ -47,7 +47,7 @@ Docker, the Helm chart, or a source build. With Claude Code and Docker
 installed:
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/garlickim21/ratatosk-mcp:0.9.1
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.9.1
 ```
 
 `0.9.1` is the current release; use `latest` to follow new ones.

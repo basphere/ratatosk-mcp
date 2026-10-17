@@ -6,4 +6,4 @@ version: 0.9.1
 appVersion: "0.9.1"
 home: https://ratatosk.io
 sources:
-  - https://github.com/garlicKim21/ratatosk-mcp
+  - https://github.com/basphere/ratatosk-mcp
