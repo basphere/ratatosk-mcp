@@ -5,6 +5,8 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+## [0.10.0] — 2026-10-18
+
 ### Changed
 
 - The repository moved to the `basphere` organization, and every path that
