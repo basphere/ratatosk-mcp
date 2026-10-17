@@ -12,6 +12,6 @@ RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X main.buildVersion=${VERS
 
 FROM gcr.io/distroless/static-debian12:nonroot
 # MCP Registry ownership verification — must equal server.json .name
-LABEL io.modelcontextprotocol.server.name="io.github.garlicKim21/ratatosk-mcp"
+LABEL io.modelcontextprotocol.server.name="io.github.basphere/ratatosk-mcp"
 COPY --from=build /ratatosk-mcp /ratatosk-mcp
 ENTRYPOINT ["/ratatosk-mcp"]

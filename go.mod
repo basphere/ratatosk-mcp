@@ -1,4 +1,4 @@
-module github.com/garlicKim21/ratatosk-mcp
+module github.com/basphere/ratatosk-mcp
 
 go 1.26
 

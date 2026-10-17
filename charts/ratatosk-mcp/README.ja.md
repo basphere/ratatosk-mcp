@@ -17,7 +17,7 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | キー | デフォルト値 | 意味 |
 | --- | --- | --- |
 | `replicaCount` | `1` | レプリカ数 — 2 以上にする前に `statelessHttp` を有効化してください |
-| `image.repository` | `ghcr.io/garlickim21/ratatosk-mcp` | イメージ |
+| `image.repository` | `ghcr.io/basphere/ratatosk-mcp` | イメージ |
 | `image.tag` | チャートの `appVersion` | 特定バージョンの固定 |
 | `ratatoskUrl` | `https://ratatosk.io` | アップストリームの changes API — egress をプロキシ・ミラー経由にする場合は変更 |
 | `statelessHttp` | `false` | セッション状態なしの HTTP 配信 — MCP 仕様 2026-07-28 リビジョンのクライアントと複数レプリカに必要 |

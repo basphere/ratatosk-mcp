@@ -5,6 +5,20 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+### Changed
+
+- The repository moved to the `basphere` organization, and every path that
+  carries the owner name moved with it: the Go module is
+  `github.com/basphere/ratatosk-mcp`, the image is
+  `ghcr.io/basphere/ratatosk-mcp` (also the chart's `image.repository`
+  default), and the official MCP Registry name is
+  `io.github.basphere/ratatosk-mcp`. GitHub redirects the old web and git
+  URLs, but none of those three redirect: `go get` on the old module path
+  stays on the last tag published under it, the old image tags stay where they
+  are, and the old registry entry becomes a separate server that no longer
+  receives updates. Existing installs keep running — they reference tags that
+  still exist — but upgrading means pointing at the new paths.
+
 ## [0.9.1] — 2026-09-28
 
 ### Fixed

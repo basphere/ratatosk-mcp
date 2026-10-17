@@ -1,7 +1,7 @@
 # ratatosk-mcp in-cluster deployment (streamable HTTP mode).
 # Read-only client of the public ratatosk.io API — no RBAC, no credentials,
 # no cluster permissions. Alternatively install via the Helm chart in
-# https://github.com/garlicKim21/ratatosk-mcp/tree/main/charts/ratatosk-mcp
+# https://github.com/basphere/ratatosk-mcp/tree/main/charts/ratatosk-mcp
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -19,7 +19,7 @@ spec:
     spec:
       containers:
         - name: ratatosk-mcp
-          image: ghcr.io/garlickim21/ratatosk-mcp:0.9.1
+          image: ghcr.io/basphere/ratatosk-mcp:0.9.1
           env:
             - name: MCP_HTTP_ADDR
               value: ":8080"

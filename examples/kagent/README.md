@@ -27,7 +27,7 @@ credentials (rate limit 60 req/min per IP).
 ## Install
 
 ```bash
-BASE=https://raw.githubusercontent.com/garlicKim21/ratatosk-mcp/main/examples/kagent
+BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
 kubectl apply -f $BASE/ratatosk-deploy.yaml            # Deployment + Service (no RBAC needed)
 kubectl apply -f $BASE/ratatosk-remote-mcpserver.yaml  # register with kagent
 kubectl apply -f $BASE/ratatosk-agent.yaml             # optional: the ratatosk-agent example agent
@@ -39,7 +39,7 @@ from this directory.
 Or with the Helm chart from the repository:
 
 ```bash
-git clone https://github.com/garlicKim21/ratatosk-mcp
+git clone https://github.com/basphere/ratatosk-mcp
 helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp -n kagent
 ```
 

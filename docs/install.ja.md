@@ -163,11 +163,11 @@ stdio は、MCP クライアントがサーバーを子プロセスとして起�
 ### Claude Code
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/garlickim21/ratatosk-mcp:0.7.4
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4
 ```
 
 `0.7.4` の部分には任意の
-[リリースタグ](https://github.com/garlicKim21/ratatosk-mcp/releases)を
+[リリースタグ](https://github.com/basphere/ratatosk-mcp/releases)を
 指定できます。常に最新を追うなら `latest` を使ってください —
 [バージョン固定](#バージョン固定)参照。
 
@@ -182,7 +182,7 @@ Claude Desktop は CLI の代わりに設定ファイル
   "mcpServers": {
     "ratatosk": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/garlickim21/ratatosk-mcp:0.7.4"]
+      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:0.7.4"]
     }
   }
 }
@@ -208,7 +208,7 @@ stdio に対応した MCP クライアントであれば、いずれも同じ手
 
 ```bash
 claude mcp list
-# ratatosk: docker run -i --rm ghcr.io/garlickim21/ratatosk-mcp:0.7.4 - ✔ Connected
+# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4 - ✔ Connected
 ```
 
 そのうえで、エージェントにこう聞いてみてください：
@@ -232,7 +232,7 @@ ClusterIP Service としてデプロイし、`MCP_HTTP_ADDR` を `service.port`
 ### インストール
 
 ```bash
-git clone https://github.com/garlicKim21/ratatosk-mcp
+git clone https://github.com/basphere/ratatosk-mcp
 helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp
 ```
 
@@ -313,7 +313,7 @@ helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp \
 で適用します（[詳細](../examples/kagent/README.ja.md)）：
 
 ```bash
-BASE=https://raw.githubusercontent.com/garlicKim21/ratatosk-mcp/main/examples/kagent
+BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
 kubectl apply -f $BASE/ratatosk-deploy.yaml
 kubectl apply -f $BASE/ratatosk-remote-mcpserver.yaml
 kubectl apply -f $BASE/ratatosk-agent.yaml
@@ -362,7 +362,7 @@ kubectl apply -f $BASE/ratatosk-agent.yaml
 docker で HTTP モードを直接起動する例：
 
 ```bash
-docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/garlickim21/ratatosk-mcp:0.7.4
+docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:0.7.4
 ```
 
 ## ログと監査ストリーム
@@ -400,7 +400,7 @@ docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/garlickim21/ratatosk
 
 ```bash
 # docker
-docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/garlickim21/ratatosk-mcp:0.7.4
+docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:0.7.4
 
 # Helm
 helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=metadata

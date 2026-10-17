@@ -27,7 +27,7 @@
 ## 설치
 
 ```bash
-BASE=https://raw.githubusercontent.com/garlicKim21/ratatosk-mcp/main/examples/kagent
+BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
 kubectl apply -f $BASE/ratatosk-deploy.yaml            # Deployment + Service (RBAC 불필요)
 kubectl apply -f $BASE/ratatosk-remote-mcpserver.yaml  # kagent에 등록
 kubectl apply -f $BASE/ratatosk-agent.yaml             # 선택: 예제 에이전트 ratatosk-agent

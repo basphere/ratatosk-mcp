@@ -164,11 +164,11 @@ laptop with Claude Code or Claude Desktop.
 ### Claude Code
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/garlickim21/ratatosk-mcp:0.7.4
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4
 ```
 
 In place of `0.7.4` you can use any
-[release tag](https://github.com/garlicKim21/ratatosk-mcp/releases), or
+[release tag](https://github.com/basphere/ratatosk-mcp/releases), or
 `latest` to always track the newest release — see
 [Version pinning](#version-pinning).
 
@@ -183,7 +183,7 @@ Claude Desktop registers MCP servers through a config file
   "mcpServers": {
     "ratatosk": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/garlickim21/ratatosk-mcp:0.7.4"]
+      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:0.7.4"]
     }
   }
 }
@@ -208,7 +208,7 @@ Any MCP client that speaks stdio works the same way.
 
 ```bash
 claude mcp list
-# ratatosk: docker run -i --rm ghcr.io/garlickim21/ratatosk-mcp:0.7.4 - ✔ Connected
+# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4 - ✔ Connected
 ```
 
 Then ask your agent:
@@ -232,7 +232,7 @@ frameworks, even a CI job that gates upgrades on `check_stack`.
 ### Install
 
 ```bash
-git clone https://github.com/garlicKim21/ratatosk-mcp
+git clone https://github.com/basphere/ratatosk-mcp
 helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp
 ```
 
@@ -310,7 +310,7 @@ set `kagent.agent.enabled=false`.
 ([details](../examples/kagent/README.md)):
 
 ```bash
-BASE=https://raw.githubusercontent.com/garlicKim21/ratatosk-mcp/main/examples/kagent
+BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
 kubectl apply -f $BASE/ratatosk-deploy.yaml
 kubectl apply -f $BASE/ratatosk-remote-mcpserver.yaml
 kubectl apply -f $BASE/ratatosk-agent.yaml
@@ -355,7 +355,7 @@ the [chart README](../charts/ratatosk-mcp/README.md).
 Running HTTP mode directly with Docker:
 
 ```bash
-docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/garlickim21/ratatosk-mcp:0.7.4
+docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:0.7.4
 ```
 
 ## Logs and the audit stream
@@ -392,7 +392,7 @@ Enable it with `MCP_AUDIT`:
 
 ```bash
 # docker
-docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/garlickim21/ratatosk-mcp:0.7.4
+docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:0.7.4
 
 # Helm
 helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=metadata

@@ -25,7 +25,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/garlicKim21/ratatosk-mcp/internal/version"
+	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
 // buildVersion is stamped by the release workflow via

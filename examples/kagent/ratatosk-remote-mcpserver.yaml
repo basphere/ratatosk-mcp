@@ -1,5 +1,5 @@
 ## Ratatosk MCP server — CNCF release intelligence
-## https://github.com/garlicKim21/ratatosk-mcp
+## https://github.com/basphere/ratatosk-mcp
 apiVersion: kagent.dev/v1alpha2
 kind: RemoteMCPServer
 metadata:

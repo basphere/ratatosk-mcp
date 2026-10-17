@@ -15,7 +15,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO_ROOT"
 
 CHART=charts/ratatosk-mcp
-IMAGE_REPO=ghcr.io/garlickim21/ratatosk-mcp
+IMAGE_REPO=ghcr.io/basphere/ratatosk-mcp
 VERSION="${1:-$(sed -n 's/^appVersion: *"\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' $CHART/Chart.yaml)}"
 NS=kagent
 PORT=18099

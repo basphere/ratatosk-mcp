@@ -11,7 +11,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/garlicKim21/ratatosk-mcp/internal/version"
+	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
 // briefReport must sort by version, fold the same issue_key across release

@@ -3,7 +3,7 @@
 ## Reporting a vulnerability
 
 Please report vulnerabilities privately via GitHub:
-**[Report a vulnerability](https://github.com/garlicKim21/ratatosk-mcp/security/advisories/new)** —
+**[Report a vulnerability](https://github.com/basphere/ratatosk-mcp/security/advisories/new)** —
 do not open a public issue for security problems.
 
 You can expect an initial response within a few days. Fixes ship as a patch
