@@ -9,13 +9,13 @@ integration.
 
 **MCP (Model Context Protocol)** is the standard protocol AI agents use to
 call external tools. ratatosk-mcp is a server that speaks this protocol and
-provides seven tools: `check_stack` (takes the component versions you run and
-returns the changes on your upgrade path, split by how to act on them),
-`list_changes` (the incremental change feed), `changes_by_entity` (reverse
-lookup by identifier — CVE ids, flags, and so on), `get_matter` (every release
-in which one matter appeared), `get_release` (one release in full),
-`list_releases` (recent releases of one project as summaries), and
-`list_projects` (tracked projects and their canonical slugs). Any
+provides six tools: `check_stack` (takes the component versions you run and
+returns what each upgrade path brings — before-upgrade checks, the changes that
+ask for a decision, version gaps — compared inside the server process),
+`check_upgrade` (the same for one project and one hop, computed by the server),
+`get_release` (one release in full), `list_releases` (recent releases as
+summaries), `search` (by advisory id, flag or text), and `list_projects`
+(tracked projects and their canonical slugs). Any
 MCP-capable client can connect: Claude Code, Claude Desktop, kagent, your
 own SDK agent.
 
@@ -43,8 +43,8 @@ One thing is true in every mode:
 tools that take a specific version as an argument, like `get_release`, put
 that version in the upstream request path, because naming the release is how
 it is fetched. Even that path does not land in server-side logs,
-though: the access log strips query strings and reduces `/v1/releases/…` and
-`/v1/upgrade/…` paths to their prefix before writing. Each section below has
+though: the access log strips query strings and reduces `/v2/releases/…` and
+`/v2/upgrade/…` paths to their prefix before writing. Each section below has
 the details.
 
 ## Prerequisites
@@ -125,9 +125,9 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
 - **Fair use**: the hosted endpoint allows **60 tool calls per minute per
   caller**, counted per caller address rather than pooled, so one busy caller
   cannot starve the rest. Exceeding it returns `429` with `Retry-After`. Note
-  that one tool call is not one API request — `check_stack` costs one upstream
-  request per component — which is why the limit is expressed in tool calls.
-  Calling `/v1` directly instead gives you 1200 requests/minute against your
+  that one tool call is not one API request — `check_stack` reads every recent
+  release of each component's project — which is why the limit is expressed in tool calls.
+  Calling `/v2` directly instead gives you 1200 requests/minute against your
   own IP. For heavy use such as polling, self-host.
 
 ### Privacy — what the hosted endpoint records
@@ -143,7 +143,7 @@ anywhere:
   `traceparent`, and even that line holds only a normalized endpoint label
   and the trace_id — paths and queries are not recorded.
 - The access log in front of the server strips query strings, reduces the
-  `/v1/releases/…` and `/v1/upgrade/…` paths (where slugs and versions ride)
+  `/v2/releases/…` and `/v2/upgrade/…` paths (where slugs and versions ride)
   to their prefix, masks IPs, and has no field for request bodies at all. It
   is not shipped anywhere and rotates locally by size (a few days' worth at
   current traffic).
@@ -345,7 +345,7 @@ the [chart README](../charts/ratatosk-mcp/README.md).
 
 | Env | Chart value | Default | What it does |
 |---|---|---|---|
-| `RATATOSK_URL` | `ratatoskUrl` | `https://ratatosk.io` | Upstream changes API (`/v1`, public, read-only). Change it to route egress through a proxy or a mirror |
+| `RATATOSK_URL` | `ratatoskUrl` | `https://ratatosk.io` | Upstream API (`/v2`, public, read-only). Change it to route egress through a proxy or a mirror |
 | `MCP_HTTP_ADDR` | *(set automatically by the chart from `service.port`)* | *(empty = stdio)* | When set (e.g. `:8080`), serve streamable HTTP at `/mcp` instead of stdio, with `/healthz` |
 | `MCP_HTTP_STATELESS` | `statelessHttp` | *(off)* | `1` serves HTTP without session state: no `Mcp-Session-Id` round trip, and required to serve current clients that use the 2026-07-28 MCP spec revision over HTTP. Also recommended for horizontal scaling to two or more replicas. Older clients work either way |
 | `MCP_LOG` | `logLevel` | `info` | Accepted values `info` (default), `debug`, `warn`, `error` — unrecognized values fall back to `info` without a warning. `debug` adds per-call upstream timing; `warn` and `error` reduce output. No level records request arguments — see [Logs and the audit stream](#logs-and-the-audit-stream) |
@@ -375,7 +375,7 @@ can carry the running versions. The log text is instead reconstructed from
 just the endpoint pattern and the kind of error:
 
 ```json
-{"time":"…","level":"ERROR","msg":"upstream fetch failed","service":"mcp","upstream":"/v1/changes","kind":"connection_refused","tool":"check_stack"}
+{"time":"…","level":"ERROR","msg":"upstream fetch failed","service":"mcp","upstream":"/v2/projects","kind":"connection_refused","tool":"check_stack"}
 ```
 
 Raising to `MCP_LOG=debug` adds one line per upstream call with the endpoint
@@ -454,7 +454,7 @@ the `_meta` of a tool call:
 
 The log lines that call produces (errors, `debug` level) and its audit
 record are then stamped with a `trace_id` field, and the same `traceparent`
-header is forwarded on the upstream `/v1` request — one `trace_id` connects
+header is forwarded on the upstream `/v2` request — one `trace_id` connects
 agent → MCP server → upstream. This is what joins the layers the audit
 record cannot: it links a prompt in your agent platform to the tool call
 here. Malformed values are dropped and not forwarded; send nothing and
@@ -465,7 +465,7 @@ nothing is recorded.
 | Symptom | Check | Cause and fix |
 |---|---|---|
 | Tool calls return errors (`check_stack` instead reports `fetch failed: …` in each component's `note`); the log shows `"msg":"upstream fetch failed"` with `kind: connection_refused`, `dns`, or `timeout` | `kubectl logs deploy/ratatosk-mcp` (locally: your client's MCP logs) | Egress is blocked. Allow outbound HTTPS to `ratatosk.io:443`, or set up a mirror and point `RATATOSK_URL` (chart: `ratatoskUrl`) at it |
-| The log shows `"msg":"upstream rate limited"`, `status: 429` | Same as above | Upstream limit exceeded (1200 requests/minute per IP). Replace per-project `list_changes` polling with a single `check_stack` call, and retry after a pause |
+| The log shows `"msg":"upstream rate limited"`, `status: 429` | Same as above | Upstream limit exceeded (1200 requests/minute per IP). Prefer one `check_stack` call for a whole stack over many per-project calls, and retry after a pause |
 | An HTTP client gets `400 Bad Request: protocol version "2026-07-28" is only supported on stateless HTTP servers` | The `Mcp-Protocol-Version` header the client sends | The client speaks the 2026-07-28 MCP revision, which stateful HTTP mode rejects. Turn on `--set statelessHttp=true` (env: `MCP_HTTP_STATELESS=1`) — the `StreamableHTTPOptions.Stateless` named in the error is the Go SDK's name for the same switch |
 | `ratatosk-agent` does not appear in the kagent UI | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | Installing with `kagent.enabled=true` fails on a cluster without the kagent CRDs — install kagent first. The manifest route hardcodes `namespace: kagent`, so if kagent lives in another namespace, edit the manifests |
 | `ImagePullBackOff` after switching the kagent agent runtime to the Go ADK | `kubectl describe pod` | A known issue in kagent 0.9.12 itself, unrelated to this chart ([#2247], fixed after 0.9.12): the Go ADK image is published only to `ghcr.io` while the controller default points at the retired `cr.kagent.dev`. Workaround: `--set controller.agentImage.registry=ghcr.io` on the kagent install |
@@ -493,7 +493,7 @@ nothing is recorded.
 ## Upstream API
 
 This server is a thin client over the public REST API. If you would rather
-call it directly, `GET /v1` on ratatosk.io describes itself. No API key; rate
+call it directly, `GET /v2` on ratatosk.io describes itself. No API key; rate
 limited at 1200 requests per minute per IP.
 
 ## Next steps

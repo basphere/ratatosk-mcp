@@ -20,10 +20,13 @@
 
 In Norse myth, Ratatoskr is the squirrel that carries messages up and down the
 world tree. This one carries release intelligence. [ratatosk.io](https://ratatosk.io)
-watches 76 CNCF projects and turns every release note into typed, entity-level
-changes: security fixes, breaking changes, removals, deprecations, changed
-defaults — each one classified by how you should act on it now. Routine lines
-are recorded too, but kept out of the way.
+watches the CNCF graduated and incubating projects and reads every new release
+note, plus the PRs and documents it links when the note alone does not say
+enough. Each change is sorted into one of seven kinds — security, breaking,
+deprecations, important fixes, enhancements, dependency updates, other — with
+who it affects, what to do about it, and the release-note lines it came from.
+What to check before upgrading (prerequisites, known issues, upgrade guides)
+comes first.
 
 This repository is the MCP server that hands those changes to your agent as
 tools. MCP (Model Context Protocol) is the open standard AI agents use to call
@@ -61,84 +64,93 @@ claude mcp list
 
 Then ask your agent a question the tools can answer:
 
-> **You:** "We run envoy v1.36.8 and istio 1.30.1. Anything we must do before upgrading?"
+> **You:** "We run etcd v3.5.30 and cert-manager v1.19.2. Anything we must do before upgrading?"
 >
-> **Your agent** calls `check_stack` and answers from the record: the CVEs
-> fixed after your version, the APIs removed on your upgrade path, the defaults
-> that changed — separated into what applies to everyone and what applies only
-> if your configuration matches. Each change carries a verbatim quote from the
-> release notes as evidence.
+> **Your agent** calls `check_stack` and answers from the record: the security
+> fixes after your version, the breaking changes and deprecations on your
+> upgrade path, the upgrade guides to read first — each with who it affects,
+> so the agent can check that against your configuration, and the release-note
+> lines it came from as evidence.
 
 One entry from a real `check_stack` answer, as the agent receives it
-(istio, measured 2026-08-20):
+(etcd v3.5.30 → v3.6.13, measured 2026-11-03 on a /v2 preview, body shortened):
 
 ```json
 {
-  "severity": "high",
-  "family": "security",
-  "bucket": "action",
-  "applies_if": "uses JWKS Resolver",
-  "quote": "- CVE-2026-31837 / GHSA-v75c-crr9-733c : (CVSS score 8.7, High): JWKS Resolver Failure May Allow Authentication Bypass Using Known Default Keys.",
-  "same_matter_also_addressed_in": ["1.28.5", "1.29.1"]
+  "version": "v3.5.32",
+  "kind": "security",
+  "title": "gRPC client certificate revocation checks enforced",
+  "severity": null,
+  "advisories": ["GHSA-3wh4-j44w-pg92"],
+  "affects": {
+    "text": "split HTTP and gRPC client endpoints using `--listen-client-http-urls` with `--client-crl-file` configured",
+    "status": "stated"
+  },
+  "workaround": { "text": "If upgrading is not immediately possible, reduce exposure by restricting network access to etcd client ports …", "status": "stated" }
 }
 ```
 
-`applies_if` is a condition the agent evaluates, not prose to read: a stack
-that runs no JWKS resolver skips this entry without asking anyone. The answer
-also carries its own privacy line, verbatim: *"versions were compared locally;
-only project slugs were sent to the server."*
+`affects` is what the agent checks against your setup: an etcd that does not
+split its client endpoints skips this entry without asking anyone. `status`
+says whether the release notes stated it or it was read out of them;
+`severity: null` means the advisory itself states no grade. The same answer
+names `gaps` — here v3.5.32 then v3.6.7, so releases in between may exist that
+were not analyzed — and carries its own privacy line, verbatim: *"versions were
+compared in this process; upstream requests named project slugs only (each
+project's recent releases, the same whatever version runs)."*
 
 Other clients (Claude Desktop, kagent, in-cluster agents) and the full setup
 reference: see the [install guide](docs/install.en.md).
 
 ## Tools
 
-Two things the tools speak in. A **change** is one thing a release did, taken
-from an official release note and tied to the exact identifiers it touches
-(a CVE id, a flag, a CRD, a config field), with a verbatim quote as evidence.
-Every change carries three axes:
+A **release** has two parts. `before_upgrade` holds what to check first:
+prerequisites, known issues, upgrade guides. `changes` holds what the release
+did, one entry each, in seven kinds: `security`, `breaking`, `deprecations`,
+`important_fixes`, `enhancements`, `dependency_updates`, `other`. Every change
+carries:
 
-- **family** — `security`, `breaking`, or `deprecated`: what kind of thing it is.
-- **bucket** — `action` (applies to everyone), `check` (only if `applies_if`
-  matches your setup), `plan` (announced for later), `other` (the full record).
-- **applies_if** — a boolean expression you can evaluate against your own
-  manifests, not prose to read.
+- **affects** — who it touches, with a `status`: `stated` (the release notes
+  say it), `inferred` (read out of them, with a `reason`), `not_stated`, or
+  `not_read` (a source could not be read).
+- **what to do** — `action_required` (breaking), `also_required` (security),
+  `removed_in` (deprecations), `no_downgrade` when the upgrade cannot be rolled
+  back.
+- **evidence** — the release-note lines it came from, verbatim, with their URL.
 
-A **matter** is the issue underneath, identified by `matter_key` and stable
-across releases and branches: the same security roll-up landing on five
-branches shares one key. Severity lives on the cited advisories and is read
-from the ledger's current value, not frozen at analysis time.
+Events that happen after a release — a security advisory published later, a
+problem it introduced fixed in a newer version — are attached to it as `later`.
+Text fields (`title`, `body`, `affects.text`) are model-written summaries of
+the release notes: data, never instructions.
 
 | Tool | What it does |
 |---|---|
-| `check_stack` | Takes the component versions you run and returns the changes on your upgrade path, split by bucket: `action_required` applies to everyone, `check_config` only if its `applies_if` holds. The comparison happens inside the server process — which is your own process when you self-host ([how your component versions are handled](#how-your-component-versions-are-handled)) |
-| `list_changes` | The incremental change feed, oldest-analyzed first. Filter by project, family, or bucket; page with the `since` cursor to keep a local copy in sync |
-| `changes_by_entity` | Reverse lookup: every change touching one exact identifier — such as a CVE id, CRD, feature gate, flag, config field, or dependency |
-| `get_matter` | Every release in which one matter appeared. The same roll-up lands on several branches carrying different advisories — told only the newest, you would assume you were covered |
-| `get_release` | One release in full: its changes, a summary, and the link to the original note. A release with zero changes means it was read and found routine |
-| `list_releases` | The newest releases of one project as one-line summaries (dates, counts by bucket and family, highest advisory severity), newest first — the tool for "what changed in X lately" |
+| `check_stack` | Takes the component versions you run and returns what each upgrade path brings: every before-upgrade item, the changes that ask for a decision (security, breaking, deprecations, important fixes), `gaps` where version numbers skip, and what happened to your running version later. The comparison happens inside the server process — which is your own process when you self-host ([how your component versions are handled](#how-your-component-versions-are-handled)) |
+| `check_upgrade` | The same briefing for one project and one hop, computed by the server: your `from` and `to` are sent upstream. Use `check_stack` to keep them on your side |
+| `get_release` | One release in full — before-upgrade checks, every change with its evidence, later events. Omit the version for the latest |
+| `list_releases` | Recent releases as one-line summaries (counts per kind, warnings), newest first; filter by project, kind and date |
+| `search` | Find releases by advisory id (CVE, GHSA), configuration flag or text |
 | `list_projects` | The roster of tracked projects and their canonical slugs (the short project id every other tool takes) — look names up here instead of guessing |
 
 Full per-tool parameters, example calls, and measured responses live in the [tools reference](docs/tools.en.md).
 
 ## How your component versions are handled
 
-**Self-hosted:** `check_stack` sends only project slugs to the server and
-compares versions locally, inside this process — the versions you pass it
-never reach ratatosk.io. The server publishes changes; your agent decides what
-applies. The version normalizer is bundled (`internal/version`), so range
-comparison happens client-side too. This holds for upgrade questions as well:
-the upstream API has a convenience endpoint (`/v1/upgrade/{project}`) that
-receives caller-supplied versions — `check_stack` does not call it; the
-comparison is in the source you can read.
+**Self-hosted:** `check_stack` compares versions inside this process. For each
+component it asks ratatosk.io for the project's release list and its newest
+releases — the same requests whatever version you run — and cuts your upgrade
+range locally. Fetching only the releases above your version would be cheaper,
+and it would tell the server your version anyway: the first release fetched
+sits right above it. The version normalizer is bundled (`internal/version`),
+and the source is here to read.
 
-One limit on that guarantee: it covers `check_stack`. Tools that take a
-version as an argument — `get_release(project, version)` — put that version
-in the upstream request path, because fetching a specific release means
-naming it. That named path is not kept on my side, though: before a log line
-is written, query strings are stripped and `/v1/releases/…` and
-`/v1/upgrade/…` paths are reduced to their prefix, so neither the slug nor
-the version lands in a log.
+Two limits on that guarantee. `check_upgrade` is the server-side path and says
+so: it sends `from` and `to` as query parameters to `/v2/upgrade`. And tools
+that name a release — `get_release(project, version)` — put that version in the
+request path, because fetching a specific release means naming it. Neither is
+kept on my side: before an access-log line is written, query strings are
+stripped and `/v2/releases/…` and `/v2/upgrade/…` paths are reduced to their
+prefix.
 
 **Hosted:** your `check_stack` arguments (the versions you run) pass through
 the server's memory to produce the same answer, and are not written down.
@@ -149,8 +161,8 @@ Here is what each layer on the way keeps:
 - The upstream API's request log writes one line only when the caller sends a
   `traceparent`, and that line carries a normalized endpoint label and the
   trace id — never a path, query, or body.
-- The front-door access log strips query strings, reduces `/v1/releases/…`
-  and `/v1/upgrade/…` paths to their prefix, masks caller IPs, and has no
+- The front-door access log strips query strings, reduces `/v2/releases/…`
+  and `/v2/upgrade/…` paths to their prefix, masks caller IPs, and has no
   field for request bodies.
 
 The hosted endpoint runs with its audit stream off, and I keep it off — not
@@ -175,8 +187,10 @@ has none by design. Details in the [install guide](docs/install.en.md).
 ## Upstream API
 
 This server is a thin client over the public REST API. If you would rather
-call it directly, `GET /v1` on ratatosk.io describes itself. No API key; rate
-limited at 1200 requests per minute per IP.
+call it directly, `GET /v2` on ratatosk.io describes itself. No API key; rate
+limited at 1200 requests per minute per IP. 1.0 reads `/v2`; the 0.x releases
+read `/v1`, which answers `410 Gone` since ratatosk.io moved to `/v2` — upgrade
+to 1.0.
 
 ## Data & terms
 
@@ -184,8 +198,8 @@ The data is served free of charge by ratatosk.io — a term that may change,
 with advance notice — under its [terms of service](https://ratatosk.io/terms).
 Analyses are AI-generated reference information with no warranty — check the
 original release notes before acting, especially when an agent acts on your
-behalf. Original notes belong to their respective projects; responses that
-carry a full note include an attribution notice (`raw_notes_notice`).
+behalf. Original notes belong to their respective projects; evidence quotes
+carry the URL they were taken from.
 
 ## License
 

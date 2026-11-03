@@ -3,26 +3,26 @@
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
 [Ratatosk](https://ratatosk.io) reads every CNCF graduated/incubating project's
-release notes daily and extracts typed changes — security fixes, breaking
-changes, removals, deprecations, default changes — each with a verbatim quote
-and a source URL. This MCP server exposes those changes to in-cluster agents.
+release notes and sorts each change into seven kinds — security, breaking,
+deprecations, important fixes, enhancements, dependency updates, other — each
+with who it affects and the release-note lines it came from. This MCP server
+exposes those releases to in-cluster agents.
 
 Privacy: the `check_stack` tool compares your running versions locally, inside
 this process. Only project slugs are sent to the ratatosk server; versions
 never leave your cluster. The upstream API is public, read-only, and needs no
-credentials (rate limit 60 req/min per IP).
+credentials (rate limit 1200 req/min per IP).
 
 ## Tools
 
 | Tool | Purpose |
 | --- | --- |
 | `list_projects` | The tracked-project roster — resolve slugs here first |
-| `check_stack` | Compare running versions against known changes (local comparison), split by how to act |
-| `get_release` | One analyzed release with all its changes and the source URL |
-| `list_releases` | The newest N releases of one project as light summaries, newest first |
-| `changes_by_entity` | Reverse index: every change touching one CVE/flag/CRD |
-| `get_matter` | Every release in which one matter appeared |
-| `list_changes` | Incremental change feed with a `since` cursor |
+| `check_stack` | Compare running versions against each project's releases (local comparison): before-upgrade checks, the changes that ask for a decision, version gaps |
+| `check_upgrade` | One project, one hop, computed by the server — `from` and `to` are sent upstream |
+| `get_release` | One release in full: before-upgrade checks, every change with its evidence |
+| `list_releases` | Recent releases as one-line summaries, newest first |
+| `search` | Find releases by advisory id, flag or text |
 
 ## Install
 

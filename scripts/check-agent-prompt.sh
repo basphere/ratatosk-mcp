@@ -27,7 +27,7 @@ CLAUSES=(
   "a version you did not read off a live"                  # never invent a running version
   "resource_type: node"                                    # kubelet/runtime live on nodes
   "tracked:false"                                          # no facts is not the same as safe
-  "the bucket is not the judgment"                         # applies_if decides, not the section
+  "the kind is not the judgment"                           # affects decides, not the kind (0.x: "the bucket is not the judgment")
   "Try the check before you use the forward-looking form"  # do not defer every condition
   "An unresolved condition is never reported as applying"  # unverified high never leads
   "where that kind of thing actually lives"                # look for an annotation on its object
@@ -38,11 +38,13 @@ CLAUSES=(
   "cluster_core"                                           # what-to-check is roster data, not prompt attention (coredns seesaw)
   "visibility hint"                                        # unreadable-by-design is normal, not a gap — the etcd guessing 9/20
   "never construct a resource name"                        # no kube-apiserver-minikube guesses
-  "Placement follows the server's buckets"                 # reclassifying is the ~30% failure
+  "Placement follows affects"                              # reclassifying is the ~30% failure (0.x: buckets)
   "banned in both directions"                              # downward demotion swallowed AR in 7/15 M2 runs
-  "fix the draft, not the bucket"                          # count check: N action_required ⇒ N in Applies
+  "fix the draft, not the list"                            # count check: N changes in ⇒ N entries across the sections
   "no quoted line, no promotion"                           # promotion out of check_config needs evidence
   "everything else is \"Could not check\""                 # the pre-answer re-check (P3 effect)
+  "check_upgrade is the exception"                         # 1.0: the one tool that sends versions upstream
+  "gaps lists where version numbers skip"                  # 1.0: unanalyzed releases inside a range are not "nothing"
 )
 
 fail=0
