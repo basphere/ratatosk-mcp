@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 # The agent prompt is what stands between a model and a confident wrong answer,
-# and it lives in two files that nothing type-checks: the chart template and the
-# kagent example. Both regressions we have had were deletions — a rule vanished
-# as a side effect of rewording something else, and the very next live run
-# hallucinated a component version. Nothing downstream could detect it; a human
-# noticed. This asserts that the rules earned from live failures are still in
-# both copies, and that the copies have not drifted apart.
+# and it ships in YAML nothing type-checks: the chart (rendered once per kagent
+# API, 0.x and 1.x) and the two kagent example sets. Both regressions we have
+# had were deletions — a rule vanished as a side effect of rewording something
+# else, and the very next live run hallucinated a component version. Nothing
+# downstream could detect it; a human noticed. This asserts that the rules
+# earned from live failures are still in every copy, and that the copies say
+# the same thing (line wrapping aside).
+#
+# The chart is checked as rendered, not as template source: a rule sitting in a
+# branch that no longer renders would pass a source grep. Needs helm on PATH,
+# or HELM set to a command (see render-kagent-shapes.sh).
 #
 # Add a clause here whenever a live failure teaches a rule. That is the point:
 # the list is a record of what we already got wrong once.
@@ -13,9 +18,15 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+RENDER="$(mktemp -d)"
+trap 'rm -rf "$RENDER"' EXIT
+./scripts/render-kagent-shapes.sh "$RENDER"
+
 FILES=(
-  charts/ratatosk-mcp/templates/agent.yaml
-  examples/kagent/ratatosk-agent.yaml
+  "$RENDER/chart-0.x.yaml"
+  "$RENDER/chart-1.x.yaml"
+  examples/kagent/0.x/ratatosk-agent.yaml
+  examples/kagent/1.x/ratatosk-agent.yaml
 )
 
 # Substrings that must appear verbatim in every file above. Keep them short
@@ -63,14 +74,44 @@ for f in "${FILES[@]}"; do
   done
 done
 
+# The copies must say the same thing. Each file carries the prompt as a block
+# scalar (systemMessage on 0.x, systemPrompt on 1.x); compare them with runs of
+# whitespace folded, so re-wrapping a line is not drift but a changed word is.
+prompt_of() {
+  awk '
+    !on && match($0, /^ *(systemMessage|systemPrompt): \|-$/) { on = 1; ind = RLENGTH - length(ltrim($0)); next }
+    on {
+      if ($0 ~ /^ *$/) { print ""; next }
+      match($0, /^ */)
+      if (RLENGTH <= ind) exit
+      print
+    }
+    function ltrim(s) { sub(/^ +/, "", s); return s }
+  ' "$1" | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//'
+}
+REF="${FILES[0]}"
+REF_PROMPT="$(prompt_of "$REF")"
+[[ -n "$REF_PROMPT" ]] || { echo "NO PROMPT FOUND in $REF" >&2; fail=1; }
+for f in "${FILES[@]:1}"; do
+  [[ -f "$f" ]] || continue
+  if [[ "$(prompt_of "$f")" != "$REF_PROMPT" ]]; then
+    echo "PROMPT DRIFT: $f says something different from the chart's kagent 0.x rendering" >&2
+    diff <(echo "$REF_PROMPT" | fold -s -w 100) <(prompt_of "$f" | fold -s -w 100) >&2 || true
+    fail=1
+  fi
+done
+
 if [[ $fail -ne 0 ]]; then
   cat >&2 <<'EOF'
 
-The agent prompt lost a rule that a live failure put there. If the removal is
-deliberate, delete the clause from scripts/check-agent-prompt.sh in the same
-commit and say in the message which failure mode you are re-opening.
+MISSING CLAUSE: the agent prompt lost a rule that a live failure put there. If
+the removal is deliberate, delete the clause from scripts/check-agent-prompt.sh
+in the same commit and say in the message which failure mode you are
+re-opening.
+PROMPT DRIFT: the prompt lives in charts/ratatosk-mcp/templates/_agent-prompt.tpl
+and in examples/kagent/{0.x,1.x}/ratatosk-agent.yaml; change all three together.
 EOF
   exit 1
 fi
 
-echo "agent prompt: ${#CLAUSES[@]} clauses present in ${#FILES[@]} files"
+echo "agent prompt: ${#CLAUSES[@]} clauses present in ${#FILES[@]} files, and the files agree"

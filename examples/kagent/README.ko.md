@@ -24,25 +24,34 @@
 | `list_releases` | 최근 릴리스 한 줄 요약, 최신순 |
 | `search` | 보안 공지 번호 · 플래그 · 글자로 릴리스 찾기 |
 
-## 설치
+## kagent 버전에 맞는 묶음 고르기
+
+kagent 1.x는 새 API(`api.kagent.dev/v1alpha3`)를 쓰고 0.x API(`kagent.dev/v1alpha2`)를
+읽지 않습니다. 반대도 마찬가지라서 kagent 계열마다 매니페스트 묶음이 따로
+있습니다. 클러스터가 어느 쪽을 제공하는지 먼저 확인하세요:
 
 ```bash
-BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
-kubectl apply -f $BASE/ratatosk-deploy.yaml            # Deployment + Service (RBAC 불필요)
-kubectl apply -f $BASE/ratatosk-remote-mcpserver.yaml  # kagent에 등록
-kubectl apply -f $BASE/ratatosk-agent.yaml             # 선택: 예제 에이전트 ratatosk-agent
+kubectl api-resources --api-group=api.kagent.dev   # agents가 나오면 kagent 1.x
+kubectl api-resources --api-group=kagent.dev       # agents가 나오면 kagent 0.x
 ```
 
-매니페스트에는 `namespace: kagent`가 들어 있습니다. 이 디렉토리에서 로컬 파일로
-적용해도 동일합니다.
+| kagent | 매니페스트 | 시작 전에 필요한 것 |
+| --- | --- | --- |
+| 0.x (0.10.x) | [`0.x/`](0.x/README.ko.md) | kagent 설치 |
+| 1.x (1.0 정식 출시 전) | [`1.x/`](1.x/README.ko.md) | kagent 설치, 그리고 에이전트를 돌릴 **Harness** |
 
-헬름을 쓴다면 차트의 kagent 토글 하나로도 같은 구성이 됩니다:
+두 묶음 모두 서버는 공용 [`ratatosk-deploy.yaml`](ratatosk-deploy.yaml)
+(Deployment + Service, RBAC 불필요)로 띄웁니다. kagent 0.x 지원은 kagent 1.x가
+정식 출시되면 제거합니다.
+
+헬름을 쓴다면 차트가 kagent 계열을 스스로 알아봅니다(1.x에서는
+`--set kagent.harness=<Harness 이름>`을 더하세요):
 
 ```bash
 helm install ratatosk-mcp ../../charts/ratatosk-mcp -n kagent --set kagent.enabled=true
 ```
 
-예제 에이전트에게 이렇게 물어보세요:
+## 물어보기
 
 > "이 클러스터에서 업그레이드 전에 조치할 게 있나요?"
 

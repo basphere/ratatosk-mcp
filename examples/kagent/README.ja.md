@@ -24,25 +24,35 @@
 | `list_releases` | 最近のリリースの 1 行要約、新しい順 |
 | `search` | セキュリティアドバイザリ番号・フラグ・テキストでリリースを探す |
 
-## インストール
+## kagent のバージョンに合うセットを選ぶ
+
+kagent 1.x は新しい API（`api.kagent.dev/v1alpha3`）を使い、0.x の API
+（`kagent.dev/v1alpha2`）を読みません。逆も同じなので、kagent の系列ごとに
+マニフェストのセットを分けています。クラスタがどちらを提供しているか確認して
+ください:
 
 ```bash
-BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
-kubectl apply -f $BASE/ratatosk-deploy.yaml            # Deployment + Service（RBAC 不要）
-kubectl apply -f $BASE/ratatosk-remote-mcpserver.yaml  # kagent への登録
-kubectl apply -f $BASE/ratatosk-agent.yaml             # 任意: サンプルエージェント ratatosk-agent
+kubectl api-resources --api-group=api.kagent.dev   # agents が出れば kagent 1.x
+kubectl api-resources --api-group=kagent.dev       # agents が出れば kagent 0.x
 ```
 
-マニフェストには `namespace: kagent` が入っています。このディレクトリからローカル
-ファイルを適用しても同じです。
+| kagent | マニフェスト | 始める前に必要なもの |
+| --- | --- | --- |
+| 0.x（0.10.x） | [`0.x/`](0.x/README.ja.md) | kagent のインストール |
+| 1.x（1.0 正式リリース前） | [`1.x/`](1.x/README.ja.md) | kagent のインストールと、エージェントを動かす **Harness** |
 
-Helm を使う場合は、チャートの kagent トグル 1 つで同じ構成になります:
+どちらのセットも、サーバーは共通の [`ratatosk-deploy.yaml`](ratatosk-deploy.yaml)
+（Deployment + Service、RBAC 不要）で起動します。kagent 0.x のサポートは、
+kagent 1.x が正式リリースされた時点で削除します。
+
+Helm を使う場合は、チャートが kagent の系列を自分で判別します（1.x では
+`--set kagent.harness=<Harness 名>` を追加してください）:
 
 ```bash
 helm install ratatosk-mcp ../../charts/ratatosk-mcp -n kagent --set kagent.enabled=true
 ```
 
-サンプルエージェントにこう聞いてみてください:
+## 聞いてみる
 
 > 「このクラスタでアップグレード前に対応が必要なものはありますか？」
 

@@ -60,20 +60,45 @@ nodeSelector: {}
 tolerations: []
 affinity: {}
 
+# Cluster DNS domain, used to build the fully qualified in-cluster MCP URL
+# (<service>.<namespace>.svc.<clusterDomain>) that the kagent RemoteMCPServer
+# registers. kagent 1.x agents resolve only full names; change this only if
+# your cluster does not use cluster.local.
+clusterDomain: cluster.local
+
 # kagent integration (https://kagent.dev) — when true, installs the
 # RemoteMCPServer registration and an example Agent (ratatosk-agent) alongside
-# the server. Enable only on clusters where the kagent CRDs exist.
+# the server. Enable only on clusters where the kagent CRDs exist. The chart
+# renders whichever kagent API the cluster serves: kagent 1.x
+# (api.kagent.dev/v1alpha3) when present, otherwise kagent 0.x
+# (kagent.dev/v1alpha2). helm template sees no cluster; add
+# --api-versions api.kagent.dev/v1alpha3 there to render the 1.x shape.
 kagent:
   enabled: false
   # Name of the ModelConfig in your kagent installation
   modelConfig: default-model-config
+  # kagent 1.x only: the Harness (in this release's namespace) the example
+  # Agent runs on. kagent 1.x creates no default Harness, so this has no
+  # default either; while it is empty on a 1.x cluster the Agent is skipped
+  # (the server and its RemoteMCPServer still install) and NOTES.txt says how
+  # to add it. Ignored on kagent 0.x.
+  harness: ""
   agent:
     # false registers the server only, without the example Agent
     enabled: true
     name: ratatosk-agent
     # Grants the agent kagent's built-in read-only cluster tools
     # (k8s_get_resources, k8s_get_resource_yaml) so it can discover running
-    # versions itself. Requires kagent-tool-server in the install namespace
-    # (present in a default kagent install). Set false to keep the agent
-    # cluster-blind; it will ask for versions instead.
+    # versions itself. Requires kagent's tool server RemoteMCPServer (present
+    # in a default kagent install). Set false to keep the agent cluster-blind;
+    # it will ask for versions instead.
     k8sTools: true
+    # kagent's tool server registration: "<kagent release>-tool-server" in
+    # kagent's namespace. Leave namespace empty when this chart is installed
+    # into kagent's namespace (the documented layout). Set it when the two
+    # differ; the tool server then has to admit this namespace in its
+    # spec.allowedNamespaces (kagent 1.x chart value:
+    # kagent-tools.remoteMCPServer.allowedNamespaces).
+    toolServer:
+      name: kagent-tool-server
+      namespace: ""

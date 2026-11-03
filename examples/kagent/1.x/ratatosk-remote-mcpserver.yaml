@@ -1,12 +1,14 @@
 ## Ratatosk MCP server — CNCF release intelligence
 ## https://github.com/basphere/ratatosk-mcp
-apiVersion: kagent.dev/v1alpha2
+## kagent 1.x (api.kagent.dev/v1alpha3). The URL is the full Service name on
+## purpose: kagent 1.x agents cannot resolve a short one.
+apiVersion: api.kagent.dev/v1alpha3
 kind: RemoteMCPServer
 metadata:
   name: ratatosk-mcp
   namespace: kagent
 spec:
-  url: "http://ratatosk-mcp:8080/mcp"
+  url: "http://ratatosk-mcp.kagent.svc.cluster.local:8080/mcp"
   timeout: 30s
   sseReadTimeout: 5m0s
   description: "Typed, quoted changes from CNCF release notes; check_stack compares running versions locally"

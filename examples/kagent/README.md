@@ -24,26 +24,36 @@ credentials (rate limit 1200 req/min per IP).
 | `list_releases` | Recent releases as one-line summaries, newest first |
 | `search` | Find releases by advisory id, flag or text |
 
-## Install
+## Pick the set for your kagent
+
+kagent 1.x serves a new API (`api.kagent.dev/v1alpha3`) and does not read the
+0.x one (`kagent.dev/v1alpha2`), nor the other way round, so there is one set of
+manifests per kagent line. Ask the cluster which one it serves:
 
 ```bash
-BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
-kubectl apply -f $BASE/ratatosk-deploy.yaml            # Deployment + Service (no RBAC needed)
-kubectl apply -f $BASE/ratatosk-remote-mcpserver.yaml  # register with kagent
-kubectl apply -f $BASE/ratatosk-agent.yaml             # optional: the ratatosk-agent example agent
+kubectl api-resources --api-group=api.kagent.dev   # lists agents: kagent 1.x
+kubectl api-resources --api-group=kagent.dev       # lists agents: kagent 0.x
 ```
 
-The manifests carry `namespace: kagent`. Applying local copies works the same
-from this directory.
+| kagent | Manifests | Before you start |
+| --- | --- | --- |
+| 0.x (0.10.x) | [`0.x/`](0.x/README.md) | kagent installed |
+| 1.x (1.0 pre-release) | [`1.x/`](1.x/README.md) | kagent installed, and a **Harness** for the agent to run on |
 
-Or with the Helm chart from the repository:
+Both sets deploy the server with the shared
+[`ratatosk-deploy.yaml`](ratatosk-deploy.yaml) (Deployment + Service, no RBAC
+needed). Support for kagent 0.x will be removed once kagent 1.x is generally
+available.
+
+Or with the Helm chart from the repository, which detects the kagent line
+itself (on 1.x, add `--set kagent.harness=<your Harness>`):
 
 ```bash
 git clone https://github.com/basphere/ratatosk-mcp
-helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp -n kagent
+helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp -n kagent --set kagent.enabled=true
 ```
 
-Ask the example agent things like:
+## Ask it
 
 > "Anything in this cluster that needs action before we upgrade?"
 

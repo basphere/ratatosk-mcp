@@ -1,3 +1,5 @@
+## Ratatosk example agent for kagent 0.x (kagent.dev/v1alpha2).
+## On kagent 1.x use ../1.x/ instead: 1.x does not read this API.
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:
