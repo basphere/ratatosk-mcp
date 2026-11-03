@@ -50,10 +50,10 @@ Docker, the Helm chart, or a source build. With Claude Code and Docker
 installed:
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.10.0
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0
 ```
 
-`0.10.0` is the current release; use `latest` to follow new ones.
+`1.0.0` is the current release; use `latest` to follow new ones.
 
 Either way, verify the connection:
 

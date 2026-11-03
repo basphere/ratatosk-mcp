@@ -5,6 +5,53 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+## [1.0.0] — Unreleased
+
+### Changed
+
+- **ratatosk.io moved its API from `/v1` to `/v2`, and every tool moved with
+  it.** `/v1` answers `410 Gone` from the switch on, so 0.x stops working that
+  day; this is a major version because tools were removed and every response
+  changed shape. A release now has `before_upgrade` (prerequisites, known
+  issues, upgrade guides) and `changes` in seven kinds — `security`,
+  `breaking`, `deprecations`, `important_fixes`, `enhancements`,
+  `dependency_updates`, `other` — each with `affects` (who it touches, and
+  whether the release notes stated it), what to do, and the release-note lines
+  it came from. Events after a release (an advisory published later, a problem
+  fixed in a newer version) are attached as `later`. The 0.x axes (family,
+  bucket, applies_if) and matters are gone.
+- `check_stack` takes the same input and returns a new briefing per
+  component: the releases in range, every before-upgrade item, the changes
+  that ask for a decision (security, breaking, deprecations, important fixes)
+  with per-kind caps whose cuts are counted in `changes_omitted`, `gaps` where
+  version numbers skip (releases in between may be unanalyzed), and
+  `later_for_running`. Components it cannot check are listed in
+  `could_not_check`. `severity_min` is gone: security is ordered by grade
+  instead, so a cap cuts the least severe.
+- `check_stack` sends upstream the same requests whatever version runs: each
+  project's release list and its newest releases, then the range is cut in
+  this process. Fetching only the releases above the running version would
+  have revealed it. Public documents are cached for five minutes, so a repeat
+  call is free.
+- `get_release`, `list_releases` and `list_projects` keep their names and
+  return the `/v2` shape. `get_release` takes `lang`; `include_raw` is gone.
+  `list_releases` filters by `kind` and `since`, and works across projects.
+- The kagent agent prompt (chart and example) carries every rule earned from
+  live runs, moved to the new vocabulary.
+
+### Added
+
+- `check_upgrade`: one project, one hop, computed by the server
+  (`/v2/upgrade`). `from` and `to` are sent upstream, and the tool says so.
+- `search`: find releases by advisory id, configuration flag or text.
+- `lang` (`en`, `ko`, `ja`) on every tool that returns text.
+
+### Removed
+
+- `list_changes`, `changes_by_entity`, `get_matter`: their `/v1` endpoints
+  have no `/v2` counterpart. `list_releases`, `search` and a briefing's
+  `also_in` answer the same questions.
+
 ## [0.10.0] — 2026-10-18
 
 ### Changed
