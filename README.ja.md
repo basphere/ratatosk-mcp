@@ -178,7 +178,7 @@ only (each project's recent releases, the same whatever version runs)."*
 
 - **[インストールと使い方](docs/install.ja.md)** — ホスト版エンドポイント · ローカル stdio · クラスタ内（Helm） · kagent（[English](docs/install.en.md) · [한국어](docs/install.ko.md)）
 - **[Helm チャート](charts/ratatosk-mcp/README.ja.md)** — values、kagent トグル（[English](charts/ratatosk-mcp/README.md) · [한국어](charts/ratatosk-mcp/README.ko.md)）
-- **[kagent の例](examples/kagent/README.ja.md)** — マニフェスト + ratatosk-agent（[English](examples/kagent/README.md) · [한국어](examples/kagent/README.ko.md)）
+- **[kagent の例](examples/kagent/README.ja.md)** — kagent 0.x・1.x 用マニフェスト + ratatosk-agent（[English](examples/kagent/README.md) · [한국어](examples/kagent/README.ko.md)）
 - **[コントリビューション](CONTRIBUTING.md)** · **[セキュリティポリシー](SECURITY.md)**
 
 ## アップストリーム API

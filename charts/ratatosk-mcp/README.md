@@ -26,25 +26,56 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | `service.port` | `8080` | Service / MCP endpoint port |
 | `resources` | small requests/limits | Adjust for busy clusters |
 | `nodeSelector` / `tolerations` / `affinity` | `{}` / `[]` / `{}` | Standard scheduling controls |
+| `clusterDomain` | `cluster.local` | Cluster DNS domain in the full Service name the kagent RemoteMCPServer registers |
 | `kagent.enabled` | `false` | Also install the kagent integration (below) |
 | `kagent.modelConfig` | `default-model-config` | ModelConfig name in your kagent install |
+| `kagent.harness` | `""` | kagent 1.x only: the Harness the example agent runs on. Empty on 1.x skips the agent |
 | `kagent.agent.enabled` | `true` | Install the example agent (when kagent.enabled) |
 | `kagent.agent.name` | `ratatosk-agent` | Example agent name |
 | `kagent.agent.k8sTools` | `true` | Give the agent kagent's read-only cluster tools so it discovers running versions itself |
+| `kagent.agent.toolServer.name` | `kagent-tool-server` | kagent's tool server RemoteMCPServer (`<kagent release>-tool-server`) |
+| `kagent.agent.toolServer.namespace` | `""` | Its namespace, when it is not this release's |
 
 ## kagent integration
 
 ```bash
+# kagent 0.x
 helm install ratatosk-mcp ./charts/ratatosk-mcp \
   --namespace kagent --set kagent.enabled=true
+# kagent 1.x: name the Harness the agent runs on
+helm install ratatosk-mcp ./charts/ratatosk-mcp \
+  --namespace kagent --set kagent.enabled=true --set kagent.harness=<name>
 ```
 
 Adds a `RemoteMCPServer` (kagent discovers every tool the server exposes) and a
 ready-made `ratatosk-agent`. The agent also gets kagent's built-in read-only
 cluster tools (`k8s_get_resources`, `k8s_get_resource_yaml`) so it can find
-running versions on its own — turn this off with `kagent.agent.k8sTools=false`.
+running versions on its own; turn this off with `kagent.agent.k8sTools=false`.
 Enable only where the kagent CRDs exist.
-For plain manifests, see [`examples/kagent/`](../../examples/kagent/).
+
+The chart renders whichever kagent API the cluster serves: kagent 1.x
+(`api.kagent.dev/v1alpha3`) when it is there, otherwise kagent 0.x
+(`kagent.dev/v1alpha2`). `helm template` sees no cluster, so pass
+`--api-versions api.kagent.dev/v1alpha3` to it for the 1.x shape. Support for
+kagent 0.x will be removed once kagent 1.x is generally available.
+
+On kagent 1.x:
+
+- Every Agent runs on a Harness, and kagent creates none. Until
+  `kagent.harness` names one in this namespace, the chart installs the server
+  and the RemoteMCPServer but skips the agent; the install notes say how to add
+  it.
+- The RemoteMCPServer URL is the full Service name
+  (`<service>.<namespace>.svc.<clusterDomain>`), because kagent 1.x agents
+  cannot resolve a short one. Set `clusterDomain` if yours is not
+  `cluster.local`.
+- Keep the agent's cluster access read-only. The tool list above is enforced
+  by the kagent runtime, but a Claude Harness exposes every tool on kagent's
+  tool server, write tools included. Use a kagent-runtime Harness, or make the
+  tool server read-only; see the
+  [install guide](../../docs/install.en.md#kagent-1x).
+
+For plain manifests, see [`examples/kagent/`](../../examples/kagent/README.md).
 
 ## Upgrades
 

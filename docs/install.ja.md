@@ -26,7 +26,7 @@ Claude Desktop、kagent、自作の SDK エージェントなど、MCP に対応
 | まず試したい — 何もインストールせずに | ホスト版エンドポイントの URL を登録 | [ホスト版](#ホスト版エンドポイント) |
 | 手元の PC で Claude Code / Claude Desktop など stdio MCP クライアントを使う | `docker run`（stdio） | [ローカル](#ローカルstdio) |
 | Kubernetes で独自エージェントを運用（フレームワーク不問、CI ジョブ、SDK クライアント） | Helm チャート | [クラスタ内デプロイ](#クラスタ内への単独デプロイhelm) |
-| [kagent](https://kagent.dev) を使用中 | `kagent.enabled=true` の Helm オプション、またはマニフェスト | [kagent 統合](#kagent-統合) |
+| [kagent](https://kagent.dev) を使用中（0.x または 1.x） | `kagent.enabled=true` の Helm オプション、またはマニフェスト | [kagent 統合](#kagent-統合) |
 
 4 つの方法はいずれも同じ 7 つのツールで同じ公開データを提供し、どのモード
 でもアカウントも API キーも不要です。違いは 3 つあります。
@@ -69,7 +69,8 @@ Claude Desktop、kagent、自作の SDK エージェントなど、MCP に対応
   コンポーネントごとの `note` フィールドに `fetch failed: …` を入れて
   返します）— [トラブルシューティング](#トラブルシューティング)参照。
 - **kagent 統合**：kagent がすでにインストールされたクラスタ（kagent CRD を
-  含む）。
+  含む）。kagent 1.x では、サンプルエージェントを動かす Harness も必要です
+  （[kagent 1.x](#kagent-1x) 参照）。
 
 ## ホスト版エンドポイント
 
@@ -294,9 +295,23 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp
 
 ## kagent 統合
 
+kagent 1.x は新しい API（`api.kagent.dev/v1alpha3`）を使い、0.x の API
+（`kagent.dev/v1alpha2`）を読みません。逆も同じです。Helm チャートは正しい方を
+自分で選び、マニフェストは kagent の系列ごとに分かれています。クラスタがどちらの
+系列かは次のように確認します：
+
+```bash
+kubectl api-resources --api-group=api.kagent.dev   # agents が出れば kagent 1.x
+kubectl api-resources --api-group=kagent.dev       # agents が出れば kagent 0.x
+```
+
+kagent 0.x のサポートは、kagent 1.x が正式リリースされた時点で削除します。
+
+### kagent 0.x
+
 次の 2 つはどちらを選んでも結果は同じです。いずれか一方を実行してください。
 
-**A. Helm トグル** — インストール 1 回で、サーバー、kagent への登録
+**A. Helm トグル**：インストール 1 回で、サーバー、kagent への登録
 （RemoteMCPServer）、サンプルエージェント `ratatosk-agent` までデプロイ
 されます：
 
@@ -309,23 +324,94 @@ helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp \
 異なる場合は上書きし、サンプルエージェントなしで登録だけしたい場合は
 `kagent.agent.enabled=false` を設定してください。
 
-**B. マニフェスト** — 同じ 3 つのリソースを、Helm を使わずコピー＆ペースト
-で適用します（[詳細](../examples/kagent/README.ja.md)）：
+**B. マニフェスト**：同じ 3 つのリソースを、Helm を使わずコピー＆ペースト
+で適用します（[詳細](../examples/kagent/0.x/README.ja.md)）：
 
 ```bash
 BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
 kubectl apply -f $BASE/ratatosk-deploy.yaml
-kubectl apply -f $BASE/ratatosk-remote-mcpserver.yaml
-kubectl apply -f $BASE/ratatosk-agent.yaml
+kubectl apply -f $BASE/0.x/ratatosk-remote-mcpserver.yaml
+kubectl apply -f $BASE/0.x/ratatosk-agent.yaml
 ```
 
 この経路にクローンは不要です。マニフェストには `namespace: kagent` が
 入っています。
 
+### kagent 1.x
+
+**まず Harness。** kagent 1.x はすべての Agent を Harness（ランタイム、Agent
+Substrate の WorkerPool、スナップショットの保存先）の上で動かしますが、kagent を
+インストールしても Harness は作られません。インストール先のネームスペースに
+あるか確認してください：
+
+```bash
+kubectl get harnesses.api.kagent.dev -n kagent
+```
+
+なければ 1 つ作成してください。手順は kagent の
+[Agent harness](https://kagent.dev/docs/kagent/1.x/agents/agent-harness/)
+にあります。このエージェントには kagent ランタイム（`spec.kagent: {}`）を
+使ってください。理由は下の読み取り専用の説明にあります。
+
+**A. Helm トグル**（Harness 名を指定）：
+
+```bash
+helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp \
+  --namespace kagent --set kagent.enabled=true --set kagent.harness=<Harness 名>
+```
+
+チャートはクラスタの 1.x API を見て 1.x のオブジェクトを作ります。
+`kagent.harness` がなければサーバーと RemoteMCPServer だけをインストールして
+エージェントは作らず、インストール後の案内（NOTES）に後から追加する方法
+（`helm upgrade --reuse-values --set kagent.harness=<名前>`）が出ます。
+
+**B. マニフェスト**（[詳細](../examples/kagent/1.x/README.ja.md)）：
+
+```bash
+BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
+kubectl apply -f $BASE/ratatosk-deploy.yaml
+kubectl apply -f $BASE/1.x/ratatosk-remote-mcpserver.yaml
+curl -fsSLO $BASE/1.x/ratatosk-agent.yaml
+# spec.harnessRef.name（仮の値 your-harness）を自分の Harness 名に直してから:
+kubectl apply -f ratatosk-agent.yaml
+```
+
+**Service の完全な名前。** RemoteMCPServer は `ratatosk-mcp` ではなく
+`ratatosk-mcp.kagent.svc.cluster.local` を指します。kagent 1.x のエージェントは
+egress ポリシーに書かれたホスト名しか解決できないサンドボックスで動くため、
+短い Service 名はそこでは解決できません。チャートはリリースのネームスペースと
+`clusterDomain`（デフォルト `cluster.local`）からこの名前を作ります。
+マニフェストを使う場合、クラスタのドメインが違えば URL を書き換えてください。
+
+#### エージェントのクラスタアクセスは読み取り専用に
+
+kagent のツールサーバー（`kagent-tool-server`）には `k8s_apply_manifest`、
+`k8s_delete_resource`、`k8s_scale` などの書き込みツールもあります。サンプル
+エージェントは `k8s_get_resources` と `k8s_get_resource_yaml` だけを指定し、
+kagent ランタイムはこの一覧を守ります。Claude Harness（`spec.claude`）は
+サーバーのツールを一部だけ渡すことができず、ツールサーバーのツールをすべて
+エージェントに渡して、Agent のステータスに警告を残すだけです。そうなると
+指示文の「クラスタを変更しない」という一文だけが歯止めになります。そこで、
+次のどちらかを行ってください：
+
+- このエージェントを kagent ランタイムの Harness で動かす。または
+- kagent のインストールでツールサーバーを読み取り専用にする。
+  `--set 'kagent-tools.tools.args={--read-only}'` を指定すると、ツールサーバーは
+  書き込みツールを登録しません。`kagent-tools.rbac.readOnly=true` はツール
+  サーバーの cluster-admin 権限を読み取り専用の権限に替えますが、その権限には
+  nodes とカスタムリソースが含まれません。`kagent-tools.rbac.additionalRules`
+  で追加しないと、エージェントはノードから読むバージョン（kubelet、コンテナ
+  ランタイム）を失います。
+
+ツールサーバーは共有されるため、これらの設定はツールサーバーを使うすべての
+エージェントに適用されます。
+
 ### 確認
 
-どちらの経路でも、kagent UI に `ratatosk-agent` が現れます。こう聞いて
-みてください：
+どちらの系列でも、kagent UI に `ratatosk-agent` が現れます。kagent 1.x では
+`kubectl describe agents.api.kagent.dev ratatosk-agent -n kagent` で準備状態を
+確認できます（リソース名は完全な形で指定してください。残った 0.x の CRD が
+`kubectl get agent` に代わりに答えることがあります）。こう聞いてみてください：
 
 > 「このクラスタで、アップグレード前に対応すべきことはありますか？」
 
@@ -335,8 +421,8 @@ kubectl apply -f $BASE/ratatosk-agent.yaml
 現れない場合は[トラブルシューティング](#トラブルシューティング)を見て
 ください。
 
-> **モデルの最低要件**：エージェントを 1 回実行すると、内部でモデル
-> 呼び出しが 6 回以上発生します。一方で kagent の Go ADK は、
+> **モデルの最低要件**（kagent 0.x で測定）：エージェントを 1 回実行すると、
+> 内部でモデル呼び出しが 6 回以上発生します。一方で kagent の Go ADK は、
 > 429（リクエスト上限超過）応答をリトライしません。したがって毎分およそ
 > 10 リクエスト以上を許容するモデルティアが必要で、それより低いと実行の
 > たびに失敗します。たとえば Gemini 無料ティア（2026-07 時点）では、毎分
@@ -475,8 +561,9 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=met
 | ツール呼び出しがエラーを返し（`check_stack` はエラーの代わりにコンポーネントごとの `note` に `fetch failed: …`）、ログに `"msg":"upstream fetch failed"` と `kind: connection_refused`・`dns`・`timeout` | `kubectl logs deploy/ratatosk-mcp`（ローカルはクライアントの MCP ログ） | egress の遮断。`ratatosk.io:443` へのアウトバウンド HTTPS を許可するか、ミラーを立てて `RATATOSK_URL`（チャート：`ratatoskUrl`）で指定 |
 | ログに `"msg":"upstream rate limited"`、`status: 429` | 上と同じ | アップストリーム上限（毎分 1200 リクエスト/IP）の超過。プロジェクトごとの呼び出しを `check_stack` 1 回にまとめ、しばらく待って再試行 |
 | HTTP クライアントが `400 Bad Request: protocol version "2026-07-28" is only supported on stateless HTTP servers` を受け取る | クライアントが送る `Mcp-Protocol-Version` ヘッダー | クライアントが MCP 2026-07-28 リビジョンを使っており、ステートフル HTTP モードはこれを拒否します。`--set statelessHttp=true`（環境変数：`MCP_HTTP_STATELESS=1`）を有効にしてください — エラー文の `StreamableHTTPOptions.Stateless` は同じスイッチの Go SDK 側の名前です |
-| kagent UI に `ratatosk-agent` が現れない | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | kagent CRD のないクラスタでは `kagent.enabled=true` のインストールが失敗します — 先に kagent をインストールしてください。マニフェスト経路は `namespace: kagent` がハードコードされているため、kagent を別のネームスペースに入れている場合はマニフェストの修正が必要です |
-| kagent でエージェントランタイムを Go ADK に変えると `ImagePullBackOff` | `kubectl describe pod` | このチャートとは無関係な、kagent 0.9.12 自体の既知の問題（[#2247]、0.9.12 以降で修正）：Go ADK イメージは `ghcr.io` にのみ公開されているのに、コントローラのデフォルトが廃止済みの `cr.kagent.dev` を指しています。回避策：kagent のインストールに `--set controller.agentImage.registry=ghcr.io` |
+| kagent UI に `ratatosk-agent` が現れない | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | kagent CRD のないクラスタでは `kagent.enabled=true` のインストールが失敗します — 先に kagent をインストールしてください。kagent 1.x で `kagent.harness` が空だとチャートはエージェントを作らず（インストール後の案内に出ます）、指定した Harness が存在しなければ `kubectl describe agents.api.kagent.dev ratatosk-agent` に現れます。0.x のマニフェストを kagent 1.x に適用する（またはその逆）と "no matches for kind" で失敗するので、系列に合うセットを使ってください。マニフェスト経路は `namespace: kagent` がハードコードされているため、kagent を別のネームスペースに入れている場合はマニフェストの修正が必要です |
+| kagent 1.x：エージェントの ratatosk ツール呼び出しが接続に失敗する | `kubectl get remotemcpservers.api.kagent.dev ratatosk-mcp -n kagent -o jsonpath='{.spec.url}'` | URL が短い Service 名です。kagent 1.x のエージェントは完全な名前しか解決できません。`http://ratatosk-mcp.<namespace>.svc.cluster.local:8080/mcp` を使ってください（チャートと 1.x のマニフェストはすでにそうしています） |
+| kagent 0.x のみ：kagent でエージェントランタイムを Go ADK に変えると `ImagePullBackOff` | `kubectl describe pod` | このチャートとは無関係な、kagent 0.9.12 自体の既知の問題（[#2247]、0.9.12 以降で修正）：Go ADK イメージは `ghcr.io` にのみ公開されているのに、コントローラのデフォルトが廃止済みの `cr.kagent.dev` を指しています。回避策：kagent のインストールに `--set controller.agentImage.registry=ghcr.io` |
 | kagent エージェントが実行のたびに失敗 | エージェントログの 429 | モデルティアのリクエスト上限不足 — [kagent 統合](#kagent-統合)のモデル最低要件を参照 |
 
 [#2247]: https://github.com/kagent-dev/kagent/issues/2247

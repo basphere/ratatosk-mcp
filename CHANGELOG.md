@@ -38,9 +38,38 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `list_releases` filters by `kind` and `since`, and works across projects.
 - The kagent agent prompt (chart and example) carries every rule earned from
   live runs, moved to the new vocabulary.
+- The kagent RemoteMCPServer registers the full Service name
+  (`ratatosk-mcp.<namespace>.svc.cluster.local`, from the release namespace
+  and the new `clusterDomain` value) on both kagent lines: kagent 1.x agents
+  run in a sandbox that cannot resolve a short one.
+- The kagent 0.x manifests moved from `examples/kagent/` to
+  `examples/kagent/0.x/`. A raw URL that pointed at
+  `examples/kagent/ratatosk-remote-mcpserver.yaml` or `ratatosk-agent.yaml`
+  needs the `0.x/` segment; `ratatosk-deploy.yaml` stays where it was and
+  serves both sets.
+- CI reads the chart as rendered for each kagent API, not as template source:
+  the tool-allowlist and prompt checks cover both renderings and both example
+  sets, the prompt check also requires the four copies to say the same thing,
+  a new check pins which shape each API gets, and the install rehearsal runs
+  against pinned kagent-crds 0.10.4 and 1.0.0-rc1 in turn.
 
 ### Added
 
+- **kagent 1.x support, alongside kagent 0.x.** kagent 1.x (1.0.0-rc1 as of
+  this release) serves a new API, `api.kagent.dev/v1alpha3`, and reads no
+  `kagent.dev/v1alpha2` object. The chart renders whichever API the cluster
+  serves. On 1.x the example agent runs on a Harness named by the new
+  `kagent.harness` value; kagent creates no Harness, so with the value unset
+  the chart installs the server and its RemoteMCPServer, skips the agent, and
+  its install notes say how to add it. Plain manifests come in two sets,
+  `examples/kagent/0.x/` and `examples/kagent/1.x/`. The install guides gain a
+  read-only note: a kagent 1.x Claude Harness exposes every tool on kagent's
+  tool server, write tools included, whatever the agent's tool list says.
+  **kagent 0.x support will be removed once kagent 1.x is generally
+  available.**
+- Chart values `clusterDomain`, `kagent.harness` and
+  `kagent.agent.toolServer.{name,namespace}` (the last for a kagent tool
+  server outside the release namespace).
 - `check_upgrade`: one project, one hop, computed by the server
   (`/v2/upgrade`). `from` and `to` are sent upstream, and the tool says so.
 - `search`: find releases by advisory id, configuration flag or text.

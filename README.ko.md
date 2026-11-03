@@ -171,7 +171,7 @@ ratatosk.io에 그 프로젝트의 릴리스 목록과 최근 릴리스들을 �
 
 - **[설치와 사용법](docs/install.ko.md)** — 호스팅 엔드포인트 · 로컬 stdio · 클러스터(Helm) · kagent ([English](docs/install.en.md) · [日本語](docs/install.ja.md))
 - **[Helm 차트](charts/ratatosk-mcp/README.ko.md)** — values, kagent 토글 ([English](charts/ratatosk-mcp/README.md) · [日本語](charts/ratatosk-mcp/README.ja.md))
-- **[kagent 예제](examples/kagent/README.ko.md)** — 매니페스트 + ratatosk-agent ([English](examples/kagent/README.md) · [日本語](examples/kagent/README.ja.md))
+- **[kagent 예제](examples/kagent/README.ko.md)** — kagent 0.x · 1.x용 매니페스트 + ratatosk-agent ([English](examples/kagent/README.md) · [日本語](examples/kagent/README.ja.md))
 - **[기여 안내](CONTRIBUTING.md)** · **[보안 정책](SECURITY.md)**
 
 ## 업스트림 API

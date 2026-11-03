@@ -26,7 +26,7 @@ own SDK agent.
 | Just want to try it — installing nothing | Register the hosted endpoint URL | [Hosted](#hosted-endpoint) |
 | On a laptop with Claude Code / Claude Desktop / any stdio MCP client | `docker run` (stdio) | [Local](#local-stdio) |
 | Running your own agents in Kubernetes (any framework, CI jobs, SDK clients) | Helm chart | [In-cluster](#in-cluster-deployment-without-kagent-helm) |
-| Using [kagent](https://kagent.dev) | `kagent.enabled=true` Helm toggle, or plain manifests | [kagent integration](#kagent-integration) |
+| Using [kagent](https://kagent.dev) (0.x or 1.x) | `kagent.enabled=true` Helm toggle, or plain manifests | [kagent integration](#kagent-integration) |
 
 All four modes serve the same public data through the same seven tools, and no
 mode needs an account or an API key. Three things differ:
@@ -68,7 +68,8 @@ the details.
   (`check_stack` reports `fetch failed: …` in each component's `note` field
   instead of erroring) — see [Troubleshooting](#troubleshooting).
 - **kagent integration**: a cluster with kagent already installed (kagent
-  CRDs included).
+  CRDs included). On kagent 1.x, also a Harness for the example agent to run
+  on; see [kagent 1.x](#kagent-1x).
 
 ## Hosted endpoint
 
@@ -292,9 +293,23 @@ again on upgrade, or add `--reuse-values`.
 
 ## kagent integration
 
-Two equivalent routes — pick exactly one:
+kagent 1.x serves a new API (`api.kagent.dev/v1alpha3`) and does not read the
+0.x one (`kagent.dev/v1alpha2`), nor the other way round. The Helm chart picks
+the right one by itself; the plain manifests come in one set per kagent line.
+To see which line a cluster runs:
 
-**A. Helm toggle** — one install brings the server, the kagent registration
+```bash
+kubectl api-resources --api-group=api.kagent.dev   # lists agents: kagent 1.x
+kubectl api-resources --api-group=kagent.dev       # lists agents: kagent 0.x
+```
+
+Support for kagent 0.x will be removed once kagent 1.x is generally available.
+
+### kagent 0.x
+
+Two equivalent routes; pick exactly one.
+
+**A. Helm toggle**: one install brings the server, the kagent registration
 (RemoteMCPServer), and the example agent `ratatosk-agent`:
 
 ```bash
@@ -306,21 +321,90 @@ helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp \
 environment differs; if you want the registration without the example agent,
 set `kagent.agent.enabled=false`.
 
-**B. Plain manifests** — the same three pieces as copy-paste files, no Helm
-([details](../examples/kagent/README.md)):
+**B. Plain manifests**: the same three pieces as copy-paste files, no Helm
+([details](../examples/kagent/0.x/README.md)):
 
 ```bash
 BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
 kubectl apply -f $BASE/ratatosk-deploy.yaml
-kubectl apply -f $BASE/ratatosk-remote-mcpserver.yaml
-kubectl apply -f $BASE/ratatosk-agent.yaml
+kubectl apply -f $BASE/0.x/ratatosk-remote-mcpserver.yaml
+kubectl apply -f $BASE/0.x/ratatosk-agent.yaml
 ```
 
 No clone is needed on this route. The manifests carry `namespace: kagent`.
 
+### kagent 1.x
+
+**First, a Harness.** kagent 1.x runs every Agent on a Harness (the runtime,
+the Agent Substrate WorkerPool, and the snapshot location), and a kagent
+install creates none. Check for one in the namespace you install into:
+
+```bash
+kubectl get harnesses.api.kagent.dev -n kagent
+```
+
+If there is none, create one; see kagent's
+[Agent harness](https://kagent.dev/docs/kagent/1.x/agents/agent-harness/)
+guide. Use the kagent runtime (`spec.kagent: {}`) for this agent; the
+read-only note below says why.
+
+**A. Helm toggle**, naming the Harness:
+
+```bash
+helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp \
+  --namespace kagent --set kagent.enabled=true --set kagent.harness=<your Harness>
+```
+
+The chart sees the 1.x API on the cluster and renders 1.x objects. Without
+`kagent.harness` it installs the server and the RemoteMCPServer but skips the
+agent, and its install notes say how to add it later (`helm upgrade
+--reuse-values --set kagent.harness=<name>`).
+
+**B. Plain manifests** ([details](../examples/kagent/1.x/README.md)):
+
+```bash
+BASE=https://raw.githubusercontent.com/basphere/ratatosk-mcp/main/examples/kagent
+kubectl apply -f $BASE/ratatosk-deploy.yaml
+kubectl apply -f $BASE/1.x/ratatosk-remote-mcpserver.yaml
+curl -fsSLO $BASE/1.x/ratatosk-agent.yaml
+# set spec.harnessRef.name (placeholder: your-harness) to your Harness, then:
+kubectl apply -f ratatosk-agent.yaml
+```
+
+**Full Service name.** The RemoteMCPServer points at
+`ratatosk-mcp.kagent.svc.cluster.local`, not `ratatosk-mcp`: kagent 1.x agents
+run in a sandbox that resolves only the hostnames its egress policy names, so
+a short Service name never resolves there. The chart builds the name from the
+release namespace and `clusterDomain` (default `cluster.local`); in the
+manifests, edit the URL if your cluster domain differs.
+
+#### Keep the agent's cluster access read-only
+
+kagent's tool server (`kagent-tool-server`) also carries write tools, such as
+`k8s_apply_manifest`, `k8s_delete_resource` and `k8s_scale`. The example agent
+names only `k8s_get_resources` and `k8s_get_resource_yaml`, and the kagent
+runtime holds it to that list. A Claude Harness (`spec.claude`) cannot expose
+part of a server: it hands the agent every tool on the tool server and only
+records a warning in the Agent's status, which leaves the prompt's "never
+modify the cluster" as the only guard. So either:
+
+- run this agent on a kagent-runtime Harness, or
+- make the tool server read-only on the kagent install:
+  `--set 'kagent-tools.tools.args={--read-only}'` stops it from registering
+  write tools at all. `kagent-tools.rbac.readOnly=true` also swaps its
+  cluster-admin role for a read-only one, but that role covers neither nodes
+  nor custom resources; add them through `kagent-tools.rbac.additionalRules`,
+  or the agent loses the node versions (kubelet, container runtime) it reads.
+
+The tool server is shared, so these settings apply to every agent that uses
+it.
+
 ### Verify
 
-Either way, `ratatosk-agent` appears in the kagent UI. Ask it:
+On either line, `ratatosk-agent` appears in the kagent UI. On kagent 1.x,
+`kubectl describe agents.api.kagent.dev ratatosk-agent -n kagent` shows whether
+it is ready (use the full resource name: leftover 0.x CRDs can answer a plain
+`kubectl get agent`). Ask it:
 
 > "Anything in this cluster that needs action before we upgrade?"
 
@@ -329,12 +413,13 @@ read-only cluster tools (disable with `kagent.agent.k8sTools=false`). You can
 also name the versions in the question. If the agent does not appear in the
 UI, see [Troubleshooting](#troubleshooting).
 
-> **Model minimum**: one agent run makes six or more internal model calls,
-> and the kagent Go ADK does not retry 429 (rate-limited) responses. You
-> therefore need a model tier that allows roughly 10+ requests per minute;
-> below that, every run fails. For example, on the Gemini free tier (as of
-> 2026-07) the full-flash models, capped at 5 requests per minute, never
-> complete a run; only the flash-lite models have limits high enough.
+> **Model minimum** (measured on kagent 0.x): one agent run makes six or
+> more internal model calls, and the kagent Go ADK does not retry 429
+> (rate-limited) responses. You therefore need a model tier that allows
+> roughly 10+ requests per minute; below that, every run fails. For example,
+> on the Gemini free tier (as of 2026-07) the full-flash models, capped at 5
+> requests per minute, never complete a run; only the flash-lite models have
+> limits high enough.
 
 ## Configuration reference
 
@@ -467,8 +552,9 @@ nothing is recorded.
 | Tool calls return errors (`check_stack` instead reports `fetch failed: …` in each component's `note`); the log shows `"msg":"upstream fetch failed"` with `kind: connection_refused`, `dns`, or `timeout` | `kubectl logs deploy/ratatosk-mcp` (locally: your client's MCP logs) | Egress is blocked. Allow outbound HTTPS to `ratatosk.io:443`, or set up a mirror and point `RATATOSK_URL` (chart: `ratatoskUrl`) at it |
 | The log shows `"msg":"upstream rate limited"`, `status: 429` | Same as above | Upstream limit exceeded (1200 requests/minute per IP). Prefer one `check_stack` call for a whole stack over many per-project calls, and retry after a pause |
 | An HTTP client gets `400 Bad Request: protocol version "2026-07-28" is only supported on stateless HTTP servers` | The `Mcp-Protocol-Version` header the client sends | The client speaks the 2026-07-28 MCP revision, which stateful HTTP mode rejects. Turn on `--set statelessHttp=true` (env: `MCP_HTTP_STATELESS=1`) — the `StreamableHTTPOptions.Stateless` named in the error is the Go SDK's name for the same switch |
-| `ratatosk-agent` does not appear in the kagent UI | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | Installing with `kagent.enabled=true` fails on a cluster without the kagent CRDs — install kagent first. The manifest route hardcodes `namespace: kagent`, so if kagent lives in another namespace, edit the manifests |
-| `ImagePullBackOff` after switching the kagent agent runtime to the Go ADK | `kubectl describe pod` | A known issue in kagent 0.9.12 itself, unrelated to this chart ([#2247], fixed after 0.9.12): the Go ADK image is published only to `ghcr.io` while the controller default points at the retired `cr.kagent.dev`. Workaround: `--set controller.agentImage.registry=ghcr.io` on the kagent install |
+| `ratatosk-agent` does not appear in the kagent UI | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | Installing with `kagent.enabled=true` fails on a cluster without the kagent CRDs — install kagent first. On kagent 1.x the chart skips the agent while `kagent.harness` is empty (the install notes say so), and a set Harness that does not exist shows in `kubectl describe agents.api.kagent.dev ratatosk-agent`. Applying the 0.x manifests to kagent 1.x, or the reverse, fails with "no matches for kind"; use the set for your line. The manifest route hardcodes `namespace: kagent`, so if kagent lives in another namespace, edit the manifests |
+| kagent 1.x: the agent's ratatosk tool calls fail to connect | `kubectl get remotemcpservers.api.kagent.dev ratatosk-mcp -n kagent -o jsonpath='{.spec.url}'` | The URL uses a short Service name. kagent 1.x agents resolve only full names: use `http://ratatosk-mcp.<namespace>.svc.cluster.local:8080/mcp` (the chart and the 1.x manifests already do) |
+| kagent 0.x only: `ImagePullBackOff` after switching the kagent agent runtime to the Go ADK | `kubectl describe pod` | A known issue in kagent 0.9.12 itself, unrelated to this chart ([#2247], fixed after 0.9.12): the Go ADK image is published only to `ghcr.io` while the controller default points at the retired `cr.kagent.dev`. Workaround: `--set controller.agentImage.registry=ghcr.io` on the kagent install |
 | The kagent agent fails every run | 429 in the agent logs | The model tier's request limit is too low — see the model minimum under [kagent integration](#kagent-integration) |
 
 [#2247]: https://github.com/kagent-dev/kagent/issues/2247

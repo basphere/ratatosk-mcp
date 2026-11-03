@@ -181,7 +181,7 @@ has none by design. Details in the [install guide](docs/install.en.md).
 
 - **[Install & usage](docs/install.en.md)** — hosted endpoint · local stdio · in-cluster (Helm) · kagent ([한국어](docs/install.ko.md) · [日本語](docs/install.ja.md))
 - **[Helm chart](charts/ratatosk-mcp/README.md)** — values, kagent toggle ([한국어](charts/ratatosk-mcp/README.ko.md) · [日本語](charts/ratatosk-mcp/README.ja.md))
-- **[kagent example](examples/kagent/README.md)** — manifests + ratatosk-agent ([한국어](examples/kagent/README.ko.md) · [日本語](examples/kagent/README.ja.md))
+- **[kagent example](examples/kagent/README.md)** — manifests for kagent 0.x and 1.x + ratatosk-agent ([한국어](examples/kagent/README.ko.md) · [日本語](examples/kagent/README.ja.md))
 - **[Contributing](CONTRIBUTING.md)** · **[Security policy](SECURITY.md)**
 
 ## Upstream API
