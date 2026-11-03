@@ -163,7 +163,7 @@ stdio は、MCP クライアントがサーバーを子プロセスとして起�
 ### Claude Code
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0
 ```
 
 `0.7.4` の部分には任意の
@@ -182,7 +182,7 @@ Claude Desktop は CLI の代わりに設定ファイル
   "mcpServers": {
     "ratatosk": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:0.7.4"]
+      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:1.0.0"]
     }
   }
 }
@@ -208,7 +208,7 @@ stdio に対応した MCP クライアントであれば、いずれも同じ手
 
 ```bash
 claude mcp list
-# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4 - ✔ Connected
+# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0 - ✔ Connected
 ```
 
 そのうえで、エージェントにこう聞いてみてください：
@@ -362,7 +362,7 @@ kubectl apply -f $BASE/ratatosk-agent.yaml
 docker で HTTP モードを直接起動する例：
 
 ```bash
-docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:0.7.4
+docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.0.0
 ```
 
 ## ログと監査ストリーム
@@ -400,7 +400,7 @@ docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mc
 
 ```bash
 # docker
-docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:0.7.4
+docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:1.0.0
 
 # Helm
 helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=metadata

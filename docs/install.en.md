@@ -164,7 +164,7 @@ laptop with Claude Code or Claude Desktop.
 ### Claude Code
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0
 ```
 
 In place of `0.7.4` you can use any
@@ -183,7 +183,7 @@ Claude Desktop registers MCP servers through a config file
   "mcpServers": {
     "ratatosk": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:0.7.4"]
+      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:1.0.0"]
     }
   }
 }
@@ -208,7 +208,7 @@ Any MCP client that speaks stdio works the same way.
 
 ```bash
 claude mcp list
-# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4 - ✔ Connected
+# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0 - ✔ Connected
 ```
 
 Then ask your agent:
@@ -355,7 +355,7 @@ the [chart README](../charts/ratatosk-mcp/README.md).
 Running HTTP mode directly with Docker:
 
 ```bash
-docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:0.7.4
+docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.0.0
 ```
 
 ## Logs and the audit stream
@@ -392,7 +392,7 @@ Enable it with `MCP_AUDIT`:
 
 ```bash
 # docker
-docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:0.7.4
+docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:1.0.0
 
 # Helm
 helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=metadata

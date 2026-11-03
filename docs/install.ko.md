@@ -153,7 +153,7 @@ stdio는 MCP 클라이언트가 서버를 자식 프로세스로 띄우고 표�
 ### Claude Code
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0
 ```
 
 `0.7.4` 자리에는 원하는 [릴리스 태그](https://github.com/basphere/ratatosk-mcp/releases)를
@@ -170,7 +170,7 @@ Claude Desktop은 CLI 대신 설정 파일(`claude_desktop_config.json`)로 MCP
   "mcpServers": {
     "ratatosk": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:0.7.4"]
+      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:1.0.0"]
     }
   }
 }
@@ -195,7 +195,7 @@ stdio를 지원하는 MCP 클라이언트라면 무엇이든 같은 방식입니
 
 ```bash
 claude mcp list
-# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:0.7.4 - ✔ Connected
+# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0 - ✔ Connected
 ```
 
 그리고 에이전트에게 이렇게 물어보세요:
@@ -343,7 +343,7 @@ kubectl apply -f $BASE/ratatosk-agent.yaml
 docker로 HTTP 모드를 직접 띄우는 예:
 
 ```bash
-docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:0.7.4
+docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.0.0
 ```
 
 ## 로그와 감사 스트림
@@ -379,7 +379,7 @@ docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mc
 
 ```bash
 # docker
-docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:0.7.4
+docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:1.0.0
 
 # Helm
 helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=metadata
