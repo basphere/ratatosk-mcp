@@ -6,14 +6,14 @@
 方法を説明します。何もインストールせずホスト型エンドポイントに接続する
 方法、手元の PC で stdio サーバーを動かす方法、Kubernetes クラスタに Helm
 でデプロイする方法、そして kagent と統合する方法です。クライアントごとの
-登録先は[クライアントへのエンドポイント登録](#クライアントへのエンドポイント登録)
+登録方法は[クライアントへのエンドポイント登録](#クライアントへのエンドポイント登録)
 と[その他の stdio クライアント](#その他の-stdio-クライアント)にまとめています。
 
 **MCP（Model Context Protocol）** は、AI エージェントが外部ツールを呼び出す
 ときに使う標準プロトコルです。ratatosk-mcp はこのプロトコルで 6 つの
-ツールを提供するサーバーです。`check_stack`（稼働中のバージョン一覧を受け取り、
-アップグレード経路ごとにアップグレード前の確認事項・判断が必要な変更・
-バージョン番号の飛びを返す。比較はサーバープロセスの中）、
+ツールを提供するサーバーです。`check_stack`（稼働中のバージョン一覧を受け取って
+サーバープロセスの中で比較し、アップグレード経路ごとにアップグレード前の
+確認事項・判断が必要な変更・バージョン番号の飛びを返す）、
 `check_upgrade`（1 プロジェクトの 1 回のアップグレードをサーバーが計算）、
 `get_release`（リリース 1 件の全体）、`list_releases`（最近のリリース要約）、
 `search`（アドバイザリ番号・フラグ・テキストで検索）、
@@ -37,16 +37,15 @@ Grok、Claude Code、Codex、Gemini CLI、Antigravity、kagent、自作の SDK
   ではバージョン比較が利用者のプロセス内で完結し、そのバージョンはインフラ
   を離れません。ホスト型ではバージョンがサーバーメモリを通過しますが、
   どのログにも記録されません。
-- **アップストリームのリクエスト上限を誰と分け合うか。** ホスト型では
-  呼び出し元ごとに毎分 60 回のツール呼び出しができ、サーバーのアップストリーム
-  の枠はホスト型の呼び出し元全員で分け合います。セルフホストは自分の IP の枠
-  （アップストリームへ毎分 1200 リクエスト）を使います。
+- **どのリクエスト上限がかかるか。** ホスト型では呼び出し元ごとに毎分
+  60 リクエストまでで、サーバーのアップストリームの枠はホスト型の呼び出し元
+  全員で分け合います。セルフホストは自分の IP の枠（アップストリームへ毎分
+  1200 リクエスト）を使います。
 - **監査ストリームを残せるか。** セルフホストのみ可能です。
 
-共通点も 1 つあります。`get_release` のように特定バージョンを引数に取る
-ツールは、どの方法でもそのバージョンをアップストリームのリクエストパスに
-載せて取得します。取得対象を名指しする値だからです。ただしそのパスも
-サーバー側のログには残りません。アクセスログが記録前にクエリ文字列を
+どの方法でも、`get_release` のように特定バージョンを引数に取るツールは、
+そのバージョンをアップストリームのリクエストパスに載せて取得します。取得対象を
+名指しする値だからです。ただしそのパスもサーバー側のログには残りません。アクセスログが記録前にクエリ文字列を
 除去し、`/v2/releases/…`・`/v2/upgrade/…` のパスをプレフィックスだけに
 縮めるためです。詳細は各セクションで説明します。
 
@@ -68,10 +67,11 @@ Grok、Claude Code、Codex、Gemini CLI、Antigravity、kagent、自作の SDK
   あります。NetworkPolicy や egress プロキシでアウトバウンドを制限している
   クラスタでは、この宛先を許可リストに追加してください。プロキシやミラーを
   経由する必要があるなら、`RATATOSK_URL`（チャート値：`ratatoskUrl`）で
-  アップストリームのアドレスを変更できます。遮断されたまま実行するとツールが
-  エラーを返すか、結果が空になります（`check_stack` はエラーの代わりに
-  コンポーネントごとの `note` フィールドに `fetch failed: …` を入れて
-  返します）。[トラブルシューティング](#トラブルシューティング)を参照してください。
+  アップストリームのアドレスを変更できます。遮断されたまま実行するとツールは
+  エラーを返します（`check_stack` は「could not read the project list」）。
+  一部の取得だけが失敗した場合、`check_stack` は応答を返し、影響を受けた
+  コンポーネントの `note` に `fetch failed: …` を入れます。
+  [トラブルシューティング](#トラブルシューティング)を参照してください。
 - **kagent 統合**：kagent がすでにインストールされたクラスタ（kagent CRD を
   含む）。kagent 1.x では、サンプルエージェントを動かす Harness も必要です
   （[kagent 1.x](#kagent-1x) 参照）。
@@ -89,8 +89,8 @@ URL はどのクライアントでも同じで、入力する場所だけが違�
 
 | クライアント | `https://ratatosk.io/mcp` を登録する場所 |
 |---|---|
-| Claude（ウェブ・デスクトップ） | 設定 → コネクタ → カスタムコネクタを追加 にこのアドレスを入れます（[ドキュメント](https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp)） |
-| ChatGPT | chatgpt.com/plugins で + を押して Add custom MCP server を選び、このアドレスを入れて、認証は No authentication を選びます（[ドキュメント](https://developers.openai.com/api/docs/guides/custom-mcp-server)） |
+| Claude（ウェブ・デスクトップ） | Customize → Connectors → + Add → Add custom connector でこのアドレスを入れます。Team・Enterprise プランでは、オーナーが Organization settings → Connectors で追加し、メンバーは Customize → Connectors で接続します（[ドキュメント](https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp)） |
+| ChatGPT（ウェブ） | chatgpt.com/plugins で + を押して Add custom MCP server を選び、このアドレスをサーバー URL に入れます。認証はなしです（[ドキュメント](https://developers.openai.com/api/docs/guides/custom-mcp-server)） |
 | Grok | grok.com/connectors で New Connector → Custom を選び、このアドレスを入れます（[ドキュメント](https://docs.x.ai/grok/connectors)） |
 | Claude Code | `claude mcp add --transport http ratatosk https://ratatosk.io/mcp`（[ドキュメント](https://code.claude.com/docs/en/mcp)） |
 | Grok Build | `grok mcp add --transport http ratatosk https://ratatosk.io/mcp`（[ドキュメント](https://docs.x.ai/build/features/mcp-servers)） |
@@ -139,13 +139,16 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
   （GET で開く SSE）を提供しないため、405 応答が正常な動作です。ブラウザの
   アドレスバーで開くと案内ページ（`/docs/mcp`）にリダイレクトされます。
 - **適正利用について**：ホスト型エンドポイントは**呼び出し元ごとに毎分
-  60 回のツール呼び出し**を許可します。全体で分け合う枠ではなく呼び出し元の
+  60 リクエスト**を許可します。全体で分け合う枠ではなく呼び出し元の
   アドレスごとに数えるので、誰か 1 人が忙しくても他の利用者が枯渇しません。
-  超えると `Retry-After` 付きの `429` が返ります。ツール呼び出し 1 回は
-  API リクエスト 1 回ではありません（`check_stack` はコンポーネントごとに
-  そのプロジェクトの最近のリリースをすべて読みます）。上限をツール呼び出し
-  単位で数えるのはそのためです。直接 `/v2` を呼ぶ場合は自分の IP の枠
-  として毎分 1200 リクエストが使えます。ポーリングのような負荷の高い使い方
+  MCP のメッセージはすべて数えます。クライアントは接続に 2 つか 3 つ
+  （`initialize`、`notifications/initialized`、`tools/list`）を使い、そのあとは
+  ツール呼び出し 1 回につき 1 つです。超えると `Retry-After` 付きの `429` が
+  返ります。アップストリーム側では、ツール呼び出し 1 回が多数の API リクエスト
+  になることがあります（`check_stack` はコンポーネントごとにそのプロジェクトの
+  最近のリリースをすべて読みます）。そのコストはサーバーが負うもので、利用者の
+  60 には含まれません。直接 `/v2` を呼ぶ場合は自分の IP の枠として毎分
+  1200 リクエストが使えます。ポーリングのような負荷の高い使い方
   が必要なら、セルフホストに切り替えてください。
 
 ### プライバシー：ホスト型エンドポイントが記録するもの
@@ -161,15 +164,17 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
   ラベルと trace_id だけです。パス・クエリは記録されません。
 - サーバー前段のアクセスログはクエリ文字列を除去し、スラッグ・バージョンが
   パスに載る `/v2/releases/…`・`/v2/upgrade/…` のパスはプレフィックスだけを
-  残し、IP をマスクし、リクエストボディの記録項目自体がありません。外部には
-  送信されず、サーバーローカルでサイズ基準のローテーションが行われます
-  （現在のトラフィックで数日分）。
+  残し、IP をマスクし、リクエストボディの記録項目自体がありません。サーバーの
+  ローカルでは 7 日以内にローテーションされ、写しが運営者の中央ログストアにも
+  送られます。そちらの保持期間も 7 日です。
 - 後述の監査ストリームはホスト型では無効で、有効にすることはありません。
 
-ただし、管理の及ばない境界が 1 つあります。CDN 区間の接続
-メタデータは CDN 事業者のポリシーに従い、これは ratatosk.io が制御できない
-領域です。この境界が要件に合わない場合はセルフホストを使ってください。
-`check_stack` に渡したバージョンがプロセスの外に出なくなります。
+ただし、Ratatosk の管理が及ばない境界が 1 つあります。ratatosk.io は
+Cloudflare の背後にあり、TLS は Cloudflare で終端されるため、リクエストの内容
+（ホスト型の `check_stack` 呼び出しに含まれるバージョンを含む）は転送の途中で
+Cloudflare を通過し、Cloudflare のポリシーに従います。この境界が要件に合わない
+場合はセルフホストを使ってください。`check_stack` に渡したバージョンがプロセスの
+外に出なくなります。
 
 ## ローカル（stdio）
 
@@ -218,14 +223,13 @@ Claude Desktop は CLI の代わりに設定ファイル
 
 | クライアント | 場所 |
 |---|---|
-| ChatGPT デスクトップアプリ | 設定 → MCP servers → Add server で STDIO を選び、このコマンドを入れます |
 | Codex | `~/.codex/config.toml` に書きます。`[mcp_servers.ratatosk]` に `command = "docker"`、`args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.0.0"]`、`startup_timeout_sec = 60`（初回の実行でイメージを取得するため） |
 | Gemini CLI | `~/.gemini/settings.json` に書きます。上の Claude Desktop と同じ `mcpServers` ブロックです |
 | Antigravity | `~/.gemini/config/mcp_config.json` に書きます。上の Claude Desktop と同じ `mcpServers` ブロックです |
 | Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0` |
 
-grok.com 自体は公開アドレスにしか接続できないため、手元のマシンで動かす
-サーバーではなく、ホスト型エンドポイントを登録します。
+ChatGPT と grok.com は手元のマシンのコマンドではなく URL に接続するため、
+ホスト型エンドポイントを登録します。
 
 ### ソースからビルド
 
@@ -271,8 +275,8 @@ helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp
 ```
 
 RBAC もシークレットも不要で、Pod Security Standards（PSS）の `restricted`
-プロファイルでも警告なしに動作します。チャートオプションの全体は
-[チャート README](../charts/ratatosk-mcp/README.ja.md) にまとまっています。
+プロファイルでも警告なしに動作します。チャートの値はすべて
+[チャート README](../charts/ratatosk-mcp/README.ja.md) に載っています。
 MCP 仕様 2026-07-28 リビジョンを使う最新クライアント
 （`Mcp-Protocol-Version: 2026-07-28` ヘッダーを送るクライアント）を HTTP
 で受け付ける場合や、レプリカを 2 つ以上に増やす予定がある場合は、
@@ -293,7 +297,7 @@ kubectl get pods -l app.kubernetes.io/name=ratatosk-mcp
 
 ```bash
 kubectl logs deploy/ratatosk-mcp
-# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.0.0"}
+# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.0.0","rate_limit":"off"}
 ```
 
 ヘルスチェックまで確認するなら：
@@ -476,7 +480,7 @@ kagent ランタイムはこの一覧を守ります。Claude Harness（`spec.cl
 | `MCP_HTTP_STATELESS` | `statelessHttp` | *（オフ）* | `1` でセッション状態なしの HTTP：`Mcp-Session-Id` の往復がなく、MCP 仕様 2026-07-28 リビジョンを使う最新クライアントを HTTP で受けるには必須です。レプリカ 2 つ以上への水平スケールにも推奨。旧来のクライアントはどちらでも動きます |
 | `MCP_LOG` | `logLevel` | `info` | 許容値は `info`（デフォルト）・`debug`・`warn`・`error` です。認識できない値は警告なしに `info` として扱われます。`debug` はアップストリーム呼び出しごとの所要時間を追加し、`warn`・`error` はログを減らします。どのレベルでもリクエスト引数は記録されません。[ログと監査ストリーム](#ログと監査ストリーム)参照 |
 | `MCP_AUDIT` | `auditMode` | *（オフ）* | `metadata` または `full`：ツール呼び出しの監査ストリーム。[監査ストリームを有効にする](#監査ストリームを有効にする)参照 |
-| `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *（オフ）* | 呼び出し元ごとの毎分ツール呼び出し上限。自分が管理していない呼び出し元を受けるサーバー向けです。呼び出し元アドレスごとに枠を分けるため、誰か 1 人が忙しくても他が枯渇しません。超えると `Retry-After` 付きの `429` を返します。アドレスはウィンドウの間だけのメモリ上のバケットキーであり、記録もアップストリームへの転送もしません。`CF-Connecting-IP` → `X-Forwarded-For` → `X-Real-IP` → ピアアドレスの順に読むため、前段のプロキシがいずれかを設定し、**クライアントが送ってきた値は削除する**必要があります。呼び出し元が操作できる値をキーにしたら制限になりません。単一利用者のインストールではオフのままに |
+| `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *（オフ）* | 呼び出し元ごとの毎分リクエスト上限（MCP のメッセージはすべて数え、ツール呼び出しは 1 回につき 1 つ）。自分が管理していない呼び出し元を受けるサーバー向けです。呼び出し元アドレスごとに枠を分けるため、誰か 1 人が忙しくても他が枯渇しません。超えると `Retry-After` 付きの `429` を返します。アドレスはウィンドウの間だけのメモリ上のバケットキーであり、記録もアップストリームへの転送もしません。`CF-Connecting-IP` → `X-Forwarded-For` → `X-Real-IP` → ピアアドレスの順に読むため、前段のプロキシがいずれかを設定し、**クライアントが送ってきた値は削除する**必要があります。呼び出し元が操作できる値をキーにしたら制限になりません。単一利用者のインストールではオフのままに |
 
 docker で HTTP モードを直接起動する例：
 
@@ -591,7 +595,7 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=met
 
 | 症状 | 確認 | 原因と対処 |
 |---|---|---|
-| ツール呼び出しがエラーを返し（`check_stack` はエラーの代わりにコンポーネントごとの `note` に `fetch failed: …`）、ログに `"msg":"upstream fetch failed"` と `kind: connection_refused`・`dns`・`timeout` | `kubectl logs deploy/ratatosk-mcp`（ローカルはクライアントの MCP ログ） | egress の遮断。`ratatosk.io:443` へのアウトバウンド HTTPS を許可するか、ミラーを立てて `RATATOSK_URL`（チャート：`ratatoskUrl`）で指定 |
+| ツール呼び出しがエラーを返し（`check_stack` は「could not read the project list: …」。一部の取得だけが失敗した場合はコンポーネントの `note` に `fetch failed: …`）、ログに `"msg":"upstream fetch failed"` と `kind: connection_refused`・`dns`・`timeout` | `kubectl logs deploy/ratatosk-mcp`（ローカルはクライアントの MCP ログ） | egress の遮断。`ratatosk.io:443` へのアウトバウンド HTTPS を許可するか、ミラーを立てて `RATATOSK_URL`（チャート：`ratatoskUrl`）で指定 |
 | ログに `"msg":"upstream rate limited"`、`status: 429` | 上と同じ | アップストリーム上限（毎分 1200 リクエスト/IP）の超過。プロジェクトごとの呼び出しを `check_stack` 1 回にまとめ、しばらく待って再試行 |
 | HTTP クライアントが `400 Bad Request: protocol version "2026-07-28" is only supported on stateless HTTP servers` を受け取る | クライアントが送る `Mcp-Protocol-Version` ヘッダー | クライアントが MCP 2026-07-28 リビジョンを使っており、ステートフル HTTP モードはこれを拒否します。`--set statelessHttp=true`（環境変数：`MCP_HTTP_STATELESS=1`）を有効にしてください。エラー文の `StreamableHTTPOptions.Stateless` は同じスイッチの Go SDK 側の名前です |
 | kagent UI に `ratatosk-agent` が現れない | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | kagent CRD のないクラスタでは `kagent.enabled=true` のインストールが失敗します。先に kagent をインストールしてください。kagent 1.x で `kagent.harness` が空だとチャートはエージェントを作らず（インストール後の案内に出ます）、指定した Harness が存在しなければ `kubectl describe agents.api.kagent.dev ratatosk-agent` に現れます。0.x のマニフェストを kagent 1.x に適用する（またはその逆）と "no matches for kind" で失敗するので、系列に合うセットを使ってください。マニフェスト経路は `namespace: kagent` がハードコードされているため、kagent を別のネームスペースに入れている場合はマニフェストの修正が必要です |
