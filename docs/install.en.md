@@ -87,8 +87,8 @@ The URL is the same everywhere; only where you enter it differs.
 
 | Client | Where to register `https://ratatosk.io/mcp` |
 |---|---|
-| Claude (web, desktop) | Settings → Connectors → Add custom connector ([docs](https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp)) |
-| ChatGPT | chatgpt.com/plugins → + → Add custom MCP server, then choose No authentication ([docs](https://developers.openai.com/api/docs/guides/custom-mcp-server)) |
+| Claude (web, desktop) | Customize → Connectors → + Add → Add custom connector. On Team and Enterprise an owner adds it under Organization settings → Connectors, and members connect it under Customize → Connectors ([docs](https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp)) |
+| ChatGPT (web) | chatgpt.com/plugins → + → Add custom MCP server, enter the URL as the server URL, no authentication ([docs](https://developers.openai.com/api/docs/guides/custom-mcp-server)) |
 | Grok | grok.com/connectors → New Connector → Custom ([docs](https://docs.x.ai/grok/connectors)) |
 | Claude Code | `claude mcp add --transport http ratatosk https://ratatosk.io/mcp` ([docs](https://code.claude.com/docs/en/mcp)) |
 | Grok Build | `grok mcp add --transport http ratatosk https://ratatosk.io/mcp` ([docs](https://docs.x.ai/build/features/mcp-servers)) |
@@ -220,14 +220,13 @@ it differs.
 
 | Client | Where |
 |---|---|
-| ChatGPT desktop app | Settings → MCP servers → Add server, choose STDIO, enter the command |
 | Codex | `~/.codex/config.toml`: `[mcp_servers.ratatosk]` with `command = "docker"`, `args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.0.0"]` and `startup_timeout_sec = 60` (the first run pulls the image) |
 | Gemini CLI | `~/.gemini/settings.json`: the same `mcpServers` block as Claude Desktop above |
 | Antigravity | `~/.gemini/config/mcp_config.json`: the same `mcpServers` block as Claude Desktop above |
 | Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0` |
 
-grok.com itself connects only to public URLs, so it takes the hosted
-endpoint, not a server on your machine.
+ChatGPT and grok.com connect to a URL, not to a command on your machine, so
+they take the hosted endpoint.
 
 ### Build from source
 
