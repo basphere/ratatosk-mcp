@@ -60,7 +60,7 @@ Each change carries only the attributes its kind uses:
 | `workaround`, `regression_since`, `also_touches`, `doubt` | all | A stated workaround; when the defect started; other kinds this change also touches; a kind the reading hesitated on |
 
 Attributes that can be stated or not are `{ "text", "status" }`, and `status`
-is one of `stated` (the release notes say it), `inferred` (read out of them;
+is one of `stated` (the release notes say it), `inferred` (derived from them;
 `reason` says why), `not_stated`, or `not_read` (a source could not be read).
 Every change and before-upgrade item carries `evidence`: the lines it came
 from, verbatim, with their URL and `source`: `release_notes`,

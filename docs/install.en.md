@@ -2,18 +2,18 @@
 
 [English](install.en.md) · [한국어](install.ko.md) · [日本語](install.ja.md)
 
-This page covers the four ways to use Ratatosk's release changes from an AI
-agent: the hosted endpoint, with nothing to install; a stdio server on your
+This page covers the four ways to give an AI agent access to Ratatosk's
+release changes: the hosted endpoint, with nothing to install; a stdio server on your
 laptop; a Helm deployment inside a Kubernetes cluster; and the kagent
-integration. Where each client takes the server is listed under
+integration. How to register the server with each client is under
 [Register the endpoint with your client](#register-the-endpoint-with-your-client)
 and [Other stdio clients](#other-stdio-clients).
 
 **MCP (Model Context Protocol)** is the standard protocol AI agents use to
 call external tools. ratatosk-mcp is a server that speaks this protocol and
-provides six tools: `check_stack` (takes the component versions you run and
-returns what each upgrade path brings: before-upgrade checks, the changes that
-ask for a decision, version gaps; compared inside the server process),
+provides six tools: `check_stack` (takes the component versions you run,
+compares them inside the server process, and returns each upgrade path's
+before-upgrade checks, changes that ask for a decision, and version gaps),
 `check_upgrade` (the same for one project and one hop, computed by the server),
 `get_release` (one release in full), `list_releases` (recent releases as
 summaries), `search` (by advisory id, flag or text), and `list_projects`
@@ -25,7 +25,7 @@ own SDK agent.
 
 | Your situation | Use | Section |
 | --- | --- | --- |
-| Just want to try it, installing nothing | Register the hosted endpoint URL | [Hosted](#hosted-endpoint) |
+| Want to try it without installing anything | Register the hosted endpoint URL | [Hosted](#hosted-endpoint) |
 | On a laptop with Claude Code, Claude Desktop, Codex, Gemini CLI or any stdio MCP client | `docker run` (stdio) | [Local](#local-stdio) |
 | Running your own agents in Kubernetes (any framework, CI jobs, SDK clients) | Helm chart | [In-cluster](#in-cluster-deployment-without-kagent-helm) |
 | Using [kagent](https://kagent.dev) (0.x or 1.x) | `kagent.enabled=true` Helm toggle, or plain manifests | [kagent integration](#kagent-integration) |
@@ -37,16 +37,15 @@ mode needs an account or an API key. Three things differ:
   the comparison finishes inside your own process, so the versions never
   leave your infrastructure. Hosted, they pass through server memory but are
   written to no log.
-- **Whose request limit you share.** Hosted gives each caller 60 tool calls
+- **Which request limits apply.** Hosted gives each caller 60 tool calls
   a minute, and every hosted caller shares the server's upstream allowance;
   self-hosted gets its own IP's 1200 upstream requests a minute.
 - **Whether you can keep an audit stream.** Self-hosted only.
 
-One thing is true in every mode:
-tools that take a specific version as an argument, like `get_release`, put
-that version in the upstream request path, because naming the release is how
-it is fetched. Even that path does not land in server-side logs,
-though: the access log strips query strings and reduces `/v2/releases/…` and
+In every mode, tools that take a specific version as an argument, like
+`get_release`, put that version in the upstream request path, because naming
+the release is how it is fetched. Even that path does not land in server-side
+logs, though: the access log strips query strings and reduces `/v2/releases/…` and
 `/v2/upgrade/…` paths to their prefix before writing. Each section below has
 the details.
 

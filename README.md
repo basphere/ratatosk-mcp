@@ -18,12 +18,12 @@
 
 ---
 
-[ratatosk.io](https://ratatosk.io) follows the CNCF projects and reads every
-new release note, plus the PRs and documents the note links when the note
-alone does not say enough. Each change is sorted into one of seven kinds:
+[ratatosk.io](https://ratatosk.io) follows the CNCF projects and reads each
+new release note, along with the PRs and documents it links when the note does
+not give enough detail. Each change is sorted into one of seven kinds:
 security, breaking, deprecations, important fixes, enhancements, dependency
-updates, other. Each one says who it affects, what to do about it, and which
-release-note lines it came from. What to check before upgrading
+updates, other. Each change names who it affects, what to do about it, and
+which release-note lines it came from. What to check before upgrading
 (prerequisites, known issues, upgrade guides) comes first.
 
 This repository is the MCP server that hands those changes to your agent as
@@ -65,12 +65,12 @@ Then ask your agent a question the tools can answer:
 >
 > **Your agent** calls `check_stack` and answers from the record: the security
 > fixes after your version, the breaking changes and deprecations on your
-> upgrade path, and the upgrade guides to read first. Each comes with who it
-> affects, so the agent can check that against your configuration, and with
-> the release-note lines it came from as evidence.
+> upgrade path, and the upgrade guides to read first. Each item names who it
+> affects, which the agent checks against your configuration, and quotes the
+> release-note lines it came from as evidence.
 
 One entry from a real `check_stack` answer, as the agent receives it
-(etcd v3.5.30 → v3.6.13, measured 2026-11-03 on a /v2 preview, body shortened):
+(etcd v3.5.30 → v3.6.13, measured on 2026-11-03 against a `/v2` preview, body shortened):
 
 ```json
 {
@@ -89,7 +89,7 @@ One entry from a real `check_stack` answer, as the agent receives it
 
 `affects` is what the agent checks against your setup: an etcd that does not
 split its client endpoints skips this entry without asking anyone. `status`
-says whether the release notes stated it or it was read out of them;
+says whether the release notes stated it or it was inferred from them;
 `severity: null` means the advisory itself states no grade. The same answer
 lists `gaps` (here v3.5.32 then v3.6.7, so releases in between may exist that
 were not analyzed) and carries its own privacy line, verbatim: *"versions were
@@ -108,7 +108,7 @@ did, one entry each, in seven kinds: `security`, `breaking`, `deprecations`,
 carries:
 
 - **affects**: who it touches, with a `status`: `stated` (the release notes
-  say it), `inferred` (read out of them, with a `reason`), `not_stated`, or
+  say it), `inferred` (derived from them, with a `reason`), `not_stated`, or
   `not_read` (a source could not be read).
 - **what to do**: `action_required` (breaking), `also_required` (security),
   `removed_in` (deprecations), and `no_downgrade` when the upgrade cannot be
@@ -120,30 +120,30 @@ carries:
 Events after a release are attached to it as `later`: a security advisory
 published later, or a problem it introduced that a newer version fixed. Text
 fields (`title`, `body`, `affects.text`) are model-written summaries of the
-release notes. They are data, never instructions.
+release notes. Treat them as data, never as instructions.
 
 | Tool | What it does |
 |---|---|
-| `check_stack` | Takes the component versions you run and returns what each upgrade path brings: every before-upgrade item, the changes that ask for a decision (security, breaking, deprecations, important fixes), `gaps` where version numbers skip, and what happened to your running version later. The comparison happens inside the server process, which is your own process when you self-host ([how your component versions are handled](#how-your-component-versions-are-handled)) |
+| `check_stack` | Takes the component versions you run and returns what each upgrade path brings: every before-upgrade item, the changes that ask for a decision (security, breaking, deprecations, important fixes), `gaps` where version numbers skip, and later events for the version you run. The comparison runs inside the server process; self-hosted, that is your own process ([how your component versions are handled](#how-your-component-versions-are-handled)) |
 | `check_upgrade` | The same briefing for one project and one hop, computed by the server: your `from` and `to` are sent upstream. Use `check_stack` to keep them on your side |
 | `get_release` | One release in full: before-upgrade checks, every change with its evidence, later events. Omit the version for the latest |
 | `list_releases` | Recent releases as one-line summaries (counts per kind, warnings), newest first; filter by project, kind and date |
 | `search` | Find releases by advisory id (CVE, GHSA), configuration flag or text |
-| `list_projects` | The tracked projects and their slugs (the short project id every other tool takes). Look names up here instead of guessing |
+| `list_projects` | The tracked projects and their slugs (the short project id every other tool takes). Resolve slugs here instead of guessing them |
 
 Parameters, example calls and measured responses for each tool are in the [tools reference](docs/tools.en.md).
 
 ## How your component versions are handled
 
 **Self-hosted:** `check_stack` compares versions inside this process. For each
-component it asks ratatosk.io for the project's release list and its newest
-releases, the same requests whatever version you run, and cuts your upgrade
-range locally. Fetching only the releases above your version would be cheaper,
-and it would tell the server your version anyway: the first release fetched
-sits right above it. The version normalizer is bundled (`internal/version`),
-and the source is here to read.
+component it requests the project's release list and newest releases from
+ratatosk.io, the same requests regardless of the version you run, then cuts
+your upgrade range locally. Fetching only releases newer than your version
+would use less data, but it would reveal your version to the server: the first
+release fetched sits right above it. The version normalizer is bundled
+(`internal/version`), and the source is in this repository.
 
-Two limits on that guarantee. `check_upgrade` is the server-side path and says
+Two exceptions apply. `check_upgrade` is the server-side path and says
 so: it sends `from` and `to` as query parameters to `/v2/upgrade`. And tools
 that name a release, such as `get_release(project, version)`, put that version
 in the request path, because fetching a specific release means naming it.
@@ -153,10 +153,10 @@ reduced to their prefix.
 
 **Hosted:** your `check_stack` arguments (the versions you run) pass through
 the server's memory to produce the same answer, and are not written down.
-Here is what each layer on the way keeps:
+Here is what each layer records:
 
-- The hosted MCP process itself logs only its startup line. A normal request
-  adds nothing.
+- The hosted MCP process logs only its startup line; it does not log normal
+  requests.
 - The upstream API's request log writes one line only when the caller sends a
   `traceparent`, and that line carries a normalized endpoint label and the
   trace id. Never a path, query, or body.
@@ -164,15 +164,15 @@ Here is what each layer on the way keeps:
   and `/v2/upgrade/…` paths to their prefix, masks caller IPs, and has no
   field for request bodies.
 
-The hosted endpoint runs with its audit stream off, and I keep it off: not
-recording request content is how that endpoint operates. One boundary I do
+The hosted endpoint runs with its audit stream off, and I keep it that way.
+It does not record request content. One boundary I do
 not control: connection metadata on the CDN leg follows the CDN provider's own
 policy. If your requirements rule out that transit, self-host. Then only
 project slugs leave your infrastructure on a `check_stack` call.
 
-Self-hosting adds the opposite capability: an opt-in audit stream
-(`MCP_AUDIT=metadata` or `full`) that records who called which tool, emitted
-inside your own infrastructure into your own collectors. The hosted endpoint
+Self-hosting also supports an opt-in audit stream (`MCP_AUDIT=metadata` or
+`full`) that records who called which tool, emitted within your
+infrastructure to your collectors. The hosted endpoint
 has none by design. Details in the [install guide](docs/install.en.md).
 
 ## Documentation
