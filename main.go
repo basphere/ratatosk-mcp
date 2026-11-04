@@ -44,6 +44,85 @@ func main() {
 	}
 	api = newAPIClient(base)
 
+	server := newServer()
+
+	// Two transports, one binary: stdio for local agents (Claude Code, MCP
+	// inspector), streamable HTTP for the in-cluster Service the Helm chart
+	// deploys — agents in the cluster connect to http://<svc>:8080/mcp.
+	if addr := os.Getenv("MCP_HTTP_ADDR"); addr != "" {
+		// MCP_HTTP_STATELESS=1 serves every POST on a temporary session: no
+		// Mcp-Session-Id round-trip, GET/DELETE answer 405 — and, per go-sdk
+		// v1.7.0, it is the only HTTP mode that speaks the 2026-07-28 revision
+		// (stdio speaks it regardless). Default stays stateful so existing
+		// in-cluster clients see no behavior change; hosted endpoints and
+		// horizontally-scaled installs are what the flag is for.
+		stateless := os.Getenv("MCP_HTTP_STATELESS") == "1"
+		handler := mcp.NewStreamableHTTPHandler(
+			func(*http.Request) *mcp.Server { return server },
+			&mcp.StreamableHTTPOptions{
+				Stateless: stateless,
+				// Stateful mode keeps a session per client, and the SDK never
+				// closes idle ones when this is zero — an install that reconnects
+				// often grows memory until it dies, with no attacker involved.
+				// Stateless mode (what the 2026-07-28 revision needs) allocates
+				// nothing, so this only guards the backward-compatibility path.
+				// Expiry is the protocol's own mechanism: a client returning with
+				// a closed session id re-initializes.
+				SessionTimeout: 30 * time.Minute,
+			})
+		// Per-caller limiting sits in front of the MCP handler, not upstream:
+		// this process is the one that can tell hosted callers apart, and the
+		// upstream API deliberately cannot (see ratelimit.go). Off by default,
+		// which is what a self-hosted single-tenant server wants.
+		rl := rateLimitFromEnv(os.Getenv("MCP_RATE_LIMIT_PER_MIN"))
+		mux := http.NewServeMux()
+		mux.Handle("/mcp", callerClassMiddleware(rateLimitMiddleware(rl, handler)))
+		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		})
+		mode := "stateful"
+		if stateless {
+			mode = "stateless"
+		}
+		// The limit is a configured number, not a caller attribute — safe to log.
+		rateField := "off"
+		if rl != nil {
+			rateField = strconv.Itoa(rl.limit) + "/min per caller"
+		}
+		slog.Info("listening", "transport", "http", "addr", addr+"/mcp", "mode", mode, "upstream", base, "version", buildVersion, "rate_limit", rateField)
+		// Explicit timeouts: this is an unauthenticated public endpoint, and the
+		// zero-value http.Server leaves every timeout unset (unbounded), so a
+		// client that dribbles a request header one byte at a time holds a
+		// goroutine/FD forever (slowloris) — and does it below the rate limiter,
+		// which only counts requests that finish their headers. WriteTimeout is
+		// generous because a large check_stack legitimately streams a while.
+		srv := &http.Server{
+			Addr:              addr,
+			Handler:           mux,
+			ReadHeaderTimeout: 5 * time.Second,
+			ReadTimeout:       30 * time.Second,
+			WriteTimeout:      120 * time.Second,
+			IdleTimeout:       60 * time.Second,
+			MaxHeaderBytes:    1 << 20,
+		}
+		if err := srv.ListenAndServe(); err != nil {
+			slog.Error("http server exited", "kind", errKind(err))
+			os.Exit(1)
+		}
+		return
+	}
+	slog.Info("listening", "transport", "stdio", "upstream", base, "version", buildVersion)
+	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
+		slog.Error("stdio session ended with error", "kind", errKind(err))
+		os.Exit(1)
+	}
+	slog.Info("stdio session ended")
+}
+
+// newServer registers the six tools and the audit middleware. It is its own
+// function so docs_test.go can list the tools exactly as a client sees them —
+// the docs are checked against this, not against a second hand-kept list.
+func newServer() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "ratatosk", Version: buildVersion}, &mcp.ServerOptions{
 		Instructions: "Data source: the public ratatosk.io agent API v2 — what changed in CNCF project releases, read by AI " +
 			"from the release notes and the documents they link; verify critical decisions against the evidence quotes and " +
@@ -150,78 +229,7 @@ func main() {
 	// Audit stream (P3): observes tools/call when MCP_AUDIT is set; the
 	// identity function otherwise. See audit.go and docs/logging-design.md.
 	server.AddReceivingMiddleware(auditMiddleware)
-
-	// Two transports, one binary: stdio for local agents (Claude Code, MCP
-	// inspector), streamable HTTP for the in-cluster Service the Helm chart
-	// deploys — agents in the cluster connect to http://<svc>:8080/mcp.
-	if addr := os.Getenv("MCP_HTTP_ADDR"); addr != "" {
-		// MCP_HTTP_STATELESS=1 serves every POST on a temporary session: no
-		// Mcp-Session-Id round-trip, GET/DELETE answer 405 — and, per go-sdk
-		// v1.7.0, it is the only HTTP mode that speaks the 2026-07-28 revision
-		// (stdio speaks it regardless). Default stays stateful so existing
-		// in-cluster clients see no behavior change; hosted endpoints and
-		// horizontally-scaled installs are what the flag is for.
-		stateless := os.Getenv("MCP_HTTP_STATELESS") == "1"
-		handler := mcp.NewStreamableHTTPHandler(
-			func(*http.Request) *mcp.Server { return server },
-			&mcp.StreamableHTTPOptions{
-				Stateless: stateless,
-				// Stateful mode keeps a session per client, and the SDK never
-				// closes idle ones when this is zero — an install that reconnects
-				// often grows memory until it dies, with no attacker involved.
-				// Stateless mode (what the 2026-07-28 revision needs) allocates
-				// nothing, so this only guards the backward-compatibility path.
-				// Expiry is the protocol's own mechanism: a client returning with
-				// a closed session id re-initializes.
-				SessionTimeout: 30 * time.Minute,
-			})
-		// Per-caller limiting sits in front of the MCP handler, not upstream:
-		// this process is the one that can tell hosted callers apart, and the
-		// upstream API deliberately cannot (see ratelimit.go). Off by default,
-		// which is what a self-hosted single-tenant server wants.
-		rl := rateLimitFromEnv(os.Getenv("MCP_RATE_LIMIT_PER_MIN"))
-		mux := http.NewServeMux()
-		mux.Handle("/mcp", callerClassMiddleware(rateLimitMiddleware(rl, handler)))
-		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})
-		mode := "stateful"
-		if stateless {
-			mode = "stateless"
-		}
-		// The limit is a configured number, not a caller attribute — safe to log.
-		rateField := "off"
-		if rl != nil {
-			rateField = strconv.Itoa(rl.limit) + "/min per caller"
-		}
-		slog.Info("listening", "transport", "http", "addr", addr+"/mcp", "mode", mode, "upstream", base, "version", buildVersion, "rate_limit", rateField)
-		// Explicit timeouts: this is an unauthenticated public endpoint, and the
-		// zero-value http.Server leaves every timeout unset (unbounded), so a
-		// client that dribbles a request header one byte at a time holds a
-		// goroutine/FD forever (slowloris) — and does it below the rate limiter,
-		// which only counts requests that finish their headers. WriteTimeout is
-		// generous because a large check_stack legitimately streams a while.
-		srv := &http.Server{
-			Addr:              addr,
-			Handler:           mux,
-			ReadHeaderTimeout: 5 * time.Second,
-			ReadTimeout:       30 * time.Second,
-			WriteTimeout:      120 * time.Second,
-			IdleTimeout:       60 * time.Second,
-			MaxHeaderBytes:    1 << 20,
-		}
-		if err := srv.ListenAndServe(); err != nil {
-			slog.Error("http server exited", "kind", errKind(err))
-			os.Exit(1)
-		}
-		return
-	}
-	slog.Info("listening", "transport", "stdio", "upstream", base, "version", buildVersion)
-	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		slog.Error("stdio session ended with error", "kind", errKind(err))
-		os.Exit(1)
-	}
-	slog.Info("stdio session ended")
+	return server
 }
 
 // jsonResult marshals compactly: tool output is read by agents, and the
