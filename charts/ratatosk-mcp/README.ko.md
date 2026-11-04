@@ -19,11 +19,14 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | `replicaCount` | `1` | 레플리카 수. 2개 이상으로 늘리기 전에 `statelessHttp`를 켜세요 |
 | `image.repository` | `ghcr.io/basphere/ratatosk-mcp` | 이미지 |
 | `image.tag` | 차트 `appVersion` | 특정 서버 버전 고정 |
+| `image.pullPolicy` | `IfNotPresent` | 이미지 pull 정책 |
 | `ratatoskUrl` | `https://ratatosk.io` | 업스트림 changes API. egress를 프록시·미러로 우회하면 변경 |
 | `statelessHttp` | `false` | 세션 상태 없는 HTTP 제공. MCP 스펙 2026-07-28 리비전 클라이언트와 레플리카 2개 이상에 필요 |
 | `logLevel` | `""` (= info) | `MCP_LOG`: `debug`·`warn`·`error`도 허용, 그 밖의 값은 경고 없이 info로 처리. 어느 레벨에서도 요청 인자는 기록되지 않음 |
 | `auditMode` | `""` (= 꺼짐) | `MCP_AUDIT`: `metadata`는 도구 호출마다 한 줄(인자 이름만), `full`은 인자 값까지 |
+| `rateLimitPerMin` | `0` (= 꺼짐) | `MCP_RATE_LIMIT_PER_MIN`: 호출자 주소당 분당 요청 수(MCP 메시지를 모두 셈). 내가 통제하지 않는 호출자를 대신 받는 서버에서만 |
 | `service.port` | `8080` | Service / MCP 엔드포인트 포트 |
+| `service.type` | `ClusterIP` | Service 타입 |
 | `resources` | 소형 requests/limits | 부하가 큰 클러스터라면 조정 |
 | `nodeSelector` / `tolerations` / `affinity` | `{}` / `[]` / `{}` | 표준 스케줄링 제어 |
 | `clusterDomain` | `cluster.local` | kagent RemoteMCPServer에 등록하는 Service 전체 이름의 클러스터 DNS 도메인 |

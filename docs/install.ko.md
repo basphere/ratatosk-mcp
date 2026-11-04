@@ -5,7 +5,7 @@
 이 페이지는 Ratatosk의 릴리스 변경(change)을 AI 에이전트에서 쓰는 네 가지 방법을
 설명합니다. 설치 없이 호스팅 엔드포인트에 연결하기, 노트북에서 stdio 서버
 띄우기, 쿠버네티스 클러스터에 Helm으로 배포하기, 그리고 kagent와
-연동하기입니다. 클라이언트마다 서버를 어디에 등록하는지는
+연동하기입니다. 클라이언트마다 서버를 등록하는 방법은
 [클라이언트에 엔드포인트 등록하기](#클라이언트에-엔드포인트-등록하기)와
 [다른 stdio 클라이언트](#다른-stdio-클라이언트)에 정리되어 있습니다.
 
@@ -35,9 +35,9 @@ API 키도 필요 없습니다. 차이는 셋입니다.
 - **`check_stack`에 넘긴 실행 중인 버전이 어디까지 가는가.** 설치형은 버전
   비교가 사용자 프로세스 안에서 끝나 그 버전이 인프라를 떠나지 않습니다.
   호스팅은 버전이 서버 메모리를 지나가지만 어떤 로그에도 기록되지 않습니다.
-- **업스트림 요청 한도를 누구와 나누는가.** 호스팅은 호출자마다 분당 도구
-  호출 60회를 주고, 호스팅을 쓰는 호출자 모두가 서버의 업스트림 몫을 함께
-  씁니다. 설치형은 자기 IP 몫으로 분당 업스트림 요청 1200회를 받습니다.
+- **어떤 요청 한도가 적용되는가.** 호스팅은 호출자마다 분당 요청 60회를
+  주고, 호스팅을 쓰는 호출자 모두가 서버의 업스트림 몫을 함께 씁니다.
+  설치형은 자기 IP 몫으로 분당 업스트림 요청 1200회를 받습니다.
 - **감사 스트림을 남길 수 있는가.** 설치형만 가능합니다.
 
 한 가지 공통점도 알아두세요. `get_release`처럼 특정 버전을 인자로 받는
@@ -64,9 +64,10 @@ API 키도 필요 없습니다. 차이는 셋입니다.
   NetworkPolicy나 egress 프록시로 아웃바운드를 제한하는 클러스터라면 이
   목적지를 허용 목록에 추가하세요. 프록시나 미러를 경유해야 한다면
   `RATATOSK_URL`(차트 값: `ratatoskUrl`)로 업스트림 주소를 바꿀 수
-  있습니다. 차단된 채로 실행하면 도구가 오류를 돌려주거나 빈 결과가
-  돌아옵니다(`check_stack`은 오류 대신 컴포넌트별 `note` 필드에
-  `fetch failed: …`를 담아 돌려줍니다). [문제 해결](#문제-해결)을 보세요.
+  있습니다. 차단된 채로 실행하면 도구가 오류를 돌려줍니다(`check_stack`은
+  "could not read the project list"). 일부 요청만 실패하면 `check_stack`은
+  그대로 답하고, 영향받은 컴포넌트의 `note`에 `fetch failed: …`를 담습니다.
+  [문제 해결](#문제-해결)을 보세요.
 - **kagent 통합**: kagent가 이미 설치된 클러스터(kagent CRD 포함). kagent
   1.x라면 예제 에이전트를 돌릴 Harness도 필요합니다([kagent 1.x](#kagent-1x) 참조).
 
@@ -82,8 +83,8 @@ Streamable HTTP로 동작하며 무상태(stateless)입니다: 세션이 없어
 
 | 클라이언트 | `https://ratatosk.io/mcp`를 등록하는 곳 |
 |---|---|
-| Claude(웹 · 데스크톱) | 설정 → 커넥터 → 사용자 지정 커넥터 추가 ([공식 설명서](https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp)) |
-| ChatGPT | chatgpt.com/plugins에서 + → Add custom MCP server로 들어가 주소를 넣고, 인증은 No authentication 선택 ([공식 설명서](https://developers.openai.com/api/docs/guides/custom-mcp-server)) |
+| Claude(웹 · 데스크톱) | Customize → Connectors → + Add → Add custom connector. Team · Enterprise 플랜에서는 소유자가 Organization settings → Connectors에서 추가하고, 멤버는 Customize → Connectors에서 연결 ([공식 설명서](https://support.claude.com/en/articles/11175166-getting-started-with-custom-connectors-using-remote-mcp)) |
+| ChatGPT(웹) | chatgpt.com/plugins에서 + → Add custom MCP server로 들어가 서버 URL에 주소를 넣고, 인증은 쓰지 않음 ([공식 설명서](https://developers.openai.com/api/docs/guides/custom-mcp-server)) |
 | Grok | grok.com/connectors에서 New Connector → Custom ([공식 설명서](https://docs.x.ai/grok/connectors)) |
 | Claude Code | `claude mcp add --transport http ratatosk https://ratatosk.io/mcp` ([공식 설명서](https://code.claude.com/docs/en/mcp)) |
 | Grok Build | `grok mcp add --transport http ratatosk https://ratatosk.io/mcp` ([공식 설명서](https://docs.x.ai/build/features/mcp-servers)) |
@@ -131,13 +132,16 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
 - **SSE GET은 405**: 무상태 모드는 서버가 먼저 보내는 알림 스트림(GET으로
   여는 SSE)을 제공하지 않으므로 405 응답이 정상 동작입니다. 브라우저
   주소창으로 열면 안내 페이지(`/docs/mcp`)로 리다이렉트됩니다.
-- **적정 사용**: 호스팅 엔드포인트는 **호출자당 분당 도구 호출 60회**를
+- **적정 사용**: 호스팅 엔드포인트는 **호출자당 분당 요청 60회**를
   허용합니다. 전체가 나눠 쓰는 몫이 아니라 호출자 주소별로 세므로, 한 명이
-  바쁘다고 나머지가 굶지 않습니다. 넘기면 `Retry-After`가 붙은 `429`가
-  돌아옵니다. 도구 호출 1회가 API 요청 1회는 아닙니다(`check_stack`은
-  컴포넌트마다 그 프로젝트의 최근 릴리스를 모두 읽습니다). 그래서 한도를 도구
-  호출 수로 셉니다. 직접 `/v2`를 호출하면 자기 IP 몫으로 분당
-  1200회를 받습니다. 폴링처럼 사용량이 많은 용도라면 설치형으로 전환하세요.
+  바쁘다고 나머지가 굶지 않습니다. MCP 메시지는 모두 셉니다. 클라이언트는
+  연결할 때 두세 번(`initialize`, `notifications/initialized`, `tools/list`)을
+  쓰고, 그 뒤로는 도구 호출마다 한 번입니다. 넘기면 `Retry-After`가 붙은
+  `429`가 돌아옵니다. 업스트림에서는 도구 호출 1회가 API 요청 여러 번이 될 수
+  있지만(`check_stack`은 컴포넌트마다 그 프로젝트의 최근 릴리스를 모두
+  읽습니다), 그 비용은 서버가 지고 내 60회에는 들어가지 않습니다. 직접
+  `/v2`를 호출하면 자기 IP 몫으로 분당 1200회를 받습니다. 폴링처럼 사용량이
+  많은 용도라면 설치형으로 전환하세요.
 
 ### 프라이버시: 호스팅 엔드포인트가 기록하는 것
 
@@ -151,15 +155,17 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
   기록되지 않습니다.
 - 서버 앞단의 액세스 로그는 쿼리스트링을 제거하고, 슬러그·버전이 경로에
   실리는 `/v2/releases/…`·`/v2/upgrade/…` 경로는 접두사만 남기며, IP를
-  마스킹하고 요청 바디는 기록 항목에 아예 없습니다. 외부로 전송되지 않고
-  서버 안에서 크기를 기준으로 순환 삭제됩니다(현재 트래픽 기준 며칠 분량).
+  마스킹하고 요청 바디는 기록 항목에 아예 없습니다. 서버 안에서 7일 안에
+  순환 삭제되고, 사본 하나가 운영자의 중앙 로그 저장소로 가며 그곳에서도
+  7일 동안 보관됩니다.
 - 아래에서 설명할 감사 스트림은 호스팅에서 일부러 꺼 두었고, 앞으로도
   켜지 않습니다.
 
-다만 통제 밖의 경계가 하나 있습니다: CDN 구간의 접속
-메타데이터는 CDN 사업자의 정책을 따르며, 이는 ratatosk.io가 관여할 수 없는
-구간입니다. 이 경계가 요건에 맞지 않으면 설치형을 쓰세요. 그러면
-`check_stack`에 넘긴 버전이 프로세스 밖으로 나가지 않습니다.
+다만 Ratatosk가 통제할 수 없는 경계가 하나 있습니다. ratatosk.io는
+Cloudflare 뒤에 있고 TLS를 Cloudflare가 종료하므로, 요청 내용(호스팅
+`check_stack` 호출에 담긴 버전 포함)이 전송 중에 Cloudflare를 거치며
+Cloudflare의 정책을 따릅니다. 이 경계가 요건에 맞지 않으면 설치형을 쓰세요.
+그러면 `check_stack`에 넘긴 버전이 프로세스 밖으로 나가지 않습니다.
 
 ## 로컬 (stdio)
 
@@ -205,14 +211,13 @@ Claude Desktop은 CLI 대신 설정 파일(`claude_desktop_config.json`)로 MCP
 
 | 클라이언트 | 넣는 곳 |
 |---|---|
-| ChatGPT 데스크톱 앱 | 설정 → MCP servers → Add server에서 STDIO를 선택하고 명령 입력 |
 | Codex | 설정 파일 `~/.codex/config.toml`: `[mcp_servers.ratatosk]`에 `command = "docker"`, `args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.0.0"]`, `startup_timeout_sec = 60`(첫 실행 때 이미지를 받기 때문) |
 | Gemini CLI | 설정 파일 `~/.gemini/settings.json`: 위 Claude Desktop과 같은 `mcpServers` 블록 |
 | Antigravity | 설정 파일 `~/.gemini/config/mcp_config.json`: 위 Claude Desktop과 같은 `mcpServers` 블록 |
 | Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0` |
 
-grok.com은 공개 주소만 연결할 수 있으므로, 내 컴퓨터에서 돌리는 서버가 아니라
-호스팅 엔드포인트로 연결합니다.
+ChatGPT와 grok.com은 내 컴퓨터의 명령이 아니라 URL로 연결하므로, 호스팅
+엔드포인트를 씁니다.
 
 ### 소스 빌드
 
@@ -258,8 +263,8 @@ helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp
 ```
 
 RBAC도 시크릿도 필요 없고, Pod Security Standards(PSS)의 `restricted`
-프로파일에서도 경고 없이 동작합니다. 차트 옵션 전체는
-[차트 README](../charts/ratatosk-mcp/README.ko.md)에 정리되어 있습니다.
+프로파일에서도 경고 없이 동작합니다. 차트 값 전체는
+[차트 README](../charts/ratatosk-mcp/README.ko.md)에 나와 있습니다.
 다음 두 경우에는 `--set statelessHttp=true`를 켜세요. MCP 스펙 2026-07-28
 리비전을 쓰는 최신 클라이언트(`Mcp-Protocol-Version: 2026-07-28` 헤더를
 보내는 클라이언트)를 HTTP로 받을 때, 그리고 레플리카를 2개 이상으로 늘릴
@@ -279,7 +284,7 @@ kubectl get pods -l app.kubernetes.io/name=ratatosk-mcp
 
 ```bash
 kubectl logs deploy/ratatosk-mcp
-# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.0.0"}
+# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.0.0","rate_limit":"off"}
 ```
 
 헬스 체크까지 확인하려면:
@@ -454,7 +459,7 @@ kagent 도구 서버(`kagent-tool-server`)에는 `k8s_apply_manifest`,
 | `MCP_HTTP_STATELESS` | `statelessHttp` | *(꺼짐)* | `1`이면 세션 상태 없는 HTTP: `Mcp-Session-Id` 왕복이 없고, MCP 스펙 2026-07-28 리비전을 쓰는 최신 클라이언트를 HTTP로 받으려면 필요합니다. 레플리카 2개 이상 수평 확장에도 권장. 구형 클라이언트는 어느 쪽이든 동작합니다 |
 | `MCP_LOG` | `logLevel` | `info` | 허용값 `info`(기본)·`debug`·`warn`·`error`. 인식하지 못한 값은 경고 없이 `info`로 처리됩니다. `debug`는 업스트림 호출별 소요 시간을 추가하고, `warn`·`error`는 로그를 줄입니다. 어느 레벨에서도 요청 인자는 기록되지 않습니다. [로그와 감사 스트림](#로그와-감사-스트림) 참조 |
 | `MCP_AUDIT` | `auditMode` | *(꺼짐)* | `metadata` 또는 `full`: 도구 호출 감사 스트림. [감사 스트림 켜기](#감사-스트림-켜기) 참조 |
-| `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *(꺼짐)* | 호출자당 분당 도구 호출 상한. 내가 통제하지 않는 호출자를 대신 받는 서버용입니다. 호출자 주소마다 몫을 따로 주므로 한 명이 바쁘다고 나머지가 굶지 않고, 넘기면 `Retry-After`가 붙은 `429`가 돌아옵니다. 주소는 창이 유지되는 동안의 메모리 버킷 키일 뿐이고 기록하지도, 상류로 보내지도 않습니다. `CF-Connecting-IP` → `X-Forwarded-For` → `X-Real-IP` → 피어 주소 순으로 읽으므로, 앞단 프록시가 그중 하나를 채우고 **클라이언트가 보낸 값은 지워야** 합니다. 호출자가 조작할 수 있는 값을 키로 쓰면 제한이 아니니까요. 단일 이용자 설치라면 꺼 두세요 |
+| `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *(꺼짐)* | 호출자당 분당 요청 상한(MCP 메시지를 모두 세고, 도구 호출 하나가 1회). 내가 통제하지 않는 호출자를 대신 받는 서버용입니다. 호출자 주소마다 몫을 따로 주므로 한 명이 바쁘다고 나머지가 굶지 않고, 넘기면 `Retry-After`가 붙은 `429`가 돌아옵니다. 주소는 창이 유지되는 동안의 메모리 버킷 키일 뿐이고 기록하지도, 상류로 보내지도 않습니다. `CF-Connecting-IP` → `X-Forwarded-For` → `X-Real-IP` → 피어 주소 순으로 읽으므로, 앞단 프록시가 그중 하나를 채우고 **클라이언트가 보낸 값은 지워야** 합니다. 호출자가 조작할 수 있는 값을 키로 쓰면 제한이 아니니까요. 단일 이용자 설치라면 꺼 두세요 |
 
 docker로 HTTP 모드를 직접 띄우는 예:
 
@@ -564,7 +569,7 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=met
 
 | 증상 | 확인 | 원인과 해결 |
 |---|---|---|
-| 도구 호출이 오류를 반환하고(`check_stack`은 오류 대신 컴포넌트별 `note`에 `fetch failed: …`), 로그에 `"msg":"upstream fetch failed"`와 `kind: connection_refused`·`dns`·`timeout` | `kubectl logs deploy/ratatosk-mcp` (로컬은 클라이언트의 MCP 로그) | egress 차단. `ratatosk.io:443` 아웃바운드 HTTPS를 허용하거나, 미러를 두고 `RATATOSK_URL`(차트: `ratatoskUrl`)로 지정 |
+| 도구 호출이 오류를 반환하고(`check_stack`은 "could not read the project list: …", 일부 요청만 실패하면 컴포넌트의 `note`에 `fetch failed: …`), 로그에 `"msg":"upstream fetch failed"`와 `kind: connection_refused`·`dns`·`timeout` | `kubectl logs deploy/ratatosk-mcp` (로컬은 클라이언트의 MCP 로그) | egress 차단. `ratatosk.io:443` 아웃바운드 HTTPS를 허용하거나, 미러를 두고 `RATATOSK_URL`(차트: `ratatoskUrl`)로 지정 |
 | 로그에 `"msg":"upstream rate limited"`, `status: 429` | 위와 동일 | 업스트림 한도(분당 1200요청/IP) 초과. 프로젝트별로 나눠 부르는 대신 `check_stack` 하나로 묶어 호출하고, 잠시 후 재시도 |
 | HTTP 클라이언트가 `400 Bad Request: protocol version "2026-07-28" is only supported on stateless HTTP servers`를 받음 | 클라이언트가 보내는 `Mcp-Protocol-Version` 헤더 | 클라이언트가 MCP 2026-07-28 리비전을 쓰는데 상태 유지 HTTP 모드는 이를 거절합니다. `--set statelessHttp=true`(환경 변수: `MCP_HTTP_STATELESS=1`)를 켜세요. 오류 메시지의 `StreamableHTTPOptions.Stateless`는 같은 스위치의 Go SDK 쪽 이름입니다 |
 | kagent UI에 `ratatosk-agent`가 나타나지 않음 | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | kagent CRD가 없는 클러스터에서는 `kagent.enabled=true` 설치가 실패합니다. kagent를 먼저 설치하세요. kagent 1.x에서 `kagent.harness`가 비어 있으면 차트가 에이전트를 건너뛰고(설치 후 안내에 나옵니다), 지정한 Harness가 없으면 `kubectl describe agents.api.kagent.dev ratatosk-agent`에 나타납니다. 0.x 매니페스트를 kagent 1.x에 적용하거나 그 반대로 하면 "no matches for kind"로 실패하니 계열에 맞는 묶음을 쓰세요. 매니페스트 경로는 `namespace: kagent`가 하드코딩되어 있으므로 kagent를 다른 네임스페이스에 설치했다면 매니페스트를 수정해야 합니다 |
