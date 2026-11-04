@@ -375,3 +375,43 @@ func TestDocsRelativeLinksResolve(t *testing.T) {
 		}
 	}
 }
+
+// An older release of this server named in the docs is a pin or an example
+// that was not moved: the install guides said 0.7.4 in prose, in a log line
+// and in a serverInfo answer until 1.0 prep (2026-11-04). Released versions
+// come from CHANGELOG headings, so the list grows by itself.
+func TestDocsNameNoOlderRelease(t *testing.T) {
+	cl, err := os.ReadFile("CHANGELOG.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	chart, _ := os.ReadFile("charts/ratatosk-mcp/Chart.yaml")
+	app := string(regexp.MustCompile(`(?m)^appVersion:\s*"?([^"\s]+)"?`).FindSubmatch(chart)[1])
+	var old []*regexp.Regexp
+	var names []string
+	for _, m := range regexp.MustCompile(`(?m)^## \[(\d+\.\d+\.\d+)\]`).FindAllStringSubmatch(string(cl), -1) {
+		if m[1] == app {
+			continue
+		}
+		names = append(names, m[1])
+		old = append(old, regexp.MustCompile(`(^|[^0-9.])v?`+regexp.QuoteMeta(m[1])+`($|[^0-9])`))
+	}
+	if len(old) == 0 {
+		t.Fatal("no released versions found in CHANGELOG.md")
+	}
+	for _, trio := range docTrios {
+		for _, path := range trio {
+			b, _ := os.ReadFile(path)
+			for i, line := range strings.Split(string(b), "\n") {
+				if strings.Contains(line, "0.x") {
+					continue
+				}
+				for j, re := range old {
+					if re.MatchString(line) {
+						t.Errorf("%s line %d names release %s (the chart ships %s): %s", path, i+1, names[j], app, strings.TrimSpace(line))
+					}
+				}
+			}
+		}
+	}
+}

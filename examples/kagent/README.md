@@ -2,10 +2,10 @@
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-[Ratatosk](https://ratatosk.io) reads every CNCF graduated/incubating project's
-release notes and sorts each change into seven kinds — security, breaking,
-deprecations, important fixes, enhancements, dependency updates, other — each
-with who it affects and the release-note lines it came from. This MCP server
+[Ratatosk](https://ratatosk.io) reads the release notes of the CNCF projects
+and sorts each change into seven kinds: security, breaking, deprecations,
+important fixes, enhancements, dependency updates, other. Each change says who
+it affects and which release-note lines it came from. This MCP server
 exposes those releases to in-cluster agents.
 
 Privacy: the `check_stack` tool compares your running versions locally, inside
@@ -17,9 +17,9 @@ credentials (rate limit 1200 req/min per IP).
 
 | Tool | Purpose |
 | --- | --- |
-| `list_projects` | The tracked-project roster — resolve slugs here first |
+| `list_projects` | The tracked projects and their slugs; resolve slugs here first |
 | `check_stack` | Compare running versions against each project's releases (local comparison): before-upgrade checks, the changes that ask for a decision, version gaps |
-| `check_upgrade` | One project, one hop, computed by the server — `from` and `to` are sent upstream |
+| `check_upgrade` | One project, one hop, computed by the server: `from` and `to` are sent upstream |
 | `get_release` | One release in full: before-upgrade checks, every change with its evidence |
 | `list_releases` | Recent releases as one-line summaries, newest first |
 | `search` | Find releases by advisory id, flag or text |
@@ -62,7 +62,7 @@ read-only cluster tools (`k8s_get_resources`, `k8s_get_resource_yaml` from
 `kagent-tool-server`, present in a default kagent install). You can also just
 tell it what you run:
 
-> "We run kubernetes v1.36.0, cilium v1.17.18 and envoy v1.38.3 — anything
+> "We run kubernetes v1.36.0, cilium v1.17.18 and envoy v1.38.3. Anything
 > that needs action before we upgrade?"
 
 The agent answers with severity-ranked changes, each backed by a quote from the

@@ -20,7 +20,7 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | `image.repository` | `ghcr.io/basphere/ratatosk-mcp` | Image |
 | `image.tag` | chart `appVersion` | Pin a specific server version |
 | `ratatoskUrl` | `https://ratatosk.io` | Upstream changes API; point at a mirror if you proxy egress |
-| `statelessHttp` | `false` | Serve HTTP without per-session state — needed for clients that use the 2026-07-28 MCP revision and for more than one replica |
+| `statelessHttp` | `false` | Serve HTTP without per-session state; needed for clients that use the 2026-07-28 MCP revision and for more than one replica |
 | `logLevel` | `""` (= info) | `MCP_LOG`: `debug`, `warn`, `error` also accepted; any other value silently falls back to info, and no level records request arguments |
 | `auditMode` | `""` (= off) | `MCP_AUDIT`: `metadata` records one line per tool call (argument names only), `full` adds argument values |
 | `service.port` | `8080` | Service / MCP endpoint port |
@@ -83,6 +83,6 @@ For plain manifests, see [`examples/kagent/`](../../examples/kagent/README.md).
 helm upgrade ratatosk-mcp ./charts/ratatosk-mcp
 ```
 
-Values you set with `--set`/`-f` are not carried over automatically — repeat
+Values you set with `--set`/`-f` are not carried over automatically. Repeat
 them, or add `--reuse-values`. The image follows the chart `appVersion`
 unless `image.tag` pins it.
