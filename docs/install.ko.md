@@ -161,9 +161,9 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
 - 아래에서 설명할 감사 스트림은 호스팅에서 일부러 꺼 두었고, 앞으로도
   켜지 않습니다.
 
-다만 Ratatosk가 통제할 수 없는 경계가 하나 있습니다. ratatosk.io는
-Cloudflare 뒤에 있고 TLS를 Cloudflare가 종료하므로, 요청 내용(호스팅
-`check_stack` 호출에 담긴 버전 포함)이 전송 중에 Cloudflare를 거치며
+다만 Ratatosk가 통제할 수 없는 경계가 하나 있습니다. ratatosk.io 앞에는
+Cloudflare가 있고, Cloudflare가 암호화를 풀었다가 다시 걸어 중계하므로 요청 내용 전체(호스팅
+`check_stack` 호출에 담긴 버전 포함)가 Cloudflare를 지납니다. 그 처리는
 Cloudflare의 정책을 따릅니다. 이 경계가 요건에 맞지 않으면 설치형을 쓰세요.
 그러면 `check_stack`에 넘긴 버전이 프로세스 밖으로 나가지 않습니다.
 
