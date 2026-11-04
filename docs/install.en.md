@@ -220,13 +220,14 @@ it differs.
 
 | Client | Where |
 |---|---|
+| ChatGPT desktop app | Settings → MCP servers → Add server, choose STDIO, enter the command. It shares `~/.codex/config.toml` with Codex ([docs](https://learn.chatgpt.com/docs/extend/mcp)) |
 | Codex | `~/.codex/config.toml`: `[mcp_servers.ratatosk]` with `command = "docker"`, `args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.0.0"]` and `startup_timeout_sec = 60` (the first run pulls the image) |
 | Gemini CLI | `~/.gemini/settings.json`: the same `mcpServers` block as Claude Desktop above |
 | Antigravity | `~/.gemini/config/mcp_config.json`: the same `mcpServers` block as Claude Desktop above |
 | Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0` |
 
-ChatGPT and grok.com connect to a URL, not to a command on your machine, so
-they take the hosted endpoint.
+ChatGPT on the web and grok.com connect to a URL, not to a command on your
+machine, so they take the hosted endpoint.
 
 ### Build from source
 

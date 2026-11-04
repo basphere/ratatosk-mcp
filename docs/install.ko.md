@@ -211,12 +211,13 @@ Claude Desktop은 CLI 대신 설정 파일(`claude_desktop_config.json`)로 MCP
 
 | 클라이언트 | 넣는 곳 |
 |---|---|
+| ChatGPT 데스크톱 앱 | 설정 → MCP servers → Add server에서 STDIO를 선택하고 명령 입력. Codex와 `~/.codex/config.toml`을 함께 씀 ([공식 설명서](https://learn.chatgpt.com/docs/extend/mcp)) |
 | Codex | 설정 파일 `~/.codex/config.toml`: `[mcp_servers.ratatosk]`에 `command = "docker"`, `args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.0.0"]`, `startup_timeout_sec = 60`(첫 실행 때 이미지를 받기 때문) |
 | Gemini CLI | 설정 파일 `~/.gemini/settings.json`: 위 Claude Desktop과 같은 `mcpServers` 블록 |
 | Antigravity | 설정 파일 `~/.gemini/config/mcp_config.json`: 위 Claude Desktop과 같은 `mcpServers` 블록 |
 | Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.0.0` |
 
-ChatGPT와 grok.com은 내 컴퓨터의 명령이 아니라 URL로 연결하므로, 호스팅
+ChatGPT 웹과 grok.com은 내 컴퓨터의 명령이 아니라 URL로 연결하므로, 호스팅
 엔드포인트를 씁니다.
 
 ### 소스 빌드
