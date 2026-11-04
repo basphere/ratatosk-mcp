@@ -13,9 +13,9 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   it.** `/v1` answers `410 Gone` from the switch on, so 0.x stops working that
   day; this is a major version because tools were removed and every response
   changed shape. A release now has `before_upgrade` (prerequisites, known
-  issues, upgrade guides) and `changes` in seven kinds — `security`,
+  issues, upgrade guides) and `changes` in seven kinds (`security`,
   `breaking`, `deprecations`, `important_fixes`, `enhancements`,
-  `dependency_updates`, `other` — each with `affects` (who it touches, and
+  `dependency_updates`, `other`), each with `affects` (who it touches, and
   whether the release notes stated it), what to do, and the release-note lines
   it came from. Events after a release (an advisory published later, a problem
   fixed in a newer version) are attached as `later`. The 0.x axes (family,
@@ -74,6 +74,15 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   (`/v2/upgrade`). `from` and `to` are sent upstream, and the tool says so.
 - `search`: find releases by advisory id, configuration flag or text.
 - `lang` (`en`, `ko`, `ja`) on every tool that returns text.
+- The install guide says where each client registers the server, hosted or
+  over stdio: Claude, ChatGPT, Grok, Claude Code, Grok Build, Codex, Gemini
+  CLI, Antigravity and kagent. The README shows the Ratatosk symbol.
+- CI checks the docs against the server: the tools and parameters they name
+  against the tool list a client receives, image pins against the chart's
+  `appVersion`, no older release number left in an example, and the English,
+  Korean and Japanese pages against each other (headings, tables, code,
+  links). An opt-in test (`DOCS_LIVE_URL`) replays every documented example
+  call and fails on a documented key the live answer lacks.
 
 ### Removed
 
