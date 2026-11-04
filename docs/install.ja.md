@@ -2,7 +2,7 @@
 
 [English](install.en.md) · [한국어](install.ko.md) · [日本語](install.ja.md)
 
-このページでは、Ratatosk のリリース change を AI エージェントから使う 4 つの
+このページでは、Ratatosk のリリース変更点を AI エージェントから利用する 4 つの
 方法を説明します。何もインストールせずホスト型エンドポイントに接続する
 方法、手元の PC で stdio サーバーを動かす方法、Kubernetes クラスタに Helm
 でデプロイする方法、そして kagent と統合する方法です。クライアントごとの
@@ -15,11 +15,11 @@
 サーバープロセスの中で比較し、アップグレード経路ごとにアップグレード前の
 確認事項・判断が必要な変更・バージョン番号の飛びを返す）、
 `check_upgrade`（1 プロジェクトの 1 回のアップグレードをサーバーが計算）、
-`get_release`（リリース 1 件の全体）、`list_releases`（最近のリリース要約）、
+`get_release`（リリース 1 件の情報一式）、`list_releases`（最近のリリース要約）、
 `search`（アドバイザリ番号・フラグ・テキストで検索）、
 `list_projects`（追跡プロジェクトとそのスラッグ）です。Claude、ChatGPT、
 Grok、Claude Code、Codex、Gemini CLI、Antigravity、kagent、自作の SDK
-エージェントなど、MCP クライアントであればどれからでも接続できます。
+エージェントなど、どの MCP クライアントからでも接続できます。
 
 ## 実行方法を選ぶ
 
@@ -27,13 +27,13 @@ Grok、Claude Code、Codex、Gemini CLI、Antigravity、kagent、自作の SDK
 | --- | --- | --- |
 | 何もインストールせずにまず試したい | ホスト型エンドポイントの URL を登録 | [ホスト型](#ホスト型エンドポイント) |
 | 手元の PC で Claude Code、Claude Desktop、Codex、Gemini CLI などの stdio MCP クライアントを使う | `docker run`（stdio） | [ローカル](#ローカルstdio) |
-| Kubernetes で独自エージェントを運用（フレームワーク不問、CI ジョブ、SDK クライアント） | Helm チャート | [クラスタ内デプロイ](#クラスタ内への単独デプロイhelm) |
+| フレームワークを問わず、独自エージェント、CI ジョブ、SDK クライアントを Kubernetes 上で運用 | Helm チャート | [クラスタ内デプロイ](#クラスタ内への単独デプロイhelm) |
 | [kagent](https://kagent.dev) を使用中（0.x または 1.x） | `kagent.enabled=true` の Helm オプション、またはマニフェスト | [kagent 統合](#kagent-統合) |
 
 4 つの方法はいずれも同じ 6 つのツールで同じ公開データを提供し、どのモード
 でもアカウントも API キーも不要です。違いは 3 つあります。
 
-- **`check_stack` に渡した稼働中バージョンがどこまで行くか。** セルフホスト
+- **`check_stack` に渡した稼働中のバージョンがどこまで送られるか。** セルフホスト
   ではバージョン比較が利用者のプロセス内で完結し、そのバージョンはインフラ
   を離れません。ホスト型ではバージョンがサーバーメモリを通過しますが、
   どのログにも記録されません。
@@ -79,8 +79,8 @@ Grok、Claude Code、Codex、Gemini CLI、Antigravity、kagent、自作の SDK
 ## ホスト型エンドポイント
 
 `https://ratatosk.io/mcp` は、インストールなしですぐ使えるリモート MCP
-エンドポイントです。Streamable HTTP で提供され、ステートレス
-（stateless）です。セッションがないため、`Mcp-Session-Id` の往復なしに
+エンドポイントです。Streamable HTTP を使うステートレス方式です。
+セッションがないため、`Mcp-Session-Id` の往復なしに
 リクエスト 1 つひとつが独立して処理されます。
 
 ### クライアントへのエンドポイント登録
@@ -109,7 +109,7 @@ claude mcp add --transport http ratatosk https://ratatosk.io/mcp
 
 ### 確認
 
-クライアントがなくても、curl でエンドポイントが生きているか確認できます：
+クライアントがなくても、curl でエンドポイントに接続できるか確認できます：
 
 ```bash
 curl -s -X POST https://ratatosk.io/mcp \
@@ -146,8 +146,8 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
   ツール呼び出し 1 回につき 1 つです。超えると `Retry-After` 付きの `429` が
   返ります。アップストリーム側では、ツール呼び出し 1 回が多数の API リクエスト
   になることがあります（`check_stack` はコンポーネントごとにそのプロジェクトの
-  最近のリリースをすべて読みます）。そのコストはサーバーが負うもので、利用者の
-  60 には含まれません。直接 `/v2` を呼ぶ場合は自分の IP の枠として毎分
+  最近のリリースをすべて読みます）。この負荷はサーバー側で処理され、利用者
+  ごとの毎分 60 リクエストの上限には含まれません。直接 `/v2` を呼ぶ場合は自分の IP の枠として毎分
   1200 リクエストが使えます。ポーリングのような負荷の高い使い方
   が必要なら、セルフホストに切り替えてください。
 
