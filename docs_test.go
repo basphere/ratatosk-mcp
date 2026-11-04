@@ -17,8 +17,10 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -410,6 +412,73 @@ func TestDocsNameNoOlderRelease(t *testing.T) {
 					if re.MatchString(line) {
 						t.Errorf("%s line %d names release %s (the chart ships %s): %s", path, i+1, names[j], app, strings.TrimSpace(line))
 					}
+				}
+			}
+		}
+	}
+}
+
+// slugify follows GitHub's heading anchors: lower case, drop everything but
+// letters, digits, spaces, hyphens and underscores, spaces become hyphens.
+func slugify(h string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(strings.TrimSpace(h)) {
+		switch {
+		case r == ' ':
+			b.WriteRune('-')
+		case r == '-' || r == '_' || unicode.IsLetter(r) || unicode.IsNumber(r) || unicode.Is(unicode.Mn, r):
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func anchors(t *testing.T, path string) map[string]bool {
+	t.Helper()
+	out := map[string]bool{}
+	seen := map[string]int{}
+	inCode := false
+	b, _ := os.ReadFile(path)
+	for _, line := range strings.Split(string(b), "\n") {
+		if strings.HasPrefix(line, "```") {
+			inCode = !inCode
+			continue
+		}
+		if inCode {
+			continue
+		}
+		if m := regexp.MustCompile(`^#{1,6} (.+)$`).FindStringSubmatch(line); m != nil {
+			s := slugify(strings.NewReplacer("`", "", "*", "").Replace(m[1]))
+			if n := seen[s]; n > 0 {
+				out[s+"-"+strconv.Itoa(n)] = true
+			} else {
+				out[s] = true
+			}
+			seen[s]++
+		}
+	}
+	return out
+}
+
+// A translated heading changes its anchor; a link that kept the English one
+// lands at the top of the page without an error. Check every #fragment.
+func TestDocsAnchorsResolve(t *testing.T) {
+	for _, trio := range docTrios {
+		for _, path := range trio {
+			for _, l := range readMD(t, path).links {
+				if strings.Contains(l, "://") || !strings.Contains(l, "#") {
+					continue
+				}
+				file, frag, _ := strings.Cut(l, "#")
+				target := path
+				if file != "" {
+					target = filepath.Join(filepath.Dir(path), file)
+				}
+				if !strings.HasSuffix(target, ".md") {
+					continue
+				}
+				if !anchors(t, target)[frag] {
+					t.Errorf("%s links %s, but %s has no heading with that anchor", path, l, target)
 				}
 			}
 		}
