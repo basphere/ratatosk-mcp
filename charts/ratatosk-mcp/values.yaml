@@ -36,7 +36,9 @@ auditMode: ""
 # what a self-hosted install wants — it is single-tenant, so limiting its one
 # caller only gets in the way. Set it when this server fronts callers you do
 # not control (a shared or public endpoint): each caller address then gets its
-# own budget of N tool calls per minute, and one busy caller cannot starve the
+# own budget of N requests per minute (every MCP message counts: a client
+# spends two or three connecting, then one per tool call), and one busy
+# caller cannot starve the
 # rest. The address is used as an in-memory bucket key for the length of the
 # window and is never logged, never sent upstream. Read from CF-Connecting-IP,
 # then X-Forwarded-For, then X-Real-IP, then the peer address: the proxy in

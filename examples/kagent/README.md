@@ -8,9 +8,10 @@ important fixes, enhancements, dependency updates, other. Each change says who
 it affects and which release-note lines it came from. This MCP server
 exposes those releases to in-cluster agents.
 
-Privacy: the `check_stack` tool compares your running versions locally, inside
-this process. Only project slugs are sent to the ratatosk server; versions
-never leave your cluster. The upstream API is public, read-only, and needs no
+Privacy: `check_stack` compares your running versions inside this process, so
+a `check_stack` call sends only project slugs to ratatosk.io. `check_upgrade`
+and `get_release` are the exception: they send the versions they name. The
+upstream API is public, read-only, and needs no
 credentials (rate limit 1200 req/min per IP).
 
 ## Tools

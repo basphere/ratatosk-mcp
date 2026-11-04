@@ -36,8 +36,8 @@ account, no API key.
 
 **Hosted, nothing to install.** Register `https://ratatosk.io/mcp` as a
 remote MCP server in your client. The hosted endpoint allows each caller 60
-tool calls a minute, counted per caller rather than pooled. For polling or CI
-workloads, self-host. With the Claude Code CLI:
+requests a minute, counted per caller rather than pooled; connecting takes two
+or three, then each tool call is one. For polling or CI workloads, self-host. With the Claude Code CLI:
 
 ```bash
 claude mcp add --transport http ratatosk https://ratatosk.io/mcp
@@ -137,7 +137,7 @@ Parameters, example calls and measured responses for each tool are in the [tools
 
 **Self-hosted:** `check_stack` compares versions inside this process. For each
 component it requests the project's release list and newest releases from
-ratatosk.io, the same requests regardless of the version you run, then cuts
+ratatosk.io (requests that name the project, never your version), then cuts
 your upgrade range locally. Fetching only releases newer than your version
 would use less data, but it would reveal your version to the server: the first
 release fetched sits right above it. The version normalizer is bundled
@@ -165,10 +165,12 @@ Here is what each layer records:
   field for request bodies.
 
 The hosted endpoint runs with its audit stream off, and I keep it that way.
-It does not record request content. One boundary I do
-not control: connection metadata on the CDN leg follows the CDN provider's own
-policy. If your requirements rule out that transit, self-host. Then only
-project slugs leave your infrastructure on a `check_stack` call.
+It does not record request content. One boundary I do not control:
+ratatosk.io sits behind Cloudflare, which terminates TLS, so request contents,
+including the versions in a hosted `check_stack` call, pass through Cloudflare
+in transit under its own policy. If your requirements rule out that transit,
+self-host. Then only project slugs leave your infrastructure on a
+`check_stack` call.
 
 Self-hosting also supports an opt-in audit stream (`MCP_AUDIT=metadata` or
 `full`) that records who called which tool, emitted within your

@@ -131,8 +131,9 @@ func newServer() *mcp.Server {
 			"important_fixes, enhancements, dependency_updates, other. affects says who a change touches and whether the " +
 			"release notes stated it (status stated | inferred | not_stated | not_read). " + dataNote + " " +
 			"Rate limits: the upstream API allows 1200 requests/minute per IP, and the hosted endpoint additionally " +
-			"allows each caller 60 tool calls/minute. One tool call is not one request — check_stack reads every recent " +
-			"release of each component's project — so prefer one check_stack for a whole stack over many per-project calls.",
+			"allows each caller 60 MCP requests/minute (each tool call is one). One tool call can be many upstream " +
+			"requests (check_stack reads every recent release of each component's project), so prefer one check_stack " +
+			"for a whole stack over many per-project calls.",
 	})
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -219,9 +220,10 @@ func newServer() *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search",
 		Annotations: &mcp.ToolAnnotations{Title: "Search releases", ReadOnlyHint: true},
-		Description: "Find releases by an advisory id (CVE-…, GHSA-…; matched exactly), a configuration flag, or " +
-			"text — the website's search. Three groups: in_analysis (a change or before-upgrade item matched; matched " +
-			"names its kind and title), in_release_notes (the release notes matched; excerpt shows where) and " +
+		Description: "Find releases by an advisory id (CVE-…, GHSA-…), a configuration flag, or text, as the " +
+			"website's search does. q matches case-insensitively anywhere in the text, so a partial id finds the full " +
+			"one. Three groups: in_analysis (a change or before-upgrade item matched, or the project name or version; " +
+			"matched names its kind, release for the latter, and title), in_release_notes (the release notes matched; excerpt shows where) and " +
 			"in_linked_documents (a document the notes link matched). q is 2–200 characters. Drill in with " +
 			"get_release(project, version).",
 	}, searchTool)

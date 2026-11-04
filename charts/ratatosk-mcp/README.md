@@ -19,11 +19,14 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | `replicaCount` | `1` | Number of replicas; turn on `statelessHttp` before going above 1 |
 | `image.repository` | `ghcr.io/basphere/ratatosk-mcp` | Image |
 | `image.tag` | chart `appVersion` | Pin a specific server version |
+| `image.pullPolicy` | `IfNotPresent` | Image pull policy |
 | `ratatoskUrl` | `https://ratatosk.io` | Upstream changes API; point at a mirror if you proxy egress |
 | `statelessHttp` | `false` | Serve HTTP without per-session state; needed for clients that use the 2026-07-28 MCP revision and for more than one replica |
 | `logLevel` | `""` (= info) | `MCP_LOG`: `debug`, `warn`, `error` also accepted; any other value silently falls back to info, and no level records request arguments |
 | `auditMode` | `""` (= off) | `MCP_AUDIT`: `metadata` records one line per tool call (argument names only), `full` adds argument values |
+| `rateLimitPerMin` | `0` (= off) | `MCP_RATE_LIMIT_PER_MIN`: requests per minute per caller address (every MCP message counts). Only for a server that fronts callers you do not control |
 | `service.port` | `8080` | Service / MCP endpoint port |
+| `service.type` | `ClusterIP` | Service type |
 | `resources` | small requests/limits | Adjust for busy clusters |
 | `nodeSelector` / `tolerations` / `affinity` | `{}` / `[]` / `{}` | Standard scheduling controls |
 | `clusterDomain` | `cluster.local` | Cluster DNS domain in the full Service name the kagent RemoteMCPServer registers |

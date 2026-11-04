@@ -37,7 +37,7 @@ mode needs an account or an API key. Three things differ:
   the comparison finishes inside your own process, so the versions never
   leave your infrastructure. Hosted, they pass through server memory but are
   written to no log.
-- **Which request limits apply.** Hosted gives each caller 60 tool calls
+- **Which request limits apply.** Hosted gives each caller 60 requests
   a minute, and every hosted caller shares the server's upstream allowance;
   self-hosted gets its own IP's 1200 upstream requests a minute.
 - **Whether you can keep an audit stream.** Self-hosted only.
@@ -66,9 +66,10 @@ the details.
   your cluster restricts egress with NetworkPolicy or an egress proxy, add
   this destination to the allowlist. If you have to go through a proxy or a
   mirror, `RATATOSK_URL` (chart value: `ratatoskUrl`) changes the upstream
-  address. If egress is blocked, tools return errors or empty results
-  (`check_stack` reports `fetch failed: …` in each component's `note` field
-  instead of erroring). See [Troubleshooting](#troubleshooting).
+  address. If egress is blocked, tools return errors (`check_stack`: "could
+  not read the project list"). When only some fetches fail, `check_stack`
+  still answers and puts `fetch failed: …` in the affected component's
+  `note`. See [Troubleshooting](#troubleshooting).
 - **kagent integration**: a cluster with kagent already installed (kagent
   CRDs included). On kagent 1.x, also a Harness for the example agent to run
   on; see [kagent 1.x](#kagent-1x).
@@ -136,13 +137,16 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
   notification stream (the SSE opened with GET), so a 405 response is normal
   behavior. Opening the URL in a browser redirects to an explainer page
   (`/docs/mcp`).
-- **Fair use**: the hosted endpoint allows **60 tool calls per minute per
+- **Fair use**: the hosted endpoint allows **60 requests per minute per
   caller**, counted per caller address rather than pooled, so one busy caller
-  cannot starve the rest. Exceeding it returns `429` with `Retry-After`. One
-  tool call is not one API request (`check_stack` reads every recent release
-  of each component's project), which is why the limit counts tool calls.
-  Calling `/v2` directly instead gives you 1200 requests/minute against your
-  own IP. For heavy use such as polling, self-host.
+  cannot starve the rest. Every MCP message counts: a client spends two or
+  three connecting (`initialize`, `notifications/initialized`, `tools/list`),
+  then one per tool call. Exceeding it returns `429` with `Retry-After`.
+  Upstream, one tool call can be many API requests (`check_stack` reads every
+  recent release of each component's project); that cost is the server's, not
+  part of your 60. Calling `/v2` directly instead gives you 1200
+  requests/minute against your own IP. For heavy use such as polling,
+  self-host.
 
 ### Privacy: what the hosted endpoint records
 
@@ -159,15 +163,16 @@ anywhere:
 - The access log in front of the server strips query strings, reduces the
   `/v2/releases/…` and `/v2/upgrade/…` paths (where slugs and versions ride)
   to their prefix, masks IPs, and has no field for request bodies at all. It
-  is not shipped anywhere and rotates locally by size (a few days' worth at
-  current traffic).
+  rotates locally within 7 days, and a copy goes to the operator's central log
+  store, which also keeps it 7 days.
 - The audit stream described below is off on the hosted endpoint, and stays
   off.
 
-One boundary lies outside Ratatosk's control: on the CDN leg,
-connection metadata follows the CDN provider's policy. If that boundary does not
-meet your requirements, self-host: the versions you pass to `check_stack`
-then never leave your process.
+One boundary lies outside Ratatosk's control: ratatosk.io sits behind
+Cloudflare, which terminates TLS, so request contents (including the versions
+in a hosted `check_stack` call) pass through Cloudflare in transit and follow
+its policy. If that boundary does not meet your requirements, self-host: the
+versions you pass to `check_stack` then never leave your process.
 
 ## Local (stdio)
 
@@ -268,7 +273,7 @@ helm install ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp
 ```
 
 It needs no RBAC and no secrets, and runs without warnings under the Pod
-Security Standards (PSS) `restricted` profile. All chart options are covered
+Security Standards (PSS) `restricted` profile. Every chart value is listed
 in the [chart README](../charts/ratatosk-mcp/README.md). Turn on
 `--set statelessHttp=true` in two cases: when clients use the 2026-07-28
 revision of the MCP spec over HTTP (clients that send
@@ -289,7 +294,7 @@ One startup log line tells you the serving address and the upstream:
 
 ```bash
 kubectl logs deploy/ratatosk-mcp
-# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.0.0"}
+# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.0.0","rate_limit":"off"}
 ```
 
 To check health as well:
@@ -465,7 +470,7 @@ the [chart README](../charts/ratatosk-mcp/README.md).
 | `MCP_HTTP_STATELESS` | `statelessHttp` | *(off)* | `1` serves HTTP without session state: no `Mcp-Session-Id` round trip, and required to serve current clients that use the 2026-07-28 MCP spec revision over HTTP. Also recommended for horizontal scaling to two or more replicas. Older clients work either way |
 | `MCP_LOG` | `logLevel` | `info` | Accepted values `info` (default), `debug`, `warn`, `error`; unrecognized values fall back to `info` without a warning. `debug` adds per-call upstream timing; `warn` and `error` reduce output. No level records request arguments; see [Logs and the audit stream](#logs-and-the-audit-stream) |
 | `MCP_AUDIT` | `auditMode` | *(off)* | `metadata` or `full`: the tool-call audit stream. See [Enabling the audit stream](#enabling-the-audit-stream) |
-| `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *(off)* | Per-caller ceiling on tool calls per minute, for a server that fronts callers you do not control. Each caller address gets its own budget, so one busy caller cannot starve the rest; over the limit answers `429` with `Retry-After`. The address is an in-memory bucket key for the length of the window. It is never logged and never sent upstream. It is read from `CF-Connecting-IP`, then `X-Forwarded-For`, then `X-Real-IP`, then the peer address; the proxy in front must set one of those **and strip whatever the client sent**, since a limiter keyed on a caller-controlled value is not a limiter. Leave off for a single-tenant install |
+| `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *(off)* | Per-caller ceiling on requests per minute (every MCP message counts, one per tool call), for a server that fronts callers you do not control. Each caller address gets its own budget, so one busy caller cannot starve the rest; over the limit answers `429` with `Retry-After`. The address is an in-memory bucket key for the length of the window. It is never logged and never sent upstream. It is read from `CF-Connecting-IP`, then `X-Forwarded-For`, then `X-Real-IP`, then the peer address; the proxy in front must set one of those **and strip whatever the client sent**, since a limiter keyed on a caller-controlled value is not a limiter. Leave off for a single-tenant install |
 
 Running HTTP mode directly with Docker:
 
@@ -578,7 +583,7 @@ nothing is recorded.
 
 | Symptom | Check | Cause and fix |
 |---|---|---|
-| Tool calls return errors (`check_stack` instead reports `fetch failed: …` in each component's `note`); the log shows `"msg":"upstream fetch failed"` with `kind: connection_refused`, `dns`, or `timeout` | `kubectl logs deploy/ratatosk-mcp` (locally: your client's MCP logs) | Egress is blocked. Allow outbound HTTPS to `ratatosk.io:443`, or set up a mirror and point `RATATOSK_URL` (chart: `ratatoskUrl`) at it |
+| Tool calls return errors (`check_stack`: "could not read the project list: …"; if only some fetches fail, `fetch failed: …` in a component's `note`); the log shows `"msg":"upstream fetch failed"` with `kind: connection_refused`, `dns`, or `timeout` | `kubectl logs deploy/ratatosk-mcp` (locally: your client's MCP logs) | Egress is blocked. Allow outbound HTTPS to `ratatosk.io:443`, or set up a mirror and point `RATATOSK_URL` (chart: `ratatoskUrl`) at it |
 | The log shows `"msg":"upstream rate limited"`, `status: 429` | Same as above | Upstream limit exceeded (1200 requests/minute per IP). Prefer one `check_stack` call for a whole stack over many per-project calls, and retry after a pause |
 | An HTTP client gets `400 Bad Request: protocol version "2026-07-28" is only supported on stateless HTTP servers` | The `Mcp-Protocol-Version` header the client sends | The client speaks the 2026-07-28 MCP revision, which stateful HTTP mode rejects. Turn on `--set statelessHttp=true` (env: `MCP_HTTP_STATELESS=1`). The `StreamableHTTPOptions.Stateless` named in the error is the Go SDK's name for the same switch |
 | `ratatosk-agent` does not appear in the kagent UI | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | Installing with `kagent.enabled=true` fails on a cluster without the kagent CRDs; install kagent first. On kagent 1.x the chart skips the agent while `kagent.harness` is empty (the install notes say so), and a set Harness that does not exist shows in `kubectl describe agents.api.kagent.dev ratatosk-agent`. Applying the 0.x manifests to kagent 1.x, or the reverse, fails with "no matches for kind"; use the set for your line. The manifest route hardcodes `namespace: kagent`, so if kagent lives in another namespace, edit the manifests |
