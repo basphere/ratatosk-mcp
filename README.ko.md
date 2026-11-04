@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/assets/ratatosk-hero.webp" width="280" alt="두루마리를 가방에 넣고 손을 흔드는 배달부 다람쥐, 라타토스크">
+<img src="docs/assets/ratatosk-symbol.png" width="120" alt="라타토스크 심볼">
 
 # ratatosk-mcp
 
@@ -18,34 +18,31 @@
 
 ---
 
-북유럽 신화의 라타토스크는 세계수를 오르내리며 소식을 나르는 다람쥐입니다.
-여기서 나르는 것은 릴리스 정보입니다. [ratatosk.io](https://ratatosk.io)는
-CNCF 졸업 · 인큐베이팅 단계 프로젝트의 새 릴리스 노트를 읽고, 노트만으로
-부족하면 노트가 링크한 PR과 문서까지 읽습니다. 변경은 하나씩 일곱 종류(보안 ·
-호환성 변경 · 폐기 예정 · 중요 수정 · 기능·개선 · 의존성 갱신 · 기타) 가운데
-하나로 나뉘고, 누가 영향을 받는지, 무엇을 해야 하는지, 근거가 된 릴리스 노트
-줄이 함께 붙습니다. 업그레이드 전에 볼 것(전제 조건 · 알려진 문제 · 업그레이드
-안내)은 맨 앞에 모읍니다.
+[ratatosk.io](https://ratatosk.io)는 CNCF 프로젝트를 따라가며 새 릴리스 노트를
+모두 읽고, 노트만으로 부족하면 노트가 링크한 PR과 문서까지 읽습니다. 변경은
+하나씩 일곱 종류 가운데 하나로 나뉩니다: 보안 · 호환성 변경 · 폐기 예정 · 중요
+수정 · 기능·개선 · 의존성 갱신 · 기타. 변경마다 누가 영향을 받는지, 무엇을 해야
+하는지, 근거가 된 릴리스 노트 줄이 함께 붙습니다. 업그레이드 전에 볼 것(전제
+조건 · 알려진 문제 · 업그레이드 안내)은 맨 앞에 모읍니다.
 
 이 저장소는 그 정리를 도구로 에이전트에게 건네는 MCP 서버입니다.
 MCP(Model Context Protocol)는 AI 에이전트가 외부 도구를 호출할 때 쓰는
-공개 표준입니다. Claude Code, Claude Desktop, kagent, 직접 만든 SDK
-에이전트처럼 MCP를 지원하는 클라이언트라면 무엇이든 연결할 수 있습니다.
-계정도 API 키도 필요 없습니다.
+공개 표준입니다. Claude, ChatGPT, Grok, Claude Code, Codex, Gemini CLI,
+Antigravity, kagent, 직접 만든 SDK 에이전트처럼 MCP 클라이언트라면 무엇이든
+연결할 수 있습니다. 계정도 API 키도 필요 없습니다.
 
 ## 쓰는 방법 두 가지
 
-**호스팅 — 설치할 것이 없습니다.** 원격 커넥터를 지원하는 클라이언트에
-`https://ratatosk.io/mcp`를 원격 MCP 서버로 등록하면 됩니다. 호스팅
-엔드포인트는 호출자마다 분당 60회의 도구 호출을 허용합니다(다른 이용자와
-나눠 쓰는 몫이 아니라 호출자별로 셉니다) — 폴링이나 CI 워크로드라면
-설치형으로 쓰세요. Claude Code CLI 기준:
+**호스팅: 설치할 것이 없습니다.** 클라이언트에 `https://ratatosk.io/mcp`를
+원격 MCP 서버로 등록하면 됩니다. 호스팅 엔드포인트는 호출자마다 분당 60회의
+도구 호출을 허용합니다(다른 이용자와 나눠 쓰는 몫이 아니라 호출자별로 셉니다).
+폴링이나 CI 워크로드라면 설치형으로 쓰세요. Claude Code CLI 기준:
 
 ```bash
 claude mcp add --transport http ratatosk https://ratatosk.io/mcp
 ```
 
-**설치형 — 같은 서버를 내 프로세스로 돌립니다.** Docker, Helm 차트, 소스
+**설치형: 같은 서버를 내 프로세스로 돌립니다.** Docker, Helm 차트, 소스
 빌드 가운데 어느 방식이든 됩니다. Claude Code와 Docker가 설치되어 있다면:
 
 ```bash
@@ -67,8 +64,8 @@ claude mcp list
 >
 > **에이전트**가 `check_stack`을 호출해 기록으로 답합니다. 지금 버전 이후의
 > 보안 수정, 업그레이드 경로의 호환성 변경과 폐기 예정, 먼저 읽을 업그레이드
-> 안내를 주고, 항목마다 누가 영향을 받는지(에이전트가 내 설정과 대조할 것)와
-> 근거가 된 릴리스 노트 줄을 붙입니다.
+> 안내를 줍니다. 항목마다 누가 영향을 받는지가 붙어 에이전트가 내 설정과 대조할
+> 수 있고, 근거가 된 릴리스 노트 줄도 함께 붙습니다.
 
 실제 `check_stack` 응답에서 항목 하나를 에이전트가 받는 그대로 옮기면 이렇습니다
 (etcd v3.5.30 → v3.6.13, 2026-11-03 /v2 미리 보기에서 측정, body는 줄임):
@@ -97,8 +94,9 @@ claude mcp list
 this process; upstream requests named project slugs only (each project's recent
 releases, the same whatever version runs)."*
 
-다른 클라이언트(Claude Desktop, kagent, 클러스터 안 에이전트)와 전체 설정은
-[설치 가이드](docs/install.ko.md)를 보세요.
+클라이언트마다 설정하는 방법(Claude, ChatGPT, Grok, Codex, Gemini CLI,
+Antigravity, kagent, 클러스터 안 에이전트)은 [설치 가이드](docs/install.ko.md)에
+있습니다.
 
 ## 도구
 
@@ -107,12 +105,13 @@ releases, the same whatever version runs)."*
 들어 있습니다: `security` · `breaking` · `deprecations` · `important_fixes` ·
 `enhancements` · `dependency_updates` · `other`. 변경마다 이런 값이 붙습니다.
 
-- **affects** — 누가 영향을 받는지와 `status`: `stated`(릴리스 노트가 말함) ·
+- **affects**: 누가 영향을 받는지와 그 `status`. `stated`(릴리스 노트가 말함) ·
   `inferred`(노트를 읽고 추정, `reason`에 까닭) · `not_stated` · `not_read`(출처를
   읽지 못함).
-- **할 일** — `action_required`(호환성 변경) · `also_required`(보안) ·
+- **할 일**: `action_required`(호환성 변경) · `also_required`(보안) ·
   `removed_in`(폐기 예정) · 되돌릴 수 없는 업그레이드면 `no_downgrade`.
-- **evidence** — 근거가 된 릴리스 노트 줄, 원문 그대로, 주소와 함께.
+- **evidence**: 근거가 된 줄, 원문 그대로, 주소와 함께. 릴리스 노트, 노트가
+  링크한 PR이나 문서, 또는 프로젝트가 직접 낸 보안 공지에서 가져옵니다.
 
 릴리스가 나온 뒤에 생긴 일(나중에 공개된 보안 공지, 그 릴리스에서 생긴 문제를
 뒤 버전이 고침)은 그 릴리스의 `later`에 붙습니다. 글 칸(`title` · `body` ·
@@ -122,11 +121,11 @@ releases, the same whatever version runs)."*
 | 도구 | 하는 일 |
 |---|---|
 | `check_stack` | 실행 중인 컴포넌트 버전을 받아 업그레이드 경로마다 가져오는 것을 돌려줍니다: 업그레이드 전 확인 전부, 결정이 필요한 변경(보안 · 호환성 변경 · 폐기 예정 · 중요 수정), 버전 번호가 건너뛴 `gaps`, 지금 버전에 나중에 생긴 일. 비교는 서버 프로세스 안에서 하고, 설치형이라면 그 프로세스가 곧 내 프로세스입니다([컴포넌트 버전의 처리 방식](#실행-중인-컴포넌트-버전의-처리-방식)) |
-| `check_upgrade` | 한 프로젝트의 한 번 업그레이드를 같은 꼴로, 서버가 계산합니다. `from`과 `to`가 서버로 갑니다 — 내 쪽에 두려면 `check_stack` |
+| `check_upgrade` | 한 프로젝트의 한 번 업그레이드를 같은 꼴로, 서버가 계산합니다. `from`과 `to`가 서버로 갑니다. 내 쪽에 두려면 `check_stack` |
 | `get_release` | 릴리스 하나 전체: 업그레이드 전 확인, 근거가 붙은 변경 전부, 나중 사건. 버전을 빼면 최신 |
 | `list_releases` | 최근 릴리스 한 줄 요약(종류별 건수 · 경고), 최신순. 프로젝트 · 종류 · 날짜로 거름 |
 | `search` | 보안 공지 번호(CVE · GHSA) · 설정 플래그 · 글자로 릴리스 찾기 |
-| `list_projects` | 추적 중인 프로젝트 목록과 정식 슬러그(다른 모든 도구가 받는 짧은 프로젝트 id). 이름을 짐작하지 말고 여기서 찾으세요 |
+| `list_projects` | 추적 중인 프로젝트와 슬러그(다른 모든 도구가 받는 짧은 프로젝트 id). 이름을 짐작하지 말고 여기서 찾으세요 |
 
 도구별 파라미터, 호출 예, 실측 응답은 [도구 레퍼런스](docs/tools.ko.md)에 있습니다.
 
@@ -157,7 +156,7 @@ ratatosk.io에 그 프로젝트의 릴리스 목록과 최근 릴리스들을 �
   앞부분만 남기며, 호출자 IP를 가리고, 요청 본문을 담는 칸이 없습니다.
 
 호스팅 엔드포인트는 감사 스트림을 끈 채 운영하고, 앞으로도 켜지 않습니다. 요청
-내용을 기록하지 않는 것이 그 엔드포인트의 운영 방침입니다. 제가 통제하지 못하는
+내용을 기록하지 않는 것이 그 엔드포인트의 운영 방식입니다. 제가 통제하지 못하는
 경계가 하나 있습니다. CDN 구간의 접속 메타데이터는 CDN 제공자의 정책을 따릅니다.
 그 구간도 안 되는 요건이라면 설치형을 쓰세요. 그러면 `check_stack` 호출에서
 인프라 밖으로 나가는 것은 프로젝트 슬러그뿐입니다.
@@ -169,9 +168,10 @@ ratatosk.io에 그 프로젝트의 릴리스 목록과 최근 릴리스들을 �
 
 ## 문서
 
-- **[설치와 사용법](docs/install.ko.md)** — 호스팅 엔드포인트 · 로컬 stdio · 클러스터(Helm) · kagent ([English](docs/install.en.md) · [日本語](docs/install.ja.md))
-- **[Helm 차트](charts/ratatosk-mcp/README.ko.md)** — values, kagent 토글 ([English](charts/ratatosk-mcp/README.md) · [日本語](charts/ratatosk-mcp/README.ja.md))
-- **[kagent 예제](examples/kagent/README.ko.md)** — kagent 0.x · 1.x용 매니페스트 + ratatosk-agent ([English](examples/kagent/README.md) · [日本語](examples/kagent/README.ja.md))
+- **[설치와 사용법](docs/install.ko.md)**: 호스팅 엔드포인트 · 각 클라이언트 · 로컬 stdio · 클러스터(Helm) · kagent ([English](docs/install.en.md) · [日本語](docs/install.ja.md))
+- **[도구 레퍼런스](docs/tools.ko.md)**: 파라미터, 호출 예, 실측 응답 ([English](docs/tools.en.md) · [日本語](docs/tools.ja.md))
+- **[Helm 차트](charts/ratatosk-mcp/README.ko.md)**: values, kagent 토글 ([English](charts/ratatosk-mcp/README.md) · [日本語](charts/ratatosk-mcp/README.ja.md))
+- **[kagent 예제](examples/kagent/README.ko.md)**: kagent 0.x · 1.x용 매니페스트 + ratatosk-agent ([English](examples/kagent/README.md) · [日本語](examples/kagent/README.ja.md))
 - **[기여 안내](CONTRIBUTING.md)** · **[보안 정책](SECURITY.md)**
 
 ## 업스트림 API
@@ -185,8 +185,8 @@ API 키는 없고, IP당 분당 1200회 제한이 있습니다. 1.0은 `/v2`를 
 ## 데이터와 약관
 
 데이터는 ratatosk.io가 [이용약관](https://ratatosk.io/terms)에 따라 무료로
-제공합니다(변경될 수 있으며, 변경 시 사전 공지). 분석은 AI가 생성한 참고
-정보이며 보증이 없습니다 — 조치 전에 원문 릴리스 노트를 확인하세요.
+제공합니다. 무료 조건은 바뀔 수 있으며, 바뀔 때는 미리 알립니다. 분석은 AI가
+생성한 참고 정보이며 보증이 없습니다. 조치 전에 릴리스 노트 원문을 확인하세요.
 에이전트가 대신 작업하는 경우라면 더욱 그렇습니다. 원문의 저작권은 각
 프로젝트에 있으며, 근거 인용에는 가져온 주소가 함께 붙습니다.
 

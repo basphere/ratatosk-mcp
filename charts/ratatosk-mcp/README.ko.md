@@ -16,11 +16,11 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 
 | 키 | 기본값 | 의미 |
 | --- | --- | --- |
-| `replicaCount` | `1` | 레플리카 수 — 2개 이상으로 늘리기 전에 `statelessHttp`를 켜세요 |
+| `replicaCount` | `1` | 레플리카 수. 2개 이상으로 늘리기 전에 `statelessHttp`를 켜세요 |
 | `image.repository` | `ghcr.io/basphere/ratatosk-mcp` | 이미지 |
 | `image.tag` | 차트 `appVersion` | 특정 서버 버전 고정 |
-| `ratatoskUrl` | `https://ratatosk.io` | 업스트림 changes API — egress를 프록시·미러로 우회하면 변경 |
-| `statelessHttp` | `false` | 세션 상태 없는 HTTP 제공 — MCP 스펙 2026-07-28 리비전 클라이언트와 레플리카 2개 이상에 필요 |
+| `ratatoskUrl` | `https://ratatosk.io` | 업스트림 changes API. egress를 프록시·미러로 우회하면 변경 |
+| `statelessHttp` | `false` | 세션 상태 없는 HTTP 제공. MCP 스펙 2026-07-28 리비전 클라이언트와 레플리카 2개 이상에 필요 |
 | `logLevel` | `""` (= info) | `MCP_LOG`: `debug`·`warn`·`error`도 허용, 그 밖의 값은 경고 없이 info로 처리. 어느 레벨에서도 요청 인자는 기록되지 않음 |
 | `auditMode` | `""` (= 꺼짐) | `MCP_AUDIT`: `metadata`는 도구 호출마다 한 줄(인자 이름만), `full`은 인자 값까지 |
 | `service.port` | `8080` | Service / MCP 엔드포인트 포트 |
@@ -84,6 +84,6 @@ Helm 없이 설치하려면 [`examples/kagent/`](../../examples/kagent/README.ko
 helm upgrade ratatosk-mcp ./charts/ratatosk-mcp
 ```
 
-`--set`·`-f`로 지정했던 값은 자동으로 이어지지 않습니다 — 같은 값을 다시
+`--set`·`-f`로 지정했던 값은 자동으로 이어지지 않습니다. 같은 값을 다시
 지정하거나 `--reuse-values`를 붙이세요. `image.tag`로 고정하지 않았다면
 이미지는 차트 `appVersion`을 따릅니다.
