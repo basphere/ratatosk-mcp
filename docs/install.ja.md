@@ -298,7 +298,7 @@ kubectl get pods -l app.kubernetes.io/name=ratatosk-mcp
 
 ```bash
 kubectl logs deploy/ratatosk-mcp
-# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.0.0","rate_limit":"off"}
+# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.0.0","rate_limit":"off","max_inflight":"off"}
 ```
 
 ヘルスチェックまで確認するなら：
@@ -482,12 +482,38 @@ kagent ランタイムはこの一覧を守ります。Claude Harness（`spec.cl
 | `MCP_LOG` | `logLevel` | `info` | 許容値は `info`（デフォルト）・`debug`・`warn`・`error` です。認識できない値は警告なしに `info` として扱われます。`debug` はアップストリーム呼び出しごとの所要時間を追加し、`warn`・`error` はログを減らします。どのレベルでもリクエスト引数は記録されません。[ログと監査ストリーム](#ログと監査ストリーム)参照 |
 | `MCP_AUDIT` | `auditMode` | *（オフ）* | `metadata` または `full`：ツール呼び出しの監査ストリーム。[監査ストリームを有効にする](#監査ストリームを有効にする)参照 |
 | `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *（オフ）* | 呼び出し元ごとの毎分リクエスト上限（MCP のメッセージはすべて数え、ツール呼び出しは 1 回につき 1 つ）。自分が管理していない呼び出し元を受けるサーバー向けです。呼び出し元アドレスごとに枠を分けるため、誰か 1 人が忙しくても他が枯渇しません。超えると `Retry-After` 付きの `429` を返します。アドレスはウィンドウの間だけのメモリ上のバケットキーであり、記録もアップストリームへの転送もしません。`CF-Connecting-IP` → `X-Forwarded-For` → `X-Real-IP` → ピアアドレスの順に読むため、前段のプロキシがいずれかを設定し、**クライアントが送ってきた値は削除する**必要があります。呼び出し元が操作できる値をキーにしたら制限になりません。単一利用者のインストールではオフのままに |
+| `MCP_MAX_INFLIGHT` | `maxInflight` | *（オフ）* | すべての呼び出し元から届くリクエストの合計について、サーバーが同時に処理する数の上限。上限を超えたリクエストは、処理枠が空くまで最大 10 秒待ち、空かなければ `Retry-After` 付きの `503` を受け取ります。[メモリと同時実行](#メモリと同時実行)を参照 |
+| `MCP_CACHE_MAX_MB` | `cacheMaxMB` | `32` | 応答キャッシュの上限（MiB）。応答は 5 分間キャッシュされます |
 
 docker で HTTP モードを直接起動する例：
 
 ```bash
 docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.0.0
 ```
+
+### メモリと同時実行
+
+まず制約になるのはメモリです。`check_stack` の実行中、サーバーはそのスタックのために読んだリリース文書を
+メモリに保持します。コンポーネントが 10 個の構成で測定したところ、`detail` をデフォルトの `brief` のままにすると
+約 30 MiB、`detail=full` では約 50 MiB でした。同時に実行される full の呼び出しが 1 つ増えるごとに約 20 MiB 増えます。
+さらに、応答キャッシュのメモリ使用量は最大 `MCP_CACHE_MAX_MB` MiB です。
+
+チャートのデフォルトのメモリ上限 512Mi では、スタック全体を full で確認する呼び出しを同時に 16 個（ピーク 376 MiB）
+または 24 個（ピーク 495 MiB）受けても、再起動しませんでした。64Mi では、2 個の full 呼び出しを同時に実行すると、
+コンテナが強制終了されました。CPU は、コンテナが同時実行に耐えられるかどうかではなく、処理速度に影響します。
+チャートのデフォルト 100m では、コンポーネント 10 個の full 確認 1 回に約 4 秒かかりました。同時実行中の呼び出しは
+CPU を分け合うため、16 個を同時に実行した場合、所要時間は 46 秒でした。
+
+負荷を抑える設定は 4 つです。
+
+| 設定 | 使う場面 |
+|---|---|
+| `resources.limits.memory`（チャート） | 呼び出し元からスタック全体の確認リクエストが並列に届く場合や、余裕を増やしたい場合。同時実行する full の呼び出し 1 件あたり、約 20 MiB を見積もってください |
+| `MCP_MAX_INFLIGHT` | メモリ上限内で処理できる数を超えるリクエストが、同時に届く可能性がある場合。上限を超えたリクエストは待ったうえで `Retry-After` 付きの `503` を受け取ります。コンテナが強制終了され、処理中のリクエストがすべて失敗する事態を避けるための設定です。メモリ上限で処理できる full の呼び出し数より小さく設定してください |
+| `MCP_RATE_LIMIT_PER_MIN` | 自分が管理していない呼び出し元からのアクセスを受けるサーバー。こちらは呼び出し元ごとに制限し、`MCP_MAX_INFLIGHT` は全呼び出し元の合計に対して制限します |
+| `MCP_CACHE_MAX_MB` | メモリに余裕がない場合。キャッシュ容量を小さくすると、同じリクエストがアップストリームに送信される回数が増えます |
+
+チャートのデフォルト値で使う単一利用者のインストールなら、これらの設定を変える必要はありません。
 
 ## ログと監査ストリーム
 
@@ -602,6 +628,7 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=met
 | kagent UI に `ratatosk-agent` が現れない | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | kagent CRD のないクラスタでは `kagent.enabled=true` のインストールが失敗します。先に kagent をインストールしてください。kagent 1.x で `kagent.harness` が空だとチャートはエージェントを作らず（インストール後の案内に出ます）、指定した Harness が存在しなければ `kubectl describe agents.api.kagent.dev ratatosk-agent` に現れます。0.x のマニフェストを kagent 1.x に適用する（またはその逆）と "no matches for kind" で失敗するので、系列に合うセットを使ってください。マニフェスト経路は `namespace: kagent` がハードコードされているため、kagent を別のネームスペースに入れている場合はマニフェストの修正が必要です |
 | kagent 1.x：エージェントの ratatosk ツール呼び出しが接続に失敗する | `kubectl get remotemcpservers.api.kagent.dev ratatosk-mcp -n kagent -o jsonpath='{.spec.url}'` | URL が短い Service 名です。kagent 1.x のエージェントは完全な名前しか解決できません。`http://ratatosk-mcp.<namespace>.svc.cluster.local:8080/mcp` を使ってください（チャートと 1.x のマニフェストはすでにそうしています） |
 | kagent 0.x のみ：kagent でエージェントランタイムを Go ADK に変えると `ImagePullBackOff` | `kubectl describe pod` | このチャートとは無関係な、kagent 0.9.12 自体の既知の問題（[#2247]、0.9.12 以降で修正）：Go ADK イメージは `ghcr.io` にのみ公開されているのに、コントローラのデフォルトが廃止済みの `cr.kagent.dev` を指しています。回避策：kagent のインストールに `--set controller.agentImage.registry=ghcr.io` |
+| Pod が再起動し、`kubectl describe pod` に `Last State: Terminated, Reason: OOMKilled` が出る | `kubectl describe pod -l app.kubernetes.io/name=ratatosk-mcp` | スタック全体の確認が同時に実行され、メモリ使用量が上限を超えました。`resources.limits.memory` を上げるか、`maxInflight` を設定してあふれた呼び出しを待たせてください。[メモリと同時実行](#メモリと同時実行)を参照 |
 | kagent エージェントが実行のたびに失敗 | エージェントログの 429 | モデルティアのリクエスト上限不足です。[kagent 統合](#kagent-統合)のモデル最低要件を参照してください |
 
 [#2247]: https://github.com/kagent-dev/kagent/issues/2247

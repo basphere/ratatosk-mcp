@@ -25,9 +25,11 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | `logLevel` | `""` (= info) | `MCP_LOG`: `debug`・`warn`・`error` も受け付け、それ以外の値は警告なしに info 扱い。どのレベルでもリクエスト引数は記録されません |
 | `auditMode` | `""` (= 無効) | `MCP_AUDIT`: `metadata` はツール呼び出しごとに 1 行（引数名のみ）、`full` は引数値も記録 |
 | `rateLimitPerMin` | `0` (= 無効) | `MCP_RATE_LIMIT_PER_MIN`: 呼び出し元アドレスごとの毎分リクエスト数（MCP のメッセージはすべて数える）。自分が管理していない呼び出し元を受けるサーバー専用 |
+| `maxInflight` | `0` (= 無効) | `MCP_MAX_INFLIGHT`: サーバーが同時に処理するリクエスト数の上限。上限を超えたリクエストは、処理枠が空くまで最大 10 秒待ち、空かなければ `Retry-After` 付きの `503` を受け取ります。多くの呼び出し元から同時にリクエストが届く可能性がある場合に設定します。メモリ使用量を上限内に抑えるための設定です |
+| `cacheMaxMB` | `0` (= 32) | `MCP_CACHE_MAX_MB`: 応答キャッシュの上限（MiB） |
 | `service.port` | `8080` | Service / MCP エンドポイントのポート |
 | `service.type` | `ClusterIP` | Service のタイプ |
-| `resources` | 小さめの requests/limits | 必要に応じて調整 |
+| `resources` | requests CPU 10m・16Mi、limits CPU 100m・512Mi | メモリは重い呼び出しを同時に処理できる数を左右し、CPU は処理速度に影響します。[メモリと同時実行](../../docs/install.ja.md#メモリと同時実行)を参照 |
 | `nodeSelector` / `tolerations` / `affinity` | `{}` / `[]` / `{}` | 標準的なスケジューリング制御 |
 | `clusterDomain` | `cluster.local` | kagent の RemoteMCPServer に登録する Service の完全な名前に使うクラスタ DNS ドメイン |
 | `kagent.enabled` | `false` | kagent 統合も一緒にインストール（下記） |

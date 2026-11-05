@@ -25,9 +25,11 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | `logLevel` | `""` (= info) | `MCP_LOG`: `debug`, `warn`, `error` also accepted; any other value silently falls back to info, and no level records request arguments |
 | `auditMode` | `""` (= off) | `MCP_AUDIT`: `metadata` records one line per tool call (argument names only), `full` adds argument values |
 | `rateLimitPerMin` | `0` (= off) | `MCP_RATE_LIMIT_PER_MIN`: requests per minute per caller address (every MCP message counts). Only for a server that fronts callers you do not control |
+| `maxInflight` | `0` (= off) | `MCP_MAX_INFLIGHT`: maximum number of requests the server handles concurrently across all callers. Requests above the cap wait up to 10 s, then receive `503` with `Retry-After`. Set this when many callers may arrive together, and choose a cap the memory limit can support |
+| `cacheMaxMB` | `0` (= 32) | `MCP_CACHE_MAX_MB`: response cache budget in MiB |
 | `service.port` | `8080` | Service / MCP endpoint port |
 | `service.type` | `ClusterIP` | Service type |
-| `resources` | small requests/limits | Adjust for busy clusters |
+| `resources` | requests 10m CPU, 16Mi; limits 100m CPU, 512Mi | Memory determines how many heavy calls can run concurrently; CPU determines how quickly they finish. See [Memory and concurrency](../../docs/install.en.md#memory-and-concurrency) |
 | `nodeSelector` / `tolerations` / `affinity` | `{}` / `[]` / `{}` | Standard scheduling controls |
 | `clusterDomain` | `cluster.local` | Cluster DNS domain in the full Service name the kagent RemoteMCPServer registers |
 | `kagent.enabled` | `false` | Also install the kagent integration (below) |

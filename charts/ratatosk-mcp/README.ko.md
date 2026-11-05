@@ -25,9 +25,11 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | `logLevel` | `""` (= info) | `MCP_LOG`: `debug`·`warn`·`error`도 허용, 그 밖의 값은 경고 없이 info로 처리. 어느 레벨에서도 요청 인자는 기록되지 않음 |
 | `auditMode` | `""` (= 꺼짐) | `MCP_AUDIT`: `metadata`는 도구 호출마다 한 줄(인자 이름만), `full`은 인자 값까지 |
 | `rateLimitPerMin` | `0` (= 꺼짐) | `MCP_RATE_LIMIT_PER_MIN`: 호출자 주소당 분당 요청 수(MCP 메시지를 모두 셈). 내가 통제하지 않는 호출자를 대신 받는 서버에서만 |
+| `maxInflight` | `0` (= 꺼짐) | `MCP_MAX_INFLIGHT`: 서버가 동시에 처리하는 요청 수. 상한을 넘은 요청은 최대 10초 기다린 뒤 `Retry-After`가 붙은 `503`을 받습니다. 호출자가 한꺼번에 몰릴 수 있을 때 메모리가 상한을 넘지 않게 하려면 설정 |
+| `cacheMaxMB` | `0` (= 32) | `MCP_CACHE_MAX_MB`: 응답 캐시 예산(MiB) |
 | `service.port` | `8080` | Service / MCP 엔드포인트 포트 |
 | `service.type` | `ClusterIP` | Service 타입 |
-| `resources` | 소형 requests/limits | 부하가 큰 클러스터라면 조정 |
+| `resources` | requests CPU 10m·16Mi, limits CPU 100m·512Mi | 메모리는 무거운 호출을 동시에 몇 개 돌릴 수 있는지, CPU는 얼마나 빨리 끝나는지를 정합니다. [메모리와 동시 처리](../../docs/install.ko.md#메모리와-동시-처리) 참조 |
 | `nodeSelector` / `tolerations` / `affinity` | `{}` / `[]` / `{}` | 표준 스케줄링 제어 |
 | `clusterDomain` | `cluster.local` | kagent RemoteMCPServer에 등록하는 Service 전체 이름의 클러스터 DNS 도메인 |
 | `kagent.enabled` | `false` | kagent 연동까지 함께 설치 (아래 참조) |

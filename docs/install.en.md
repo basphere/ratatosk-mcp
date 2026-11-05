@@ -294,7 +294,7 @@ One startup log line tells you the serving address and the upstream:
 
 ```bash
 kubectl logs deploy/ratatosk-mcp
-# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.0.0","rate_limit":"off"}
+# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.0.0","rate_limit":"off","max_inflight":"off"}
 ```
 
 To check health as well:
@@ -471,12 +471,42 @@ the [chart README](../charts/ratatosk-mcp/README.md).
 | `MCP_LOG` | `logLevel` | `info` | Accepted values `info` (default), `debug`, `warn`, `error`; unrecognized values fall back to `info` without a warning. `debug` adds per-call upstream timing; `warn` and `error` reduce output. No level records request arguments; see [Logs and the audit stream](#logs-and-the-audit-stream) |
 | `MCP_AUDIT` | `auditMode` | *(off)* | `metadata` or `full`: the tool-call audit stream. See [Enabling the audit stream](#enabling-the-audit-stream) |
 | `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *(off)* | Per-caller ceiling on requests per minute (every MCP message counts, one per tool call), for a server that fronts callers you do not control. Each caller address gets its own budget, so one busy caller cannot starve the rest; over the limit answers `429` with `Retry-After`. The address is an in-memory bucket key for the length of the window. It is never logged and never sent upstream. It is read from `CF-Connecting-IP`, then `X-Forwarded-For`, then `X-Real-IP`, then the peer address; the proxy in front must set one of those **and strip whatever the client sent**, since a limiter keyed on a caller-controlled value is not a limiter. Leave off for a single-tenant install |
+| `MCP_MAX_INFLIGHT` | `maxInflight` | *(off)* | Maximum number of requests the server handles concurrently across all callers. Requests above the cap wait up to 10 s for a slot, then receive `503` with `Retry-After`. See [Memory and concurrency](#memory-and-concurrency) |
+| `MCP_CACHE_MAX_MB` | `cacheMaxMB` | `32` | Response cache budget in MiB. Responses are cached for five minutes |
 
 Running HTTP mode directly with Docker:
 
 ```bash
 docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.0.0
 ```
+
+### Memory and concurrency
+
+Memory is the main constraint on concurrent checks. While a `check_stack`
+call runs, the server keeps the release documents it reads for that stack in
+memory. For a ten-component stack, measured memory use was about 30 MiB with
+`detail` at its default, `brief`, and about 50 MiB with `detail=full`, plus
+about 20 MiB for each additional full stack check running concurrently. The
+response cache adds up to `MCP_CACHE_MAX_MB` on top.
+
+In tests at the chart's 512Mi memory limit, 16 concurrent full stack checks
+peaked at 376 MiB and 24 peaked at 495 MiB; neither caused a restart. At
+64Mi, two concurrent full stack checks caused the container to be killed.
+CPU affects completion time, not whether the container survives: at the
+chart's 100m, one full check of ten components takes about 4 s, and
+concurrent calls share that CPU, so 16 at once took 46 s.
+
+Use these four settings to manage load:
+
+| Setting | Use it when |
+|---|---|
+| `resources.limits.memory` (chart) | Callers run stack-wide checks in parallel, or you need more headroom. Allow about 20 MiB for each full check you expect to run concurrently |
+| `MCP_MAX_INFLIGHT` | Concurrent requests could exceed what memory can support. Requests above the cap wait up to 10 s, then receive `503` with `Retry-After`, rather than an OOM kill dropping every request in flight. Set the cap below the number of full stack checks the memory limit can support |
+| `MCP_RATE_LIMIT_PER_MIN` | The server is exposed to callers you do not control. It limits the request rate for each caller; `MCP_MAX_INFLIGHT` limits concurrent requests across all callers |
+| `MCP_CACHE_MAX_MB` | Memory is tight. A smaller cache sends more repeat requests upstream |
+
+A single-tenant install can use the chart defaults without changing any of
+these settings.
 
 ## Logs and the audit stream
 
@@ -589,6 +619,7 @@ nothing is recorded.
 | `ratatosk-agent` does not appear in the kagent UI | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | Installing with `kagent.enabled=true` fails on a cluster without the kagent CRDs; install kagent first. On kagent 1.x the chart skips the agent while `kagent.harness` is empty (the install notes say so), and a set Harness that does not exist shows in `kubectl describe agents.api.kagent.dev ratatosk-agent`. Applying the 0.x manifests to kagent 1.x, or the reverse, fails with "no matches for kind"; use the set for your line. The manifest route hardcodes `namespace: kagent`, so if kagent lives in another namespace, edit the manifests |
 | kagent 1.x: the agent's ratatosk tool calls fail to connect | `kubectl get remotemcpservers.api.kagent.dev ratatosk-mcp -n kagent -o jsonpath='{.spec.url}'` | The URL uses a short Service name. kagent 1.x agents resolve only full names: use `http://ratatosk-mcp.<namespace>.svc.cluster.local:8080/mcp` (the chart and the 1.x manifests already do) |
 | kagent 0.x only: `ImagePullBackOff` after switching the kagent agent runtime to the Go ADK | `kubectl describe pod` | A known issue in kagent 0.9.12 itself, unrelated to this chart ([#2247], fixed after 0.9.12): the Go ADK image is published only to `ghcr.io` while the controller default points at the retired `cr.kagent.dev`. Workaround: `--set controller.agentImage.registry=ghcr.io` on the kagent install |
+| The pod restarts and `kubectl describe pod` shows `Last State: Terminated, Reason: OOMKilled` | `kubectl describe pod -l app.kubernetes.io/name=ratatosk-mcp` | Concurrent stack-wide checks exceeded the memory limit. Raise `resources.limits.memory`, or set `maxInflight` so extra calls wait instead. See [Memory and concurrency](#memory-and-concurrency) |
 | The kagent agent fails every run | 429 in the agent logs | The model tier's request limit is too low. See the model minimum under [kagent integration](#kagent-integration) |
 
 [#2247]: https://github.com/kagent-dev/kagent/issues/2247
