@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -31,7 +32,7 @@ func newAPIClient(baseURL string) *apiClient {
 	return &apiClient{
 		baseURL: baseURL,
 		http:    &http.Client{Timeout: 20 * time.Second},
-		cache:   newRespCache(5*time.Minute, 4000),
+		cache:   newRespCache(5*time.Minute, 4000, cacheBytesFromEnv(os.Getenv("MCP_CACHE_MAX_MB"))),
 	}
 }
 
@@ -122,11 +123,19 @@ type v2Release struct {
 // needs, and agents re-run check_stack within minutes: the second run should
 // cost nothing upstream. /v2/upgrade and /v2/search, which carry what a
 // caller typed, never go through it.
+//
+// It is bounded in bytes as well as entries. An entry count alone let one
+// stack-wide call with detail=full fill it with hundreds of release documents,
+// and the hosted container (64 MiB) died at two such calls in flight; the
+// byte budget keeps the cache a small, fixed share of the process whatever the
+// callers ask for.
 type respCache struct {
-	mu   sync.Mutex
-	ttl  time.Duration
-	max  int
-	data map[string]cacheEntry
+	mu       sync.Mutex
+	ttl      time.Duration
+	max      int
+	maxBytes int
+	size     int
+	data     map[string]cacheEntry
 }
 
 type cacheEntry struct {
@@ -134,8 +143,8 @@ type cacheEntry struct {
 	at   time.Time
 }
 
-func newRespCache(ttl time.Duration, max int) *respCache {
-	return &respCache{ttl: ttl, max: max, data: map[string]cacheEntry{}}
+func newRespCache(ttl time.Duration, max, maxBytes int) *respCache {
+	return &respCache{ttl: ttl, max: max, maxBytes: maxBytes, data: map[string]cacheEntry{}}
 }
 
 func (c *respCache) get(key string) ([]byte, bool) {
@@ -151,17 +160,27 @@ func (c *respCache) get(key string) ([]byte, bool) {
 func (c *respCache) put(key string, body []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if len(c.data) >= c.max {
+	if len(body) > c.maxBytes/8 {
+		return // one document that large would push out everything else; read it fresh next time
+	}
+	if old, ok := c.data[key]; ok {
+		c.size -= len(old.body)
+		delete(c.data, key)
+	}
+	if len(c.data) >= c.max || c.size+len(body) > c.maxBytes {
 		for k, e := range c.data {
 			if time.Since(e.at) > c.ttl {
+				c.size -= len(e.body)
 				delete(c.data, k)
 			}
 		}
-		if len(c.data) >= c.max {
+		if len(c.data) >= c.max || c.size+len(body) > c.maxBytes {
 			c.data = map[string]cacheEntry{} // still full of live entries: start over rather than grow
+			c.size = 0
 		}
 	}
 	c.data[key] = cacheEntry{body: body, at: time.Now()}
+	c.size += len(body)
 }
 
 // getRaw fetches one /v2 resource. endpoint is the log-safe route PATTERN
@@ -367,4 +386,15 @@ func (c *apiClient) upgradeRaw(ctx context.Context, project, from, to, lang stri
 
 func (c *apiClient) searchRaw(ctx context.Context, query, lang string) ([]byte, error) {
 	return c.getRaw(ctx, "/v2/search", "/v2/search", langQuery(url.Values{"q": {query}}, lang), false)
+}
+
+// cacheBytesFromEnv reads MCP_CACHE_MAX_MB — the response cache's byte budget.
+// Absent or unparseable means 32 MiB: half of the smallest container the Helm
+// chart and the hosted compose have shipped with, so the cache alone can never
+// take a process down.
+func cacheBytesFromEnv(raw string) int {
+	if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+		return n << 20
+	}
+	return 32 << 20
 }

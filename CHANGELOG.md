@@ -7,6 +7,16 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [1.0.0] — Unreleased
 
+### Added
+
+- **`MCP_MAX_INFLIGHT`, off by default: a cap on requests the HTTP transport
+  works on at once.** Over the cap a request waits up to 10 s for a slot, then
+  gets `503` with `Retry-After`. Per-caller rate limiting bounds each caller,
+  not the crowd; a stack-wide `check_stack` holds tens of MiB while it runs.
+- **`MCP_CACHE_MAX_MB` (default 32): a byte budget for the response cache.**
+  The cache was bounded only by entry count, so one stack-wide call with
+  `detail=full` could fill it with hundreds of release documents.
+
 ### Changed
 
 - **ratatosk.io moved its API from `/v1` to `/v2`, and every tool moved with

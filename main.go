@@ -76,7 +76,10 @@ func main() {
 		// which is what a self-hosted single-tenant server wants.
 		rl := rateLimitFromEnv(os.Getenv("MCP_RATE_LIMIT_PER_MIN"))
 		mux := http.NewServeMux()
-		mux.Handle("/mcp", callerClassMiddleware(rateLimitMiddleware(rl, handler)))
+		// The in-flight cap sits behind the rate limiter: an over-limit caller is
+		// turned away without taking a slot (see inflight.go).
+		inflight := inflightFromEnv(os.Getenv("MCP_MAX_INFLIGHT"))
+		mux.Handle("/mcp", callerClassMiddleware(rateLimitMiddleware(rl, inflightMiddleware(inflight, 10*time.Second, handler))))
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
@@ -89,7 +92,11 @@ func main() {
 		if rl != nil {
 			rateField = strconv.Itoa(rl.limit) + "/min per caller"
 		}
-		slog.Info("listening", "transport", "http", "addr", addr+"/mcp", "mode", mode, "upstream", base, "version", buildVersion, "rate_limit", rateField)
+		inflightField := "off"
+		if inflight > 0 {
+			inflightField = strconv.Itoa(inflight)
+		}
+		slog.Info("listening", "transport", "http", "addr", addr+"/mcp", "mode", mode, "upstream", base, "version", buildVersion, "rate_limit", rateField, "max_inflight", inflightField)
 		// Explicit timeouts: this is an unauthenticated public endpoint, and the
 		// zero-value http.Server leaves every timeout unset (unbounded), so a
 		// client that dribbles a request header one byte at a time holds a
