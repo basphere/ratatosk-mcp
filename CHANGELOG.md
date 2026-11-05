@@ -16,9 +16,15 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 - **`MCP_CACHE_MAX_MB` (default 32): a byte budget for the response cache.**
   The cache was bounded only by entry count, so one stack-wide call with
   `detail=full` could fill it with hundreds of release documents.
+- Helm chart values `maxInflight` and `cacheMaxMB` for the two settings above,
+  and a "Memory and concurrency" section in the install guide on sizing them.
 
 ### Changed
 
+- **Helm chart memory limit 64Mi → 512Mi.** 1.0 answers carry more, and a
+  stack-wide `check_stack` with `detail=full` holds about 50 MiB while it
+  runs: at 64Mi two at once got the container killed, while 512Mi held 24
+  (measured 2026-11-05). If you set `resources` yourself, check the limit.
 - **ratatosk.io moved its API from `/v1` to `/v2`, and every tool moved with
   it.** `/v1` answers `410 Gone` from the switch on, so 0.x stops working that
   day; this is a major version because tools were removed and every response
