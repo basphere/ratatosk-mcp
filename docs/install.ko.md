@@ -460,9 +460,9 @@ kagent 도구 서버(`kagent-tool-server`)에는 `k8s_apply_manifest`,
 | `MCP_HTTP_STATELESS` | `statelessHttp` | *(꺼짐)* | `1`이면 세션 상태 없는 HTTP: `Mcp-Session-Id` 왕복이 없고, MCP 스펙 2026-07-28 리비전을 쓰는 최신 클라이언트를 HTTP로 받으려면 필요합니다. 레플리카 2개 이상 수평 확장에도 권장. 구형 클라이언트는 어느 쪽이든 동작합니다 |
 | `MCP_LOG` | `logLevel` | `info` | 허용값 `info`(기본)·`debug`·`warn`·`error`. 인식하지 못한 값은 경고 없이 `info`로 처리됩니다. `debug`는 업스트림 호출별 소요 시간을 추가하고, `warn`·`error`는 로그를 줄입니다. 어느 레벨에서도 요청 인자는 기록되지 않습니다. [로그와 감사 스트림](#로그와-감사-스트림) 참조 |
 | `MCP_AUDIT` | `auditMode` | *(꺼짐)* | `metadata` 또는 `full`: 도구 호출 감사 스트림. [감사 스트림 켜기](#감사-스트림-켜기) 참조 |
-| `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *(꺼짐)* | 호출자당 분당 요청 상한(MCP 메시지를 모두 세고, 도구 호출 하나가 1회). 내가 통제하지 않는 호출자를 대신 받는 서버용입니다. 호출자 주소마다 몫을 따로 주므로 한 명이 바쁘다고 나머지가 굶지 않고, 넘기면 `Retry-After`가 붙은 `429`가 돌아옵니다. 주소는 창이 유지되는 동안의 메모리 버킷 키일 뿐이고 기록하지도, 상류로 보내지도 않습니다. `CF-Connecting-IP` → `X-Forwarded-For` → `X-Real-IP` → 피어 주소 순으로 읽으므로, 앞단 프록시가 그중 하나를 채우고 **클라이언트가 보낸 값은 지워야** 합니다. 호출자가 조작할 수 있는 값을 키로 쓰면 제한이 아니니까요. 단일 이용자 설치라면 꺼 두세요 |
-| `MCP_MAX_INFLIGHT` | `maxInflight` | *(꺼짐)* | 모든 호출자를 합쳐 서버가 동시에 처리하는 요청 수의 상한. 넘은 요청은 빈자리를 최대 10초 기다린 뒤 `Retry-After`가 붙은 `503`을 받습니다. [메모리와 동시 처리](#메모리와-동시-처리) 참조 |
-| `MCP_CACHE_MAX_MB` | `cacheMaxMB` | `32` | 응답 캐시 예산(MiB). 응답은 5분 동안 캐시됩니다 |
+| `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *(꺼짐)* | 호출자당 분당 요청 상한(MCP 메시지를 모두 세고, 도구 호출 하나가 1회). 직접 통제하지 않는 외부 호출자의 요청을 받는 서버용입니다. 호출자 주소마다 몫을 따로 주므로 한 명이 바쁘다고 나머지가 굶지 않고, 넘기면 `Retry-After`가 붙은 `429`가 돌아옵니다. 주소는 창이 유지되는 동안의 메모리 버킷 키일 뿐이고 기록하지도, 상류로 보내지도 않습니다. `CF-Connecting-IP` → `X-Forwarded-For` → `X-Real-IP` → 피어 주소 순으로 읽으므로, 앞단 프록시가 그중 하나를 채우고 **클라이언트가 보낸 값은 지워야** 합니다. 호출자가 조작할 수 있는 값을 키로 쓰면 제한이 아니니까요. 단일 이용자 설치라면 꺼 두세요 |
+| `MCP_MAX_INFLIGHT` | `maxInflight` | *(꺼짐)* | 모든 호출자를 합쳐 서버가 동시에 처리하는 요청 수의 상한. 넘은 요청은 최대 10초 동안 빈자리를 기다리고, 그 안에 자리가 나지 않으면 `Retry-After`가 붙은 `503`을 받습니다. [메모리와 동시 처리](#메모리와-동시-처리) 참조 |
+| `MCP_CACHE_MAX_MB` | `cacheMaxMB` | `32` | 응답 캐시 크기 상한(MiB). 응답은 5분 동안 캐시됩니다 |
 
 docker로 HTTP 모드를 직접 띄우는 예:
 
@@ -472,26 +472,27 @@ docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mc
 
 ### 메모리와 동시 처리
 
-먼저 바닥나는 것은 메모리입니다. `check_stack` 호출이 도는 동안 서버는 그 스택을 위해 읽은 릴리스 문서를
-메모리에 들고 있습니다. 구성 요소 10개로 잰 값은 `detail`을 기본값 `brief`로 두면 약 30 MiB,
-`detail=full`이면 약 50 MiB이고, 동시에 도는 `full` 호출이 하나 늘 때마다 약 20 MiB씩 더 듭니다.
+메모리가 CPU보다 먼저 상한에 닿습니다. `check_stack` 호출이 실행되는 동안 서버는 조회한 릴리스 데이터를 메모리에
+올려 둡니다. 구성 요소가 10개인 스택에서 측정한 메모리 사용량은 `detail`의 기본값인 `brief`일 때 약 30 MiB,
+`detail=full`일 때 약 50 MiB입니다. 동시에 실행되는 `full` 호출이 하나 늘 때마다 약 20 MiB가 추가됩니다.
 여기에 응답 캐시가 최대 `MCP_CACHE_MAX_MB`만큼 더해집니다.
 
-차트 기본 상한 512Mi에서는 스택 전체를 `full`로 확인하는 호출을 동시에 16개 받아도(최고 376 MiB), 24개 받아도
-(최고 495 MiB) 재시작이 없었습니다. 64Mi에서는 2개가 동시에 오자 컨테이너가 강제 종료됐습니다.
-CPU는 버티느냐가 아니라 속도를 정합니다. 차트 기본값 100m에서 구성 요소 10개를 `full`로 한 번 확인하는 데
-약 4초가 걸리고, 동시에 도는 호출은 이 CPU를 나눠 쓰므로 16개를 동시에 받았을 때는 46초가 걸렸습니다.
+차트 기본 메모리 상한인 512Mi에서 `detail=full`로 설정한 `check_stack` 호출을 16개 동시에 처리했을 때 최대 376 MiB,
+24개일 때 최대 495 MiB를 기록했고, 두 경우 모두 강제 종료(OOMKilled)되지 않았습니다. 64Mi에서는 `full` 호출 2개를
+동시에 처리하자 메모리 상한을 넘어 컨테이너가 강제 종료(OOMKilled)됐습니다. CPU는 응답이 끝나는 속도를 결정합니다.
+차트 기본 CPU 값인 100m에서 구성 요소가 10개인 스택을 `full`로 한 번 확인하는 데 약 4초가 걸렸습니다. 호출이 동시에
+실행되면 CPU를 나눠 쓰므로 16개를 동시에 처리했을 때는 46초가 걸렸습니다.
 
-부하를 묶는 설정은 네 가지입니다.
+부하를 제한하는 설정은 네 가지입니다.
 
 | 설정 | 이럴 때 씁니다 |
 |---|---|
-| `resources.limits.memory` (차트) | 호출자가 스택 전체 확인을 병렬로 보내거나, 여유를 더 두고 싶을 때. 동시에 올 것으로 보는 `full` 호출 하나당 약 20 MiB를 잡으세요 |
-| `MCP_MAX_INFLIGHT` | 메모리가 감당하는 것보다 많은 호출자가 한꺼번에 올 수 있을 때. 상한을 넘은 요청은 기다렸다가 `Retry-After`가 붙은 `503`을 받습니다. 컨테이너가 강제 종료돼 처리 중이던 응답이 모두 사라지는 것보다 낫습니다. 메모리 상한이 버티는 `full` 호출 수보다 작게 두세요 |
-| `MCP_RATE_LIMIT_PER_MIN` | 내가 통제하지 않는 호출자를 대신 받는 서버일 때. 이 설정은 호출자 하나하나를, `MCP_MAX_INFLIGHT`는 호출자 전체를 묶습니다 |
-| `MCP_CACHE_MAX_MB` | 메모리가 빠듯할 때. 캐시가 작으면 같은 호출이 업스트림으로 더 자주 갑니다 |
+| `resources.limits.memory` (차트) | 호출자가 `check_stack` 호출을 동시에 보내거나 메모리 여유를 더 확보하려는 경우에 사용합니다. 메모리 상한을 정할 때는 예상 동시 `full` 호출 하나당 약 20 MiB를 고려하세요 |
+| `MCP_MAX_INFLIGHT` | 메모리로 감당할 수 있는 수보다 많은 요청이 동시에 들어올 수 있을 때 사용합니다. 상한을 넘은 요청은 기다렸다가 `Retry-After`가 붙은 `503`을 받습니다. 컨테이너가 강제 종료(OOMKilled)되어 처리 중인 요청이 모두 끊기는 상황을 막습니다. 메모리 상한 안에서 처리할 수 있는 동시 `full` 호출 수보다 작게 두세요 |
+| `MCP_RATE_LIMIT_PER_MIN` | 직접 통제하지 않는 외부 호출자의 요청을 받는 서버일 때. 이 설정은 호출자별 요청 수를 제한하고, `MCP_MAX_INFLIGHT`는 호출자 전체의 동시 요청 수를 제한합니다 |
+| `MCP_CACHE_MAX_MB` | 메모리가 빠듯할 때. 캐시가 작으면 같은 요청이 업스트림에 더 자주 전달됩니다 |
 
-단일 이용자 설치를 차트 기본값으로 쓴다면 어느 것도 필요 없습니다.
+단일 이용자 설치를 차트 기본값으로 배포했다면 위 설정은 건드리지 않아도 됩니다.
 
 ## 로그와 감사 스트림
 
@@ -601,7 +602,7 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=met
 | kagent UI에 `ratatosk-agent`가 나타나지 않음 | `kubectl api-resources \| grep kagent` · `kubectl get pods -n kagent` | kagent CRD가 없는 클러스터에서는 `kagent.enabled=true` 설치가 실패합니다. kagent를 먼저 설치하세요. kagent 1.x에서 `kagent.harness`가 비어 있으면 차트가 에이전트를 건너뛰고(설치 후 안내에 나옵니다), 지정한 Harness가 없으면 `kubectl describe agents.api.kagent.dev ratatosk-agent`에 나타납니다. 0.x 매니페스트를 kagent 1.x에 적용하거나 그 반대로 하면 "no matches for kind"로 실패하니 계열에 맞는 묶음을 쓰세요. 매니페스트 경로는 `namespace: kagent`가 하드코딩되어 있으므로 kagent를 다른 네임스페이스에 설치했다면 매니페스트를 수정해야 합니다 |
 | kagent 1.x: 에이전트의 ratatosk 도구 호출이 연결에 실패 | `kubectl get remotemcpservers.api.kagent.dev ratatosk-mcp -n kagent -o jsonpath='{.spec.url}'` | URL이 짧은 Service 이름입니다. kagent 1.x 에이전트는 전체 이름만 풉니다. `http://ratatosk-mcp.<namespace>.svc.cluster.local:8080/mcp`를 쓰세요(차트와 1.x 매니페스트는 이미 이렇게 합니다) |
 | kagent 0.x 전용: kagent에서 에이전트 런타임을 Go ADK로 바꾸면 `ImagePullBackOff` | `kubectl describe pod` | 이 차트와 무관한 kagent 0.9.12 자체의 알려진 문제([#2247], 0.9.12 이후 수정): Go ADK 이미지는 `ghcr.io`에만 발행되는데 컨트롤러 기본값이 폐기된 `cr.kagent.dev`를 가리킵니다. 우회: kagent 설치에 `--set controller.agentImage.registry=ghcr.io` |
-| 파드가 재시작되고 `kubectl describe pod`에 `Last State: Terminated, Reason: OOMKilled`가 보임 | `kubectl describe pod -l app.kubernetes.io/name=ratatosk-mcp` | 동시에 도는 스택 전체 확인이 메모리 상한을 넘었습니다. `resources.limits.memory`를 올리거나, `maxInflight`를 설정해 넘치는 호출이 기다리게 하세요. [메모리와 동시 처리](#메모리와-동시-처리) 참조 |
+| 파드가 재시작되고 `kubectl describe pod`에 `Last State: Terminated, Reason: OOMKilled`가 보임 | `kubectl describe pod -l app.kubernetes.io/name=ratatosk-mcp` | 동시에 처리한 `check_stack` 호출이 메모리 상한을 넘었습니다. `resources.limits.memory`를 올리거나, `maxInflight`를 설정해 상한을 넘은 요청이 기다리게 하세요. [메모리와 동시 처리](#메모리와-동시-처리) 참조 |
 | kagent 에이전트가 실행할 때마다 실패 | 에이전트 로그의 429 | 모델 티어의 요청 한도 부족. [kagent 연동](#kagent-연동)의 모델 최소 요건 참조 |
 
 [#2247]: https://github.com/kagent-dev/kagent/issues/2247
