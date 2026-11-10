@@ -30,7 +30,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | `before_upgrade` | アップグレード前に確認すること：`prerequisites`（前提条件）・`known_issues`（既知の問題）・`upgrade_guide`（アップグレードガイド） |
 | `changes` | リリースが変えたこと。1 件ずつ、画面の順 |
 | `folded` | `changes` に入れない行：ノートがセキュリティと結び付けていない依存関係の更新、以前のリリースにすでにあった項目 |
-| `later` | リリース後に起きたこと：`advisory_after_release`（後から公開され、このリリースに対応付けられたセキュリティアドバイザリ）・`known_issue_fixed`（ここで生じた問題を `fixed_in` が修正） |
+| `later` | リリース後に起きたこと：`advisory_after_release`（後から公開され、このリリースに対応付けられたセキュリティアドバイザリ）・`known_issue_fixed`（このリリースノートにある既知の問題を `fixed_in` が修正）・`regression_fixed`（ここで生じた不具合を `fixed_in` が修正） |
 
 変更は 7 つの**種類**のいずれかです。
 

@@ -30,7 +30,7 @@ ratatosk-mcp 1.0의 도구 여섯 개를 자세히 설명합니다.
 | `before_upgrade` | 업그레이드 전 확인: `prerequisites`(전제 조건) · `known_issues`(알려진 문제) · `upgrade_guide`(업그레이드 안내) |
 | `changes` | 릴리스가 바꾼 것, 하나씩, 화면 순서 |
 | `folded` | `changes`에 넣지 않은 줄: 릴리스 노트가 보안과 연결하지 않은 의존성 갱신, 앞 릴리스에 이미 있던 항목 |
-| `later` | 릴리스 뒤에 생긴 일: `advisory_after_release`(나중에 공개되어 이 릴리스에 맞춰진 보안 공지) · `known_issue_fixed`(여기서 생긴 문제를 `fixed_in`이 고침) |
+| `later` | 릴리스 뒤에 생긴 일: `advisory_after_release`(나중에 공개되어 이 릴리스에 맞춰진 보안 공지) · `known_issue_fixed`(이 릴리스 노트의 알려진 문제를 `fixed_in`이 고침) · `regression_fixed`(여기서 생긴 결함을 `fixed_in`이 고침) |
 
 변경은 일곱 **종류** 가운데 하나입니다.
 

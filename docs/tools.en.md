@@ -32,7 +32,7 @@ A **release** is what the website shows for one version:
 | `before_upgrade` | What to check before upgrading: `prerequisites`, `known_issues`, `upgrade_guide` |
 | `changes` | What the release did, one entry each, in screen order |
 | `folded` | Lines kept out of `changes`: dependency bumps the notes do not tie to security, and entries already shipped in an earlier release |
-| `later` | What happened after the release: `advisory_after_release` (an advisory published later, matched to this release) and `known_issue_fixed` (a problem that started here, fixed in `fixed_in`) |
+| `later` | What happened after the release: `advisory_after_release` (an advisory published later, matched to this release) and `known_issue_fixed` (a known issue listed in this release's notes, fixed in `fixed_in`) and `regression_fixed` (a defect that started here, fixed in `fixed_in`) |
 
 A change has one of seven **kinds**:
 
