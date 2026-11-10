@@ -1,12 +1,17 @@
+{{- /*
+The same fields in both kagent APIs; only the group/version differs (kagent
+1.x does not convert between them). The URL is fully qualified because kagent
+1.x agents cannot resolve a short Service name; see ratatosk-mcp.mcpURL.
+*/ -}}
 {{- if .Values.kagent.enabled }}
-apiVersion: kagent.dev/v1alpha2
+apiVersion: {{ if include "ratatosk-mcp.kagentV1" . }}api.kagent.dev/v1alpha3{{ else }}kagent.dev/v1alpha2{{ end }}
 kind: RemoteMCPServer
 metadata:
   name: {{ include "ratatosk-mcp.fullname" . }}
   labels:
     {{- include "ratatosk-mcp.labels" . | nindent 4 }}
 spec:
-  url: "http://{{ include "ratatosk-mcp.fullname" . }}:{{ .Values.service.port }}/mcp"
+  url: {{ include "ratatosk-mcp.mcpURL" . | quote }}
   timeout: 30s
   sseReadTimeout: 5m0s
   description: "Typed, quoted changes from CNCF release notes; check_stack compares running versions locally"

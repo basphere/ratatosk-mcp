@@ -5,6 +5,107 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+## [1.0.0] — Unreleased
+
+### Added
+
+- **`MCP_MAX_INFLIGHT`, off by default: a cap on requests the HTTP transport
+  works on at once.** Over the cap a request waits up to 10 s for a slot, then
+  gets `503` with `Retry-After`. Per-caller rate limiting bounds each caller,
+  not the crowd; a stack-wide `check_stack` holds tens of MiB while it runs.
+- **`MCP_CACHE_MAX_MB` (default 32): a byte budget for the response cache.**
+  The cache was bounded only by entry count, so one stack-wide call with
+  `detail=full` could fill it with hundreds of release documents.
+- Helm chart values `maxInflight` and `cacheMaxMB` for the two settings above,
+  and a "Memory and concurrency" section in the install guide on sizing them.
+
+### Changed
+
+- **Helm chart memory limit 64Mi → 512Mi.** 1.0 answers carry more, and a
+  stack-wide `check_stack` with `detail=full` holds about 50 MiB while it
+  runs: at 64Mi two at once got the container killed, while 512Mi held 24
+  (measured 2026-11-05). If you set `resources` yourself, check the limit.
+- **ratatosk.io moved its API from `/v1` to `/v2`, and every tool moved with
+  it.** `/v1` answers `410 Gone` from the switch on, so 0.x stops working that
+  day; this is a major version because tools were removed and every response
+  changed shape. A release now has `before_upgrade` (prerequisites, known
+  issues, upgrade guides) and `changes` in seven kinds (`security`,
+  `breaking`, `deprecations`, `important_fixes`, `enhancements`,
+  `dependency_updates`, `other`), each with `affects` (who it touches, and
+  whether the release notes stated it), what to do, and the release-note lines
+  it came from. Events after a release (an advisory published later, a problem
+  fixed in a newer version) are attached as `later`. The 0.x axes (family,
+  bucket, applies_if) and matters are gone.
+- `check_stack` takes the same input and returns a new briefing per
+  component: the releases in range, every before-upgrade item, the changes
+  that ask for a decision (security, breaking, deprecations, important fixes)
+  with per-kind caps whose cuts are counted in `changes_omitted`, `gaps` where
+  version numbers skip (releases in between may be unanalyzed), and
+  `later_for_running`. Components it cannot check are listed in
+  `could_not_check`. `severity_min` is gone: security is ordered by grade
+  instead, so a cap cuts the least severe.
+- `check_stack` sends upstream the same requests whatever version runs: each
+  project's release list and its newest releases, then the range is cut in
+  this process. Fetching only the releases above the running version would
+  have revealed it. Public documents are cached for five minutes, so a repeat
+  call is free.
+- `get_release`, `list_releases` and `list_projects` keep their names and
+  return the `/v2` shape. `get_release` takes `lang`; `include_raw` is gone.
+  `list_releases` filters by `kind` and `since`, and works across projects.
+- The kagent agent prompt (chart and example) carries every rule earned from
+  live runs, moved to the new vocabulary.
+- The kagent RemoteMCPServer registers the full Service name
+  (`ratatosk-mcp.<namespace>.svc.cluster.local`, from the release namespace
+  and the new `clusterDomain` value) on both kagent lines: kagent 1.x agents
+  run in a sandbox that cannot resolve a short one.
+- The kagent 0.x manifests moved from `examples/kagent/` to
+  `examples/kagent/0.x/`. A raw URL that pointed at
+  `examples/kagent/ratatosk-remote-mcpserver.yaml` or `ratatosk-agent.yaml`
+  needs the `0.x/` segment; `ratatosk-deploy.yaml` stays where it was and
+  serves both sets.
+- CI reads the chart as rendered for each kagent API, not as template source:
+  the tool-allowlist and prompt checks cover both renderings and both example
+  sets, the prompt check also requires the four copies to say the same thing,
+  a new check pins which shape each API gets, and the install rehearsal runs
+  against pinned kagent-crds 0.10.4 and 1.0.0-rc1 in turn.
+
+### Added
+
+- **kagent 1.x support, alongside kagent 0.x.** kagent 1.x (1.0.0-rc1 as of
+  this release) serves a new API, `api.kagent.dev/v1alpha3`, and reads no
+  `kagent.dev/v1alpha2` object. The chart renders whichever API the cluster
+  serves. On 1.x the example agent runs on a Harness named by the new
+  `kagent.harness` value; kagent creates no Harness, so with the value unset
+  the chart installs the server and its RemoteMCPServer, skips the agent, and
+  its install notes say how to add it. Plain manifests come in two sets,
+  `examples/kagent/0.x/` and `examples/kagent/1.x/`. The install guides gain a
+  read-only note: a kagent 1.x Claude Harness exposes every tool on kagent's
+  tool server, write tools included, whatever the agent's tool list says.
+  **kagent 0.x support will be removed once kagent 1.x is generally
+  available.**
+- Chart values `clusterDomain`, `kagent.harness` and
+  `kagent.agent.toolServer.{name,namespace}` (the last for a kagent tool
+  server outside the release namespace).
+- `check_upgrade`: one project, one hop, computed by the server
+  (`/v2/upgrade`). `from` and `to` are sent upstream, and the tool says so.
+- `search`: find releases by advisory id, configuration flag or text.
+- `lang` (`en`, `ko`, `ja`) on every tool that returns text.
+- The install guide says where each client registers the server, hosted or
+  over stdio: Claude, ChatGPT, Grok, Claude Code, Grok Build, Codex, Gemini
+  CLI, Antigravity and kagent. The README shows the Ratatosk symbol.
+- CI checks the docs against the server: the tools and parameters they name
+  against the tool list a client receives, image pins against the chart's
+  `appVersion`, no older release number left in an example, and the English,
+  Korean and Japanese pages against each other (headings, tables, code,
+  links). An opt-in test (`DOCS_LIVE_URL`) replays every documented example
+  call and fails on a documented key the live answer lacks.
+
+### Removed
+
+- `list_changes`, `changes_by_entity`, `get_matter`: their `/v1` endpoints
+  have no `/v2` counterpart. `list_releases`, `search` and a briefing's
+  `also_in` answer the same questions.
+
 ## [0.10.0] — 2026-10-18
 
 ### Changed

@@ -173,7 +173,7 @@ func rateLimitMiddleware(rl *rateLimiter, next http.Handler) http.Handler {
 			// reads the status code needs no body; keep it short and free of
 			// anything that identifies the caller.
 			_, _ = w.Write([]byte(`{"error":"rate limit exceeded (` +
-				strconv.Itoa(rl.limit) + ` tool calls/minute per caller)"}`))
+				strconv.Itoa(rl.limit) + ` requests/minute per caller)"}`))
 			return
 		}
 		next.ServeHTTP(w, req)

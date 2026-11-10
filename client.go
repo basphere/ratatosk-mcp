@@ -1,8 +1,12 @@
 package main
 
-// Thin client for the ratatosk agent API v1 (docs/rfc/agent-api-build.md §3.2).
-// Read-only; the base URL is the only configuration. Types mirror the /v1
-// envelope loosely — unknown fields are ignored so the server can evolve.
+// Thin client for the ratatosk agent API v2 (https://ratatosk.io/v2 describes
+// itself). Read-only; the base URL is the only configuration. v2 returns the
+// same shape the website shows — a release with before-upgrade checks and
+// changes in seven kinds — so the tools mostly pass it through; only the types
+// check_stack inspects are spelled out here, and unknown fields are ignored so
+// the server can add fields without breaking this client (the v2 numbering
+// rule: additions never change the path, removals and renames move it to /v3).
 
 import (
 	"context"
@@ -12,204 +16,191 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"os"
 	"strconv"
-	"strings"
+	"sync"
 	"time"
 )
 
 type apiClient struct {
 	baseURL string
 	http    *http.Client
+	cache   *respCache
 }
 
 func newAPIClient(baseURL string) *apiClient {
 	return &apiClient{
 		baseURL: baseURL,
 		http:    &http.Client{Timeout: 20 * time.Second},
+		cache:   newRespCache(5*time.Minute, 4000, cacheBytesFromEnv(os.Getenv("MCP_CACHE_MAX_MB"))),
 	}
 }
 
-// Fact keeps the envelope as raw-ish JSON-friendly structs; the MCP tools
-// return changes verbatim, so only the fields the tools themselves inspect
-// (identity, and what check_stack's brief mode summarizes) get dedicated types.
-// Change is one normalized change from /v1 (RFC 20). It replaces the old Fact:
-// the server now carries three axes the client used to infer — family (what
-// kind of thing), bucket (how to act NOW), and a machine-evaluable applies_if.
+// ---------------------------------------------------------------------------
+// v2 shapes (only what check_stack reads)
+// ---------------------------------------------------------------------------
+
+// v2Project is one row of /v2/projects.
+type v2Project struct {
+	Slug         string   `json:"slug"`
+	Name         string   `json:"name"`
+	ImageAliases []string `json:"image_aliases"`
+}
+
+// v2Row is one row of /v2/releases — a release without its changes.
+type v2Row struct {
+	Project    string         `json:"project"`
+	Version    string         `json:"version"`
+	ReleasedAt string         `json:"released_at"`
+	URL        string         `json:"url"`
+	Counts     map[string]int `json:"counts"`
+	Warnings   map[string]int `json:"warnings"`
+}
+
+// v2Attr is an attribute that says whether the release notes stated it:
+// status stated | inferred | not_stated | not_read.
+type v2Attr struct {
+	Text   string `json:"text"`
+	Status string `json:"status"`
+	Reason string `json:"reason,omitempty"`
+}
+
+type v2Item struct {
+	ID    string  `json:"id"`
+	Title string  `json:"title"`
+	Body  *string `json:"body"`
+}
+
+type v2Change struct {
+	ID              string            `json:"id"`
+	Kind            string            `json:"kind"`
+	Title           string            `json:"title"`
+	Body            *string           `json:"body"`
+	Severity        *string           `json:"severity"`
+	Advisories      []string          `json:"advisories"`
+	Affects         *v2Attr           `json:"affects"`
+	ActionRequired  *string           `json:"action_required"`
+	AlsoRequired    *string           `json:"also_required"`
+	NoDowngrade     *v2Attr           `json:"no_downgrade"`
+	RemovedIn       *v2Attr           `json:"removed_in"`
+	SecurityUnclear bool              `json:"security_unclear"`
+	SilentFailure   bool              `json:"silent_failure"`
+	Workaround      *v2Attr           `json:"workaround"`
+	RegressionSince *v2Attr           `json:"regression_since"`
+	Later           []json.RawMessage `json:"later"`
+}
+
+// v2Release is GET /v2/releases/{project}/{version}. Raw keeps the document
+// as received for detail:"full", so nothing the server adds is lost on the way.
+type v2Release struct {
+	Project       string         `json:"project"`
+	Version       string         `json:"version"`
+	ReleasedAt    string         `json:"released_at"`
+	URL           string         `json:"url"`
+	Counts        map[string]int `json:"counts"`
+	Warnings      map[string]int `json:"warnings"`
+	Processing    bool           `json:"processing"`
+	BeforeUpgrade struct {
+		Prerequisites []v2Item `json:"prerequisites"`
+		KnownIssues   []v2Item `json:"known_issues"`
+		UpgradeGuide  []v2Item `json:"upgrade_guide"`
+	} `json:"before_upgrade"`
+	Changes []v2Change        `json:"changes"`
+	Later   []json.RawMessage `json:"later"`
+	Raw     json.RawMessage   `json:"-"`
+}
+
+// ---------------------------------------------------------------------------
+// transport
+// ---------------------------------------------------------------------------
+
+// respCache holds public documents check_stack reads: the project roster, a
+// project's release list and single releases, keyed by their public path. Every
+// key is something anyone can fetch, and none of them is derived from a
+// caller's running version — check_stack reads a project's releases whatever
+// version it was asked about (see fetchSet), so the cache cannot hold one
+// either. It exists because that design reads more than one call strictly
+// needs, and agents re-run check_stack within minutes: the second run should
+// cost nothing upstream. /v2/upgrade and /v2/search, which carry what a
+// caller typed, never go through it.
 //
-// check_stack got simpler because of it: "applies to everyone" used to be
-// guessed from an empty condition string; now bucket says it outright, and it
-// is the SAME rule the website and the weekly email use.
-type Change struct {
-	ChangeID  string `json:"change_id"`
-	MatterKey string `json:"matter_key"`
-	Project   string `json:"project"`
-	Version   string `json:"version"`
-	Family    string `json:"family"`
-	Bucket    string `json:"bucket"`
-	Kind      string `json:"kind"`
-	Quote     string `json:"quote"`
-	// Condition is applies_if rendered as one phrase for humans; "" when the
-	// change applies unconditionally.
-	Condition string `json:"condition"`
-	// CondTargets are the identifiers to look for in a live configuration —
-	// the structured half of applies_if. Empty when the server could not
-	// structure it (Evaluable false), in which case Condition is the sentence.
-	CondTargets []string `json:"condition_targets"`
-	Evaluable   bool     `json:"condition_evaluable"`
-	// Advisories cited by this change, with the ledger's CURRENT severity.
-	Advisories []Advisory `json:"advisories"`
-	// Window is the deprecation timing when the server knows it.
-	Window map[string]string `json:"window"`
-	Seq    int               `json:"seq"`
-	Raw    json.RawMessage   `json:"-"`
+// It is bounded in bytes as well as entries. An entry count alone let one
+// stack-wide call with detail=full fill it with hundreds of release documents,
+// and the hosted container (64 MiB) died at two such calls in flight; the
+// byte budget keeps the cache a small, fixed share of the process whatever the
+// callers ask for.
+type respCache struct {
+	mu       sync.Mutex
+	ttl      time.Duration
+	max      int
+	maxBytes int
+	size     int
+	data     map[string]cacheEntry
 }
 
-type Advisory struct {
-	ID       string `json:"id"`
-	Severity string `json:"severity"`
+type cacheEntry struct {
+	body []byte
+	at   time.Time
 }
 
-func (c *Change) UnmarshalJSON(b []byte) error {
-	type alias struct {
-		ChangeID  string `json:"change_id"`
-		MatterKey string `json:"matter_key"`
-		Project   string `json:"project"`
-		Version   string `json:"version"`
-		Family    string `json:"family"`
-		Bucket    string `json:"bucket"`
-		Kind      string `json:"kind"`
-		Quote     string `json:"quote"`
-		Seq       int    `json:"seq"`
-		AppliesIf struct {
-			Evaluable bool   `json:"evaluable"`
-			Mode      string `json:"mode"`
-			Raw       string `json:"raw"`
-			Clauses   []struct {
-				Kind     string `json:"kind"`
-				Name     string `json:"name"`
-				Verb     string `json:"verb"`
-				Polarity string `json:"polarity"`
-			} `json:"clauses"`
-		} `json:"applies_if"`
-		Advisories []Advisory        `json:"advisories"`
-		Window     map[string]string `json:"window"`
-	}
-	var a alias
-	if err := json.Unmarshal(b, &a); err != nil {
-		return err
-	}
-	c.ChangeID, c.MatterKey = a.ChangeID, a.MatterKey
-	c.Project, c.Version = a.Project, a.Version
-	c.Family, c.Bucket, c.Kind, c.Quote = a.Family, a.Bucket, a.Kind, a.Quote
-	c.Advisories, c.Window, c.Seq = a.Advisories, a.Window, a.Seq
-	c.Evaluable = a.AppliesIf.Evaluable
-	for _, cl := range a.AppliesIf.Clauses {
-		c.CondTargets = append(c.CondTargets, cl.Name)
-		c.Condition = joinPhrase(c.Condition, conditionPhrase(cl.Verb, cl.Kind, cl.Name), a.AppliesIf.Mode)
-	}
-	if c.Condition == "" && a.AppliesIf.Mode != "universal" {
-		c.Condition = a.AppliesIf.Raw // 구조화 못 한 조건 — 문장이라도 준다
-	}
-	c.Raw = append(c.Raw[:0], b...)
-	return nil
+func newRespCache(ttl time.Duration, max, maxBytes int) *respCache {
+	return &respCache{ttl: ttl, max: max, maxBytes: maxBytes, data: map[string]cacheEntry{}}
 }
 
-// joinPhrase strings clauses together in the mode the server recorded, so an
-// agent reads "A or B" / "A and B" rather than a bare list.
-func joinPhrase(acc, next, mode string) string {
-	if next == "" {
-		return acc
+func (c *respCache) get(key string) ([]byte, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.data[key]
+	if !ok || time.Since(e.at) > c.ttl {
+		return nil, false
 	}
-	if acc == "" {
-		return next
-	}
-	sep := " and "
-	if mode == "any_of" {
-		sep = " or "
-	}
-	return acc + sep + next
+	return e.body, true
 }
 
-// conditionPhrase renders the stored (verb, kind, name) triple as English.
-// The kind is our storage enum, and joining the three raw put it on display:
-// "configures config_field per-upstream read timeout" is what a live kagent
-// transcript fed its model on 2026-07-28. Unknown kinds fall through to the
-// bare name, so a new kind on the server reads plainly instead of leaking.
-func conditionPhrase(verb, kind, name string) string {
-	verb = strings.ReplaceAll(strings.TrimSpace(verb), "_", " ")
-	name = strings.TrimSpace(name)
-	kind = strings.ToLower(strings.TrimSpace(kind))
-	if name == "" {
-		return strings.TrimSpace(verb + " " + strings.ReplaceAll(kind, "_", " "))
+func (c *respCache) put(key string, body []byte) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(body) > c.maxBytes/8 {
+		return // one document that large would push out everything else; read it fresh next time
 	}
-	var target string
-	switch kind {
-	case "flag":
-		target = "the " + name + " flag"
-	case "feature_gate":
-		target = "the " + name + " feature gate"
-	case "config_field":
-		target = "the " + name + " setting"
-	case "crd":
-		target = "the " + name + " CRD"
-	case "api":
-		target = "the " + name + " API"
-	case "extension":
-		target = "the " + name + " extension"
-	case "metric":
-		target = "the " + name + " metric"
-	default: // subsystem, dependency, and whatever the server adds next
-		target = name
+	if old, ok := c.data[key]; ok {
+		c.size -= len(old.body)
+		delete(c.data, key)
 	}
-	return strings.TrimSpace(verb + " " + target)
-}
-
-func (c Change) MarshalJSON() ([]byte, error) { return c.Raw, nil }
-
-// EffSeverity is what check_stack ranks by: the highest advisory severity the
-// change cites. Without an advisory, security-family changes read as "high"
-// and everything else falls back to the bucket's urgency — the old per-change
-// severity column no longer exists.
-func (c Change) EffSeverity() string {
-	best := ""
-	for _, a := range c.Advisories {
-		if severityRank[strings.ToLower(a.Severity)] > severityRank[best] {
-			best = strings.ToLower(a.Severity)
+	if len(c.data) >= c.max || c.size+len(body) > c.maxBytes {
+		for k, e := range c.data {
+			if time.Since(e.at) > c.ttl {
+				c.size -= len(e.body)
+				delete(c.data, k)
+			}
+		}
+		if len(c.data) >= c.max || c.size+len(body) > c.maxBytes {
+			c.data = map[string]cacheEntry{} // still full of live entries: start over rather than grow
+			c.size = 0
 		}
 	}
-	if best != "" {
-		return best
-	}
-	if c.Family == "security" {
-		return "high"
-	}
-	switch c.Bucket {
-	case "action":
-		return "medium"
-	case "check":
-		return "low"
-	}
-	return "info"
+	c.data[key] = cacheEntry{body: body, at: time.Now()}
+	c.size += len(body)
 }
 
-type changesPage struct {
-	Changes   []Change `json:"changes"`
-	NextSince *int     `json:"next_since"`
-}
-
-// get fetches one /v1 resource. endpoint is the log-safe route PATTERN
-// ("/v1/releases/{project}/{version}") — path itself can embed a running
-// version, so it appears in errors returned to the agent (which needs the
-// detail) but never in a log field (the invariant).
-func (c *apiClient) get(ctx context.Context, endpoint, path string, q url.Values, out any) error {
+// getRaw fetches one /v2 resource. endpoint is the log-safe route PATTERN
+// ("/v2/releases/{project}/{version}") — path itself can name a version, so it
+// appears in errors returned to the agent (which needs the detail) but never in
+// a log field (the invariant).
+func (c *apiClient) getRaw(ctx context.Context, endpoint, path string, q url.Values, cached bool) ([]byte, error) {
 	u := c.baseURL + path
 	if len(q) > 0 {
 		u += "?" + q.Encode()
 	}
+	if cached {
+		if b, ok := c.cache.get(u); ok {
+			return b, nil
+		}
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		// err quotes the full URL; keep the upstream address out of the answer.
-		return fmt.Errorf("could not build upstream request for %s", endpoint)
+		return nil, fmt.Errorf("could not build upstream request for %s", endpoint)
 	}
 	req.Header.Set("User-Agent", "ratatosk-mcp/"+buildVersion)
 	if tp := traceparentFrom(ctx); tp != "" {
@@ -231,13 +222,13 @@ func (c *apiClient) get(ctx context.Context, endpoint, path string, q url.Values
 		// internet caller could read our internal topology off a failed
 		// request. The detail stays in the log line above; the caller gets the
 		// class, which is all an agent can act on anyway.
-		return fmt.Errorf("upstream request failed (%s)", errKind(err))
+		return nil, fmt.Errorf("upstream request failed (%s)", errKind(err))
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		slog.ErrorContext(ctx, "upstream body read failed", "upstream", endpoint, "kind", errKind(err))
-		return fmt.Errorf("upstream response read failed (%s)", errKind(err))
+		return nil, fmt.Errorf("upstream response read failed (%s)", errKind(err))
 	}
 	switch {
 	case resp.StatusCode == http.StatusOK:
@@ -253,11 +244,26 @@ func (c *apiClient) get(ctx context.Context, endpoint, path string, q url.Values
 		slog.DebugContext(ctx, "upstream rejected request", "upstream", endpoint, "status", resp.StatusCode)
 	}
 	if resp.StatusCode != http.StatusOK {
-		// 400 chars so self-correcting errors survive intact — the /v1 404 now
-		// carries the project's recent reviewed tags for the agent to retry with.
-		return fmt.Errorf("%s: HTTP %d: %s", path, resp.StatusCode, truncate(string(body), 400))
+		// 400 chars so self-correcting errors survive intact — the /v2 404 carries
+		// the project's recent versions for the agent to retry with.
+		return nil, &httpError{Path: path, Status: resp.StatusCode, Body: truncate(string(body), 400)}
 	}
-	return json.Unmarshal(body, out)
+	if cached {
+		c.cache.put(u, body)
+	}
+	return body, nil
+}
+
+// httpError keeps the status inspectable: check_stack reads a 404 on a single
+// release as "not on record", not as a failed call.
+type httpError struct {
+	Path   string
+	Status int
+	Body   string
+}
+
+func (e *httpError) Error() string {
+	return fmt.Sprintf("%s: HTTP %d: %s", e.Path, e.Status, e.Body)
 }
 
 func truncate(s string, n int) string {
@@ -267,163 +273,128 @@ func truncate(s string, n int) string {
 	return s
 }
 
-// listChanges fetches one page of /v1/changes.
-func (c *apiClient) listChanges(ctx context.Context, project, family, bucket string, since, limit int) (*changesPage, error) {
-	q := url.Values{}
-	if project != "" {
-		q.Set("project", project)
+func langQuery(q url.Values, lang string) url.Values {
+	if lang != "" && lang != "en" {
+		if q == nil {
+			q = url.Values{}
+		}
+		q.Set("lang", lang)
 	}
-	if family != "" {
-		q.Set("family", family)
-	}
-	if bucket != "" {
-		q.Set("bucket", bucket)
-	}
-	if since > 0 {
-		q.Set("since", fmt.Sprint(since))
-	}
-	if limit > 0 {
-		q.Set("limit", fmt.Sprint(limit))
-	}
-	var page changesPage
-	if err := c.get(ctx, "/v1/changes", "/v1/changes", q, &page); err != nil {
-		return nil, err
-	}
-	return &page, nil
+	return q
 }
 
-// allProjectChanges pages through every change for a project. Only the project
-// slug is sent to the server — never the caller's running version.
-func (c *apiClient) allProjectChanges(ctx context.Context, project string) ([]Change, error) {
-	// An empty slug drops the project filter and this loop pages the whole
-	// corpus. check_stack refuses such a component first; this is the backstop
-	// at the one place the fan-out happens.
-	if project == "" {
-		return nil, fmt.Errorf("refusing to page changes without a project")
+// ---------------------------------------------------------------------------
+// endpoints
+// ---------------------------------------------------------------------------
+
+func (c *apiClient) projectsRaw(ctx context.Context, cached bool) ([]byte, error) {
+	return c.getRaw(ctx, "/v2/projects", "/v2/projects", nil, cached)
+}
+
+func (c *apiClient) projects(ctx context.Context) ([]v2Project, error) {
+	b, err := c.projectsRaw(ctx, true)
+	if err != nil {
+		return nil, err
 	}
-	var all []Change
-	since := 0
-	for {
-		page, err := c.listChanges(ctx, project, "", "", since, 200)
+	var out struct {
+		Projects []v2Project `json:"projects"`
+	}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, fmt.Errorf("/v2/projects: %w", err)
+	}
+	return out.Projects, nil
+}
+
+type releasesQuery struct {
+	Project, Kind, Since, Before, Lang string
+	Limit                              int
+}
+
+func (c *apiClient) releasesRaw(ctx context.Context, rq releasesQuery, cached bool) ([]byte, error) {
+	q := url.Values{}
+	for k, v := range map[string]string{"project": rq.Project, "kind": rq.Kind, "since": rq.Since, "before": rq.Before} {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	if rq.Limit > 0 {
+		q.Set("limit", strconv.Itoa(rq.Limit))
+	}
+	return c.getRaw(ctx, "/v2/releases", "/v2/releases", langQuery(q, rq.Lang), cached)
+}
+
+// maxReleasePages bounds the release-list paging for one project. 200 rows a
+// page, so this is 2,000 releases — far past any project on record; it only
+// stops a server that keeps answering next_before from looping forever.
+const maxReleasePages = 10
+
+// projectReleases pages through every release row of one project, newest
+// first. Only the project slug is sent — never a version.
+func (c *apiClient) projectReleases(ctx context.Context, project string) ([]v2Row, error) {
+	// An empty slug drops the project filter and this loop would page every
+	// project. check_stack refuses such a component first; this is the
+	// backstop at the one place the fan-out happens.
+	if project == "" {
+		return nil, fmt.Errorf("refusing to list releases without a project")
+	}
+	var all []v2Row
+	before := ""
+	for page := 0; page < maxReleasePages; page++ {
+		b, err := c.releasesRaw(ctx, releasesQuery{Project: project, Before: before, Limit: 200}, true)
 		if err != nil {
 			return nil, err
 		}
-		all = append(all, page.Changes...)
-		if page.NextSince == nil {
+		var out struct {
+			Releases   []v2Row `json:"releases"`
+			NextBefore *string `json:"next_before"`
+		}
+		if err := json.Unmarshal(b, &out); err != nil {
+			return nil, fmt.Errorf("/v2/releases: %w", err)
+		}
+		all = append(all, out.Releases...)
+		if out.NextBefore == nil || *out.NextBefore == "" || *out.NextBefore == before {
 			return all, nil
 		}
-		since = *page.NextSince
+		before = *out.NextBefore
 	}
+	return all, nil
 }
 
-func (c *apiClient) changesByEntity(ctx context.Context, name, kind string) ([]Change, error) {
-	q := url.Values{}
-	q.Set("name", name)
-	if kind != "" {
-		q.Set("kind", kind)
-	}
-	var out struct {
-		Changes []Change `json:"changes"`
-	}
-	if err := c.get(ctx, "/v1/changes/by-entity", "/v1/changes/by-entity", q, &out); err != nil {
+func (c *apiClient) releaseRaw(ctx context.Context, project, version, lang string, cached bool) ([]byte, error) {
+	path := "/v2/releases/" + url.PathEscape(project) + "/" + url.PathEscape(version)
+	return c.getRaw(ctx, "/v2/releases/{project}/{version}", path, langQuery(nil, lang), cached)
+}
+
+func parseRelease(b []byte) (*v2Release, error) {
+	var r v2Release
+	if err := json.Unmarshal(b, &r); err != nil {
 		return nil, err
 	}
-	return out.Changes, nil
+	r.Raw = b
+	return &r, nil
 }
 
-// getMatter fetches one matter's history across releases. New in RFC 20: the
-// same fix lands on several branches carrying different advisory sets, and
-// only the full list shows that.
-func (c *apiClient) getMatter(ctx context.Context, key string, includeAll bool) (json.RawMessage, error) {
-	var raw json.RawMessage
-	q := url.Values{}
-	if includeAll {
-		q.Set("include", "all")
+// upgradeRaw is the explicit server-side range: from and to travel to the
+// server. check_upgrade uses it and says so; check_stack never does.
+func (c *apiClient) upgradeRaw(ctx context.Context, project, from, to, lang string) ([]byte, error) {
+	q := url.Values{"from": {from}}
+	if to != "" {
+		q.Set("to", to)
 	}
-	if err := c.get(ctx, "/v1/matters/{key}", "/v1/matters/"+url.PathEscape(key), q, &raw); err != nil {
-		return nil, err
-	}
-	return raw, nil
+	return c.getRaw(ctx, "/v2/upgrade/{project}", "/v2/upgrade/"+url.PathEscape(project), langQuery(q, lang), false)
 }
 
-// getRelease fetches one reviewed release; an empty versionTag asks the server
-// for the project's latest reviewed release.
-// listReleases fetches the newest N reviewed releases of a project as light
-// summaries — the recency path (v0.4.0): list_changes is an oldest-first sync
-// feed, so "recent releases of X" questions must not be answered from it.
-func (c *apiClient) listReleases(ctx context.Context, project string, limit int) (json.RawMessage, error) {
-	var raw json.RawMessage
-	q := url.Values{"limit": {strconv.Itoa(limit)}}
-	if err := c.get(ctx, "/v1/releases/{project}", "/v1/releases/"+url.PathEscape(project), q, &raw); err != nil {
-		return nil, err
-	}
-	return raw, nil
+func (c *apiClient) searchRaw(ctx context.Context, query, lang string) ([]byte, error) {
+	return c.getRaw(ctx, "/v2/search", "/v2/search", langQuery(url.Values{"q": {query}}, lang), false)
 }
 
-func (c *apiClient) getRelease(ctx context.Context, project, versionTag string, includeRaw bool) (json.RawMessage, error) {
-	var raw json.RawMessage
-	path := "/v1/releases/" + url.PathEscape(project)
-	endpoint := "/v1/releases/{project}"
-	if versionTag != "" {
-		path += "/" + url.PathEscape(versionTag)
-		endpoint = "/v1/releases/{project}/{version}"
+// cacheBytesFromEnv reads MCP_CACHE_MAX_MB — the response cache's byte budget.
+// Absent or unparseable means 32 MiB: half of the smallest container the Helm
+// chart and the hosted compose have shipped with, so the cache alone can never
+// take a process down.
+func cacheBytesFromEnv(raw string) int {
+	if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+		return n << 20
 	}
-	var q url.Values
-	if includeRaw {
-		q = url.Values{"include": {"raw"}}
-	}
-	if err := c.get(ctx, endpoint, path, q, &raw); err != nil {
-		return nil, err
-	}
-	return raw, nil
-}
-
-// projectTracked probes the version-less latest-release route (v0.3.0):
-// 200 = tracked project, 404 = unknown slug. check_stack uses it so zero
-// changes from an untracked project is never mistaken for audited silence.
-func (c *apiClient) projectTracked(ctx context.Context, project string) (bool, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/v1/releases/"+url.PathEscape(project), nil)
-	if err != nil {
-		return false, err
-	}
-	req.Header.Set("User-Agent", "ratatosk-mcp/"+buildVersion)
-	if tp := traceparentFrom(ctx); tp != "" {
-		req.Header.Set("traceparent", tp)
-	}
-	// One bit, no address: lets a hosted deployment's upstream separate real
-	// users from the operator's own calls, which are otherwise indistinguishable
-	// over an internal network (see callerClassMiddleware).
-	if cc := callerClassFrom(ctx); cc != "" {
-		req.Header.Set("X-Ratatosk-Caller", cc)
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		slog.ErrorContext(ctx, "upstream fetch failed", "upstream", "/v1/releases/{project}", "kind", errKind(err))
-		return false, fmt.Errorf("upstream request failed (%s)", errKind(err))
-	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 1<<20))
-	switch resp.StatusCode {
-	case http.StatusOK:
-		return true, nil
-	case http.StatusNotFound:
-		// The probe's answer, not a failure: 404 here MEANS "not tracked".
-		return false, nil
-	default:
-		if resp.StatusCode >= 500 {
-			slog.ErrorContext(ctx, "upstream error", "upstream", "/v1/releases/{project}", "status", resp.StatusCode)
-		}
-		return false, fmt.Errorf("tracking probe: HTTP %d", resp.StatusCode)
-	}
-}
-
-// listProjects fetches the tracked-project roster — the canonical slug list
-// agents resolve against before check_stack/get_release (v0.3.2 slug-discovery
-// gap fix: kagent guessed slugs and only learned via tracked:false).
-func (c *apiClient) listProjects(ctx context.Context) (json.RawMessage, error) {
-	var raw json.RawMessage
-	if err := c.get(ctx, "/v1/projects", "/v1/projects", nil, &raw); err != nil {
-		return nil, err
-	}
-	return raw, nil
+	return 32 << 20
 }

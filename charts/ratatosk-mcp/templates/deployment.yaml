@@ -43,6 +43,14 @@ spec:
             - name: MCP_RATE_LIMIT_PER_MIN
               value: {{ .Values.rateLimitPerMin | quote }}
 {{- end }}
+{{- if .Values.maxInflight }}
+            - name: MCP_MAX_INFLIGHT
+              value: {{ .Values.maxInflight | quote }}
+{{- end }}
+{{- if .Values.cacheMaxMB }}
+            - name: MCP_CACHE_MAX_MB
+              value: {{ .Values.cacheMaxMB | quote }}
+{{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}

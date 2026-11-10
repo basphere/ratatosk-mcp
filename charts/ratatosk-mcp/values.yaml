@@ -36,7 +36,9 @@ auditMode: ""
 # what a self-hosted install wants — it is single-tenant, so limiting its one
 # caller only gets in the way. Set it when this server fronts callers you do
 # not control (a shared or public endpoint): each caller address then gets its
-# own budget of N tool calls per minute, and one busy caller cannot starve the
+# own budget of N requests per minute (every MCP message counts: a client
+# spends two or three connecting, then one per tool call), and one busy
+# caller cannot starve the
 # rest. The address is used as an in-memory bucket key for the length of the
 # window and is never logged, never sent upstream. Read from CF-Connecting-IP,
 # then X-Forwarded-For, then X-Real-IP, then the peer address: the proxy in
@@ -44,36 +46,78 @@ auditMode: ""
 # limiter keyed on a caller-controlled value is not a limiter.
 rateLimitPerMin: 0
 
+# Requests in flight (MCP_MAX_INFLIGHT): 0 = off (default). Caps how many
+# requests the server works on at once; over the cap a request waits up to
+# 10 s for a slot, then gets 503 with Retry-After. The rate limit above bounds
+# each caller; this bounds the crowd, which is what keeps memory under the
+# limit when many callers arrive together. A stack-wide check_stack holds
+# about 30 MiB (brief) or 50 MiB (detail=full) while it runs; see "Memory and
+# concurrency" in docs/install.en.md to size it.
+maxInflight: 0
+
+# Response cache budget in MiB (MCP_CACHE_MAX_MB): 0 = the server default,
+# 32. Answers are cached for five minutes; this caps the bytes they hold.
+cacheMaxMB: 0
+
 service:
   type: ClusterIP
   port: 8080
 
+# Measured 2026-11-05 at these limits, stack-wide check_stack with detail=full
+# (ten components): 16 at once peaked at 376 MiB, 24 at once at 495 MiB, none
+# killed. At 64Mi, the 0.x default, two at once killed the container. The CPU
+# limit sets speed rather than safety: concurrent calls share it.
 resources:
   requests:
     cpu: 10m
     memory: 16Mi
   limits:
     cpu: 100m
-    memory: 64Mi
+    memory: 512Mi
 
 nodeSelector: {}
 tolerations: []
 affinity: {}
 
+# Cluster DNS domain, used to build the fully qualified in-cluster MCP URL
+# (<service>.<namespace>.svc.<clusterDomain>) that the kagent RemoteMCPServer
+# registers. kagent 1.x agents resolve only full names; change this only if
+# your cluster does not use cluster.local.
+clusterDomain: cluster.local
+
 # kagent integration (https://kagent.dev) — when true, installs the
 # RemoteMCPServer registration and an example Agent (ratatosk-agent) alongside
-# the server. Enable only on clusters where the kagent CRDs exist.
+# the server. Enable only on clusters where the kagent CRDs exist. The chart
+# renders whichever kagent API the cluster serves: kagent 1.x
+# (api.kagent.dev/v1alpha3) when present, otherwise kagent 0.x
+# (kagent.dev/v1alpha2). helm template sees no cluster; add
+# --api-versions api.kagent.dev/v1alpha3 there to render the 1.x shape.
 kagent:
   enabled: false
   # Name of the ModelConfig in your kagent installation
   modelConfig: default-model-config
+  # kagent 1.x only: the Harness (in this release's namespace) the example
+  # Agent runs on. kagent 1.x creates no default Harness, so this has no
+  # default either; while it is empty on a 1.x cluster the Agent is skipped
+  # (the server and its RemoteMCPServer still install) and NOTES.txt says how
+  # to add it. Ignored on kagent 0.x.
+  harness: ""
   agent:
     # false registers the server only, without the example Agent
     enabled: true
     name: ratatosk-agent
     # Grants the agent kagent's built-in read-only cluster tools
     # (k8s_get_resources, k8s_get_resource_yaml) so it can discover running
-    # versions itself. Requires kagent-tool-server in the install namespace
-    # (present in a default kagent install). Set false to keep the agent
-    # cluster-blind; it will ask for versions instead.
+    # versions itself. Requires kagent's tool server RemoteMCPServer (present
+    # in a default kagent install). Set false to keep the agent cluster-blind;
+    # it will ask for versions instead.
     k8sTools: true
+    # kagent's tool server registration: "<kagent release>-tool-server" in
+    # kagent's namespace. Leave namespace empty when this chart is installed
+    # into kagent's namespace (the documented layout). Set it when the two
+    # differ; the tool server then has to admit this namespace in its
+    # spec.allowedNamespaces (kagent 1.x chart value:
+    # kagent-tools.remoteMCPServer.allowedNamespaces).
+    toolServer:
+      name: kagent-tool-server
+      namespace: ""
