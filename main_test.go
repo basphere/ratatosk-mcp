@@ -94,7 +94,7 @@ func doc(ver string, counts string, before string, changes string, later string)
 func newFakeEtcd() *fakeV2 {
 	sec := func(id, adv string) string {
 		return `{"id":"` + id + `","kind":"security","title":"fix ` + adv + `","body":null,"severity":null,"advisories":["` + adv + `"],` +
-			`"affects":{"text":"gRPC listener","status":"stated"},"also_required":null,"impact_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
+			`"affects":{"text":"gRPC listener","status":"stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
 	}
 	f := &fakeV2{
 		projects: `{"projects":[{"slug":"etcd","name":"etcd"},{"slug":"envoy","name":"Envoy","image_aliases":["cilium-envoy"]}]}`,
@@ -110,8 +110,8 @@ func newFakeEtcd() *fakeV2 {
 			"v3.6.7": doc("v3.6.7", `{"security":1,"breaking":1,"deprecations":0,"important_fixes":0,"enhancements":2,"dependency_updates":0,"other":0}`,
 				`{"prerequisites":[],"known_issues":[],"upgrade_guide":[{"id":"etcd@v3.6.7#g","title":"read the 3.6 upgrade guide","body":null,"evidence":[],"folded":[]}]}`,
 				`[`+sec("etcd@v3.6.7#a", "GHSA-aaaa")+`,`+
-					`{"id":"etcd@v3.6.7#k","kind":"breaking","title":"v2store removed","body":"long","affects":{"text":"","status":"not_stated"},"action_required":"migrate","no_downgrade":{"text":"","status":"stated"},"impact_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"also_touches":[],"evidence":[],"later":[]},`+
-					`{"id":"etcd@v3.6.7#e","kind":"enhancements","title":"new flag","body":null,"affects":{"text":"","status":"not_stated"},"to_use":null,"impact_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, ""),
+					`{"id":"etcd@v3.6.7#k","kind":"breaking","title":"v2store removed","body":"long","affects":{"text":"","status":"not_stated"},"action_required":"migrate","no_downgrade":{"text":"","status":"stated"},"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"also_touches":[],"evidence":[],"later":[]},`+
+					`{"id":"etcd@v3.6.7#e","kind":"enhancements","title":"new flag","body":null,"affects":{"text":"","status":"not_stated"},"to_use":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, ""),
 			"v3.6.8":     doc("v3.6.8", "", "", `[`+sec("etcd@v3.6.8#b", "GHSA-bbbb")+`]`, ""),
 			"api/v3.6.7": doc("api/v3.6.7", "", "", "", ""),
 		},

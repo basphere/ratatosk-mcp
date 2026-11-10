@@ -55,7 +55,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | `no_downgrade` | 依存関係の更新以外すべて | ロールバックできないか（できるなら `null`） |
 | `removed_in` | `deprecations` | なくなる時期 |
 | `to_use` | `enhancements` | 新機能を使うために必要なもの |
-| `impact_unclear`, `silent_failure` | すべて | ノートからは誰が影響を受けるか判断できない、エラーなしに結果だけが狂う欠陥 |
+| `security_unclear`, `silent_failure` | すべて | セキュリティ修正かどうか二度の確認が食い違い、原文でも決められない（最初の種類に置く）、エラーなしに結果だけが誤る欠陥 |
 | `workaround`, `regression_since`, `also_touches` | すべて | 原文が示した回避策、欠陥が生じた時期、あわせて関わる別の種類 |
 
 原文が述べたかどうかで分かれる属性は `{ "text", "status" }` で、`status` は
@@ -444,7 +444,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
         "status": "stated"
       },
       "also_required": null,
-      "impact_unclear": false,
+      "security_unclear": false,
       "silent_failure": false,
       "workaround": {
         "text": "If upgrading is not immediately possible, reduce exposure by restricting network access to etcd client ports using firewall rules or network policy so that only trusted components can reach the server. This limits the pool of clients that could exploit a revoked certificate but does not enforce CRL revocation.",

@@ -57,7 +57,7 @@ Each change carries only the attributes its kind uses:
 | `no_downgrade` | all but dependency updates | Whether rolling back is impossible (`null` if not) |
 | `removed_in` | `deprecations` | When it goes away |
 | `to_use` | `enhancements` | What it takes to use the feature |
-| `impact_unclear`, `silent_failure` | all | The notes do not allow telling who is affected; the defect fails without an error |
+| `security_unclear`, `silent_failure` | all | Two checks disagreed on whether this is a security fix and the sources do not settle it (kept in the kind first chosen); the defect fails without an error |
 | `workaround`, `regression_since`, `also_touches` | all | A stated workaround; when the defect started; other kinds this change also touches |
 
 Attributes that can be stated or not are `{ "text", "status" }`, and `status`
@@ -449,7 +449,7 @@ latest; a wrong version returns an error naming the project's recent versions.
         "status": "stated"
       },
       "also_required": null,
-      "impact_unclear": false,
+      "security_unclear": false,
       "silent_failure": false,
       "workaround": {
         "text": "If upgrading is not immediately possible, reduce exposure by restricting network access to etcd client ports using firewall rules or network policy so that only trusted components can reach the server. This limits the pool of clients that could exploit a revoked certificate but does not enforce CRL revocation.",

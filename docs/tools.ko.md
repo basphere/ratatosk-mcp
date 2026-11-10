@@ -55,7 +55,7 @@ ratatosk-mcp 1.0의 도구 여섯 개를 자세히 설명합니다.
 | `no_downgrade` | 의존성 갱신 밖 전부 | 되돌릴 수 없는지(아니면 `null`) |
 | `removed_in` | `deprecations` | 없어지는 시점 |
 | `to_use` | `enhancements` | 새 기능을 쓰는 데 필요한 것 |
-| `impact_unclear`, `silent_failure` | 전부 | 노트로는 누가 영향받는지 가릴 수 없음, 오류 없이 결과만 틀어지는 결함 |
+| `security_unclear`, `silent_failure` | 전부 | 보안 수정인지 두 번 살핀 결론이 갈리고 원천으로 가려지지 않음(처음 정한 종류에 둠), 오류 없이 결과만 틀어지는 결함 |
 | `workaround`, `regression_since`, `also_touches` | 전부 | 원문이 밝힌 임시 조치, 결함이 처음 생긴 때, 함께 걸친 다른 종류 |
 
 릴리스 노트가 직접 말했는지 추정했는지를 구분하는 속성은 `{ "text", "status" }` 꼴이고, `status`는
@@ -438,7 +438,7 @@ ratatosk-mcp 1.0의 도구 여섯 개를 자세히 설명합니다.
         "status": "stated"
       },
       "also_required": null,
-      "impact_unclear": false,
+      "security_unclear": false,
       "silent_failure": false,
       "workaround": {
         "text": "If upgrading is not immediately possible, reduce exposure by restricting network access to etcd client ports using firewall rules or network policy so that only trusted components can reach the server. This limits the pool of clients that could exploit a revoked certificate but does not enforce CRL revocation.",

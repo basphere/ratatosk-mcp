@@ -490,7 +490,7 @@ type briefChange struct {
 	NoDowngrade     *v2Attr           `json:"no_downgrade,omitempty"`
 	RemovedIn       *v2Attr           `json:"removed_in,omitempty"`
 	Workaround      *v2Attr           `json:"workaround,omitempty"`
-	ImpactUnclear   bool              `json:"impact_unclear,omitempty"`
+	SecurityUnclear bool              `json:"security_unclear,omitempty"`
 	SilentFailure   bool              `json:"silent_failure,omitempty"`
 	RegressionSince *v2Attr           `json:"regression_since,omitempty"`
 	AlsoIn          []string          `json:"also_in,omitempty"`
@@ -636,7 +636,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool) (briefing, i
 				Advisories: c.Advisories, Affects: attrOf(c.Affects),
 				ActionRequired: strOf(c.ActionRequired), AlsoRequired: strOf(c.AlsoRequired),
 				NoDowngrade: attrOf(c.NoDowngrade), RemovedIn: attrOf(c.RemovedIn),
-				ImpactUnclear: c.ImpactUnclear, SilentFailure: c.SilentFailure,
+				SecurityUnclear: c.SecurityUnclear, SilentFailure: c.SilentFailure,
 				Later: c.Later, advKey: key,
 			}
 			if rs := attrOf(c.RegressionSince); rs != nil {
@@ -1017,7 +1017,7 @@ const stackHint = "briefing (a data classification, not a recommendation — cha
 	"(get_release has them). affects says who a change touches: status stated (the release notes say it) or " +
 	"inferred (a reading of the notes) — the change applies ONLY IF that holds in the running configuration, so " +
 	"read it before you report the change as applying; not_stated — the notes name no narrower scope, so it " +
-	"applies to every install of this project; impact_unclear — the notes do not allow telling who is affected. " +
+	"applies to every install of this project; security_unclear — two separate checks disagreed on whether the change is a security fix and the sources do not settle it; it stays in the kind first chosen, so verify against the evidence. " +
 	"action_required (breaking) and also_required (security) are what the notes say to do; no_downgrade means " +
 	"rolling back after the upgrade is not possible; removed_in is when a deprecation turns into a removal. " +
 	"severity is the grade the project's own advisory states, null when it states none — rank urgency with it, " +

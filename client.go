@@ -83,7 +83,7 @@ type v2Change struct {
 	AlsoRequired    *string           `json:"also_required"`
 	NoDowngrade     *v2Attr           `json:"no_downgrade"`
 	RemovedIn       *v2Attr           `json:"removed_in"`
-	ImpactUnclear   bool              `json:"impact_unclear"`
+	SecurityUnclear bool              `json:"security_unclear"`
 	SilentFailure   bool              `json:"silent_failure"`
 	Workaround      *v2Attr           `json:"workaround"`
 	RegressionSince *v2Attr           `json:"regression_since"`
