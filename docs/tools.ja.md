@@ -51,11 +51,12 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | `affects` | `dependency_updates` 以外のすべて | この変更が及ぶもの：フラグ・フィールド・機能・プラットフォーム・構成 |
 | `severity`, `advisories` | `security` | プロジェクト自身のアドバイザリが示す深刻度（`critical`・`high`・`medium`・`low`、示していなければ `null`）とアドバイザリ番号 |
 | `also_required` | `security` | アップグレード以外に必要な対応 |
-| `action_required`, `no_downgrade` | `breaking` | アップグレード時に必要な対応、ロールバックできないか |
+| `action_required` | `breaking` | アップグレード時に必要な対応 |
+| `no_downgrade` | 依存関係の更新以外すべて | ロールバックできないか（できるなら `null`） |
 | `removed_in` | `deprecations` | なくなる時期 |
 | `to_use` | `enhancements` | 新機能を使うために必要なもの |
 | `impact_unclear`, `silent_failure` | すべて | ノートからは誰が影響を受けるか判断できない、エラーなしに結果だけが狂う欠陥 |
-| `workaround`, `regression_since`, `also_touches`, `doubt` | すべて | 原文が示した回避策、欠陥が生じた時期、あわせて関わる別の種類、分類で迷った種類 |
+| `workaround`, `regression_since`, `also_touches` | すべて | 原文が示した回避策、欠陥が生じた時期、あわせて関わる別の種類 |
 
 原文が述べたかどうかで分かれる属性は `{ "text", "status" }` で、`status` は
 `stated`（リリースノートが述べている）・`inferred`（ノートから読み取った推定、
@@ -454,7 +455,6 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
         "breaking",
         "important_fixes"
       ],
-      "doubt": null,
       "evidence": [
         {
           "quote": "- Fix [CRL enforcement bypass on gRPC listener when `--listen-client-http-urls` is configured](https://github.com/etcd-io/etcd/pull/22021), refer to [security/advisories/GHSA-3wh4-j44w-pg92](https://github.com/etcd-io/etcd/security/advisories/GHSA-3wh4-j44w-pg92) for more details.",

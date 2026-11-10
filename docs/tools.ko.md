@@ -51,11 +51,12 @@ ratatosk-mcp 1.0의 도구 여섯 개를 자세히 설명합니다.
 | `affects` | `dependency_updates`를 뺀 전부 | 영향 대상: 플래그 · 필드 · 기능 · 플랫폼 · 구성 |
 | `severity`, `advisories` | `security` | 프로젝트의 보안 공지가 밝힌 등급(`critical` · `high` · `medium` · `low`, 밝히지 않았으면 `null`)과 공지 번호 |
 | `also_required` | `security` | 올리는 것 말고 더 해야 할 일 |
-| `action_required`, `no_downgrade` | `breaking` | 올릴 때 해야 할 일, 되돌릴 수 없는지 |
+| `action_required` | `breaking` | 올릴 때 해야 할 일 |
+| `no_downgrade` | 의존성 갱신 밖 전부 | 되돌릴 수 없는지(아니면 `null`) |
 | `removed_in` | `deprecations` | 없어지는 시점 |
 | `to_use` | `enhancements` | 새 기능을 쓰는 데 필요한 것 |
 | `impact_unclear`, `silent_failure` | 전부 | 노트로는 누가 영향받는지 가릴 수 없음, 오류 없이 결과만 틀어지는 결함 |
-| `workaround`, `regression_since`, `also_touches`, `doubt` | 전부 | 원문이 밝힌 임시 조치, 결함이 처음 생긴 때, 함께 걸친 다른 종류, 분류가 갈릴 수 있었던 다른 종류 |
+| `workaround`, `regression_since`, `also_touches` | 전부 | 원문이 밝힌 임시 조치, 결함이 처음 생긴 때, 함께 걸친 다른 종류 |
 
 릴리스 노트가 직접 말했는지 추정했는지를 구분하는 속성은 `{ "text", "status" }` 꼴이고, `status`는
 `stated`(릴리스 노트가 말함) · `inferred`(노트를 읽고 추정, `reason`에 까닭) ·
@@ -448,7 +449,6 @@ ratatosk-mcp 1.0의 도구 여섯 개를 자세히 설명합니다.
         "breaking",
         "important_fixes"
       ],
-      "doubt": null,
       "evidence": [
         {
           "quote": "- Fix [CRL enforcement bypass on gRPC listener when `--listen-client-http-urls` is configured](https://github.com/etcd-io/etcd/pull/22021), refer to [security/advisories/GHSA-3wh4-j44w-pg92](https://github.com/etcd-io/etcd/security/advisories/GHSA-3wh4-j44w-pg92) for more details.",

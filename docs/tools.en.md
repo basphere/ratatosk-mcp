@@ -53,11 +53,12 @@ Each change carries only the attributes its kind uses:
 | `affects` | all but `dependency_updates` | What the change touches: a flag, field, feature, platform or setup |
 | `severity`, `advisories` | `security` | The grade the project's own advisory states (`critical`, `high`, `medium`, `low`; `null` when it states none) and the advisory ids |
 | `also_required` | `security` | What to do beyond upgrading |
-| `action_required`, `no_downgrade` | `breaking` | What to do when upgrading; whether rolling back is impossible |
+| `action_required` | `breaking` | What to do when upgrading |
+| `no_downgrade` | all but dependency updates | Whether rolling back is impossible (`null` if not) |
 | `removed_in` | `deprecations` | When it goes away |
 | `to_use` | `enhancements` | What it takes to use the feature |
 | `impact_unclear`, `silent_failure` | all | The notes do not allow telling who is affected; the defect fails without an error |
-| `workaround`, `regression_since`, `also_touches`, `doubt` | all | A stated workaround; when the defect started; other kinds this change also touches; a kind the reading hesitated on |
+| `workaround`, `regression_since`, `also_touches` | all | A stated workaround; when the defect started; other kinds this change also touches |
 
 Attributes that can be stated or not are `{ "text", "status" }`, and `status`
 is one of `stated` (the release notes say it), `inferred` (derived from them;
@@ -459,7 +460,6 @@ latest; a wrong version returns an error naming the project's recent versions.
         "breaking",
         "important_fixes"
       ],
-      "doubt": null,
       "evidence": [
         {
           "quote": "- Fix [CRL enforcement bypass on gRPC listener when `--listen-client-http-urls` is configured](https://github.com/etcd-io/etcd/pull/22021), refer to [security/advisories/GHSA-3wh4-j44w-pg92](https://github.com/etcd-io/etcd/security/advisories/GHSA-3wh4-j44w-pg92) for more details.",
