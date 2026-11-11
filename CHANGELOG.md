@@ -60,6 +60,11 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   schema error. Keys that were not read are named in the component's `note`.
 - **`MCP_MAX_INFLIGHT` counts POST requests only.** In stateful mode a
   session's open event stream (GET) held a slot for as long as it lived.
+- **`get_release` without a version returns the project's highest version.**
+  It used to return the most recently published release, so a patch on an
+  older branch that shipped later was answered as the latest (kubernetes
+  v1.36.6 while v1.37.2 was on record). ratatosk.io changed `latest` in
+  `/v2/projects` the same way, and this tool reads it from there.
 - **Helm chart memory limit 64Mi → 512Mi.** 1.0 answers carry more, and a
   stack-wide `check_stack` with `detail=full` holds about 50 MiB while it
   runs: at 64Mi two at once got the container killed, while 512Mi held 24

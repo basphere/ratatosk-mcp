@@ -583,18 +583,28 @@ func TestProjectReleasesRefusesEmptyProject(t *testing.T) {
 // the other tools
 // ---------------------------------------------------------------------------
 
+// "Latest" is what /v2/projects says it is (the highest version), not the first
+// row of the release list (the most recently published): here the list leads
+// with v3.6.8 and the project's latest is v3.6.7.
 func TestGetReleaseWithoutVersionReadsTheLatest(t *testing.T) {
 	f := newFakeEtcd()
+	f.projects = `{"projects":[{"slug":"etcd","name":"etcd","latest":{"version":"v3.6.7","released_on":"2026-07-01"}},{"slug":"envoy","name":"Envoy","latest":null}]}`
 	swapAPI(t, httptest.NewServer(f.handler(t)))
 	res, _, err := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "etcd", Lang: "ko"})
 	if err != nil || res.IsError {
 		t.Fatalf("get_release: %v %+v", err, res)
 	}
-	if !strings.Contains(res.Content[0].(*mcp.TextContent).Text, `"version":"v3.6.8"`) {
+	if !strings.Contains(res.Content[0].(*mcp.TextContent).Text, `"version":"v3.6.7"`) {
 		t.Fatalf("not the latest: %s", res.Content[0].(*mcp.TextContent).Text)
 	}
-	if reqs := f.requests(); !slices.Contains(reqs, "/v2/releases/etcd/v3.6.8?lang=ko") {
+	if reqs := f.requests(); !slices.Contains(reqs, "/v2/releases/etcd/v3.6.7?lang=ko") {
 		t.Fatalf("lang not passed: %v", reqs)
+	}
+	for _, slug := range []string{"envoy", "nope"} {
+		res, _, _ := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: slug})
+		if !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "no analyzed release for project") {
+			t.Fatalf("%s has no latest release and must say so: %+v", slug, res.Content[0])
+		}
 	}
 	if res, _, _ := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "etcd", Lang: "de"}); !res.IsError {
 		t.Fatal("an unknown lang was read as English")

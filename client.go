@@ -45,6 +45,12 @@ type v2Project struct {
 	Slug         string   `json:"slug"`
 	Name         string   `json:"name"`
 	ImageAliases []string `json:"image_aliases"`
+	// Latest is the project's latest release as the API defines it: the highest
+	// version (on the main line when a project has several), not the most
+	// recently published. nil when nothing is analyzed yet.
+	Latest *struct {
+		Version string `json:"version"`
+	} `json:"latest"`
 }
 
 // v2Row is one row of /v2/releases — a release without its changes.

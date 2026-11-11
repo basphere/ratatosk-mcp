@@ -176,7 +176,9 @@ func newServer() *mcp.Server {
 			"order, folded lines, and later events (an advisory published after the release, a problem it introduced " +
 			"fixed in a newer version). Every change carries evidence: the release-note lines it came from, verbatim, " +
 			"with their URL — cite those when you report a change. severity is the grade the project's own advisory " +
-			"states; null means the advisory states none. Omit version for the latest release of the project. " +
+			"states; null means the advisory states none. Omit version for the latest release of the project: its " +
+			"highest version, which is not always the most recently published one (a patch on an older branch can " +
+			"ship later). " +
 			"version is accepted with or without the leading 'v'; a wrong one returns an error listing the project's " +
 			"recent versions — retry with one of those. " + dataNote,
 	}, getReleaseTool)
@@ -325,21 +327,24 @@ func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getRelea
 	}
 	ver := args.Version
 	if ver == "" {
-		// The list is newest first, so its first row is the latest release.
-		b, err := api.releasesRaw(ctx, releasesQuery{Project: args.Project, Limit: 1}, false)
+		// "Latest" is decided in one place, the API: /v2/projects carries each
+		// project's latest release, which is its highest version. This used to
+		// take the first row of the release list (the most recently published),
+		// so a patch on an older branch that shipped later was answered as the
+		// latest: kubernetes v1.36.6 while v1.37.2 was on record, 12 of 78
+		// projects on 2026-11-11.
+		roster, err := api.projects(ctx)
 		if err != nil {
-			return errResult(err), nil, nil
+			return errResult(fmt.Errorf("could not read the project list: %w", err)), nil, nil
 		}
-		var out struct {
-			Releases []v2Row `json:"releases"`
+		for _, p := range roster {
+			if p.Slug == args.Project && p.Latest != nil {
+				ver = p.Latest.Version
+			}
 		}
-		if err := json.Unmarshal(b, &out); err != nil {
-			return errResult(fmt.Errorf("/v2/releases: %w", err)), nil, nil
-		}
-		if len(out.Releases) == 0 {
+		if ver == "" {
 			return errResult(fmt.Errorf("no analyzed release for project %q — check the slug with list_projects", args.Project)), nil, nil
 		}
-		ver = out.Releases[0].Version
 	}
 	raw, err := api.releaseRaw(ctx, args.Project, ver, lang, false)
 	if err != nil {
