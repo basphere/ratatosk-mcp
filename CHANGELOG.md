@@ -29,8 +29,8 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 - **`check_stack` cuts the same range whether or not you write the "v".** For
   projects that tag without one (falco, istio, keycloak, strimzi), `v0.45.1`
   as the running version listed 0.45.1 itself as upgrade work, and
-  `target_version: v0.45.1` returned no releases. Both now match
-  `check_upgrade`.
+  `target_version: v0.45.1` returned no releases. The range is now cut in the
+  project's own spelling, as `check_upgrade` does.
 - **`check_stack` with `detail: "full"` carries about 2 MB of release
   documents per call.** The limit of 15 documents was per component, so a
   large stack made one answer of tens of MB (measured: 32 MB, 382 MB held
@@ -48,11 +48,16 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   cites an advisory your version already carries.** Such a change is a
   follow-up to an incomplete fix; it was excluded as "already fixed" and
   appeared only in a count. The same advisory backported onto another branch
-  is still excluded and counted.
+  is still excluded and counted. Inside the range the same rule holds: the
+  first release of each other branch that carries an advisory folds into
+  `also_in`, and a later release of a branch that cites it again is listed on
+  its own with its own severity.
 - **In the array form, `components` items may carry keys the server does not
-  know.** `name` is read as `project` there as it already was in the string
-  form, and a component without a project gets the refusal that names the
-  keys received and shows the shape, instead of a bare schema error.
+  know, and may leave out `project` or `version`.** `name` is read as
+  `project` there as it already was in the string form. A component without a
+  project gets the refusal that names the keys received and shows the shape,
+  and one without a version is listed in `could_not_check`, instead of a bare
+  schema error. Keys that were not read are named in the component's `note`.
 - **`MCP_MAX_INFLIGHT` counts POST requests only.** In stateful mode a
   session's open event stream (GET) held a slot for as long as it lived.
 - **Helm chart memory limit 64Mi → 512Mi.** 1.0 answers carry more, and a

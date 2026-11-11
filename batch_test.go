@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestRejectBatchMiddleware(t *testing.T) {
@@ -34,6 +35,18 @@ func TestRejectBatchMiddleware(t *testing.T) {
 			t.Errorf("batch %q must be refused before the handler: %d, handler saw %q", batch, code, seen)
 		}
 	}
+	// The whitespace skip is bounded, and the bound refuses: a batch behind
+	// 64 KiB of spaces used to be handed on and run.
+	pad := strings.Repeat(" ", 64<<10)
+	if code := post(pad + `[` + single + `]`); code != http.StatusBadRequest || seen != "" {
+		t.Errorf("a batch behind 64 KiB of whitespace must be refused: %d, handler saw %d bytes", code, len(seen))
+	}
+	if code := post(pad + "\n\n" + single); code != http.StatusBadRequest || seen != "" {
+		t.Errorf("more whitespace than the bound is refused whatever follows: %d", code)
+	}
+	if code := post(pad[:1000] + single); code != http.StatusOK || seen != single {
+		t.Errorf("ordinary padding passes: %d", code)
+	}
 	if code := post(""); code != http.StatusOK {
 		t.Errorf("an empty body is the SDK's to refuse: %d", code)
 	}
@@ -46,18 +59,29 @@ func TestRejectBatchMiddleware(t *testing.T) {
 	}
 }
 
-// One POST is one call for the limiter: a batch never reaches the handler, so
-// it cannot run calls the limiter did not count.
-func TestBatchDoesNotSlipPastTheRateLimit(t *testing.T) {
+// The chain main() serves, held to account for its order: a batch never
+// reaches the handler, and the attempt itself is counted by the limiter. With
+// the refusal taken out of the chain this fails.
+func TestHTTPChainRefusesBatchesBehindTheLimiter(t *testing.T) {
 	calls := 0
-	h := rateLimitMiddleware(newRateLimiter(1), rejectBatchMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := mcpHTTPChain(newRateLimiter(2), 4, time.Second, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusOK)
-	})))
+	}))
 	single := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_projects","arguments":{}}}`
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("["+single+","+single+","+single+"]")))
-	if rec.Code != http.StatusBadRequest || calls != 0 {
-		t.Fatalf("batch: got %d with %d handler calls, want 400 and 0", rec.Code, calls)
+	post := func(body string) int {
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body)))
+		return rec.Code
+	}
+	if code := post("[" + single + "," + single + "," + single + "]"); code != http.StatusBadRequest || calls != 0 {
+		t.Fatalf("batch: got %d with %d handler calls, want 400 and 0", code, calls)
+	}
+	if code := post(single); code != http.StatusOK || calls != 1 {
+		t.Fatalf("a single call after it: got %d with %d handler calls", code, calls)
+	}
+	// Limit 2: the refused batch was the first request, the single call the second.
+	if code := post(single); code != http.StatusTooManyRequests || calls != 1 {
+		t.Fatalf("the refused batch must have counted against the limit: got %d with %d handler calls", code, calls)
 	}
 }

@@ -81,7 +81,7 @@ func main() {
 		inflight := inflightFromEnv(os.Getenv("MCP_MAX_INFLIGHT"))
 		// A batch is refused behind the limiter (the attempt counts as a request)
 		// and before it can take a slot (see batch.go).
-		mux.Handle("/mcp", callerClassMiddleware(rateLimitMiddleware(rl, rejectBatchMiddleware(inflightMiddleware(inflight, 10*time.Second, handler)))))
+		mux.Handle("/mcp", mcpHTTPChain(rl, inflight, 10*time.Second, handler))
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
@@ -131,6 +131,14 @@ func main() {
 // newServer registers the six tools and the audit middleware. It is its own
 // function so docs_test.go can list the tools exactly as a client sees them —
 // the docs are checked against this, not against a second hand-kept list.
+// mcpHTTPChain is everything an HTTP request passes before the MCP handler:
+// caller class, the per-caller rate limit, the batch refusal, the in-flight
+// cap. A function of its own so a test can hold the order to account — the
+// batch refusal is only worth something between the limiter and the handler.
+func mcpHTTPChain(rl *rateLimiter, inflight int, wait time.Duration, handler http.Handler) http.Handler {
+	return callerClassMiddleware(rateLimitMiddleware(rl, rejectBatchMiddleware(inflightMiddleware(inflight, wait, handler))))
+}
+
 func newServer() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "ratatosk", Version: buildVersion}, &mcp.ServerOptions{
 		Instructions: "Data source: the public ratatosk.io agent API v2 — what changed in CNCF project releases, read by AI " +
@@ -213,7 +221,8 @@ func newServer() *mcp.Server {
 			"later_for_running is what happened to the running version after it shipped. A security change whose " +
 			"advisories the running version's own branch already fixed at or below it is excluded and counted in " +
 			"note; the same advisories fixed on several branches inside the range collapse into the earliest, with " +
-			"also_in naming the rest. Line-aware: a repository can publish separate products or channels " +
+			"also_in naming the rest. A later release of a branch that cites them again is a follow-up fix and is " +
+			"listed on its own. Line-aware: a repository can publish separate products or channels " +
 			"(containerd api/, Flatcar lts vs stable, openfeature flagd vs core) with NO version order between " +
 			"lines, so only the running version's line is compared — pass the tag as published, prefix included " +
 			"(\"flagd/v0.16.1\", \"lts-4081.3.9\"). Pass version_source per component (where you read the version, " +

@@ -51,6 +51,11 @@ type stackComponent struct {
 	// to see that its project_slug went unread. A string, not a slice, so the
 	// struct stays comparable.
 	sentKeys string
+	// unreadKeys lists the keys that are none of the above. They are tolerated
+	// (see checkStackSchema) but never silently: a "target" meant as
+	// target_version would otherwise return the whole upgrade path with nothing
+	// to say the bound was ignored. Named in the component's note.
+	unreadKeys string
 }
 
 // checkStackSchema is the inferred schema with one widening: components also
@@ -70,9 +75,11 @@ func checkStackSchema() *jsonschema.Schema {
 	// the array form the SDK refused both before the handler ran and the caller
 	// got a bare schema error instead of the shape (reproduced 2026-11-11). The
 	// handler still refuses a component without a project.
+	// version is not required either: the handler answers a missing one per
+	// component ("running version could not be parsed") and checks the rest.
 	if items := arrayForm.Items; items != nil {
 		items.AdditionalProperties = nil
-		items.Required = slices.DeleteFunc(items.Required, func(k string) bool { return k == "project" })
+		items.Required = nil
 	}
 	s.Properties["components"] = &jsonschema.Schema{
 		Description: arrayForm.Description,
@@ -142,16 +149,24 @@ func (c *stackComponent) UnmarshalJSON(b []byte) error {
 	if c.Project == "" {
 		c.Project = v.Name
 	}
-	if c.Project == "" {
-		var keys map[string]json.RawMessage
-		if json.Unmarshal(b, &keys) == nil {
-			names := make([]string, 0, len(keys))
-			for k := range keys {
-				names = append(names, k)
+	var keys map[string]json.RawMessage
+	if json.Unmarshal(b, &keys) == nil {
+		names := make([]string, 0, len(keys))
+		var unread []string
+		for k := range keys {
+			names = append(names, k)
+			switch k {
+			case "project", "name", "version", "target_version", "version_source":
+			default:
+				unread = append(unread, k)
 			}
-			sort.Strings(names)
+		}
+		sort.Strings(names)
+		sort.Strings(unread)
+		if c.Project == "" {
 			c.sentKeys = strings.Join(names, ", ")
 		}
+		c.unreadKeys = strings.Join(unread, ", ")
 	}
 	return nil
 }
@@ -209,7 +224,7 @@ const fullReleasesCap = 15
 // fullBytesBudget bounds the release documents one detail:"full" call carries,
 // summed over its components. fullReleasesCap alone bounded each component, not
 // the call: forty components of fifteen documents made one 32 MB answer that
-// held 395 MB while it was built (independent review, 2026-11-11). Measured the
+// held 382 MB while it was built (independent review, 2026-11-11). Measured the
 // same day over the 70 newest releases: a document is 15 KB at the median,
 // 120 KB at the 90th percentile, 302 KB at most, so 2 MiB is about nine
 // components of ordinary releases. What does not fit is counted in
@@ -654,6 +669,16 @@ func attrOf(a *v2Attr) *v2Attr {
 	return a
 }
 
+// branchOf names a version's branch for grouping: its line and major.minor.
+// A version with fewer than two numbers is its own branch.
+func branchOf(v string) string {
+	k := version.NormalizeVersion(v)
+	if len(k) < 2 {
+		return strings.TrimSpace(v)
+	}
+	return version.Line(v) + "/" + strconv.Itoa(k[0]) + "." + strconv.Itoa(k[1])
+}
+
 // advisoryKey is the identity of a security fix across branches: the sorted,
 // upper-cased advisory ids. A change citing none has no identity to compare.
 func advisoryKey(ids []string) string {
@@ -689,6 +714,12 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 	}
 	settled := 0
 	firstByAdv := map[string]int{} // advisory key → index in b.Changes
+	// advisory key + branch → seen. The first time a branch carries an advisory
+	// already listed, that is the backport and folds into also_in. A later
+	// release of a branch that carried it before is a follow-up to an incomplete
+	// fix and is listed on its own: folded, a critical follow-up was reduced to
+	// a version string under an ungraded first entry (re-review, 2026-11-11).
+	advOnBranch := map[string]bool{}
 	for _, d := range docs {
 		onRunningBranch := false
 		if k := version.NormalizeVersion(d.Version); k != nil && runningKey != nil {
@@ -733,7 +764,10 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						settled++
 						continue
 					}
-					if i, ok := firstByAdv[key]; ok {
+					branch := key + "|" + branchOf(d.Version)
+					seenHere := advOnBranch[branch]
+					advOnBranch[branch] = true
+					if i, ok := firstByAdv[key]; ok && !seenHere {
 						// The same fix landed on another branch inside the range:
 						// one entry at the earliest version, the rest named.
 						b.Changes[i].AlsoIn = append(b.Changes[i].AlsoIn, d.Version)
@@ -765,7 +799,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 					bc.Severity, _ = json.Marshal(*c.Severity)
 				}
 			}
-			if key != "" {
+			if _, ok := firstByAdv[key]; key != "" && !ok {
 				firstByAdv[key] = len(b.Changes)
 			}
 			b.Changes = append(b.Changes, bc)
@@ -967,6 +1001,9 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		var notes []string
 		if n := times[comp]; n > 1 {
 			notes = append(notes, fmt.Sprintf("listed %d times in this call; checked once", n))
+		}
+		if comp.unreadKeys != "" {
+			notes = append(notes, fmt.Sprintf("key(s) not read: %s — a component takes project, version, target_version and version_source", comp.unreadKeys))
 		}
 		skip := func(reason string) {
 			notes = append(notes, reason)

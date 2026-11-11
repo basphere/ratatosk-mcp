@@ -213,8 +213,89 @@ func TestFetchDocsStopsAfterTheFirstError(t *testing.T) {
 	if took := time.Since(start); took > 2*time.Second {
 		t.Errorf("waited %s for documents that no longer mattered", took)
 	}
-	if strings.Contains(err.Error(), "context canceled") {
+	if !strings.Contains(err.Error(), "HTTP 500") {
 		t.Errorf("the error reported must be the upstream failure, not our own cancel: %v", err)
+	}
+}
+
+// A deadline that has already passed must come back as an error. Without it
+// the fetch returned an empty set and no error, and the component would have
+// been answered as "nothing in range".
+func TestFetchDocsReportsTheCallersDeadline(t *testing.T) {
+	f := newFakeEtcd()
+	swapAPI(t, httptest.NewServer(f.handler(t)))
+	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+	defer cancel()
+	docs, err := fetchDocs(ctx, f.rows, "")
+	if err == nil {
+		t.Fatalf("an expired deadline returned %d documents and no error", len(docs))
+	}
+	if r := fetchReason(ctx, err); !strings.Contains(r, "ran out of time") {
+		t.Errorf("reason %q must say the call ran out of time", r)
+	}
+}
+
+// Inside the range: the first release of another branch carrying an advisory is
+// the backport and folds into also_in; a later release of a branch that already
+// carried it is a follow-up and is listed with its own severity.
+func TestBriefingListsAFollowUpFixInsideTheRange(t *testing.T) {
+	sec := func(ver, grade string) string {
+		g := "null"
+		if grade != "" {
+			g = `"` + grade + `"`
+		}
+		return doc(ver, "", "", `[{"id":"etcd@`+ver+`#a","kind":"security","title":"fix","body":null,"severity":`+g+`,"advisories":["GHSA-1111"],`+
+			`"affects":{"text":"","status":"not_stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, "")
+	}
+	var docs []*v2Release
+	for _, d := range []string{sec("v1.2.1", ""), sec("v1.2.2", "critical"), sec("v1.3.0", ""), sec("v1.3.1", "high")} {
+		r, err := parseRelease([]byte(d))
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs = append(docs, r)
+	}
+	b, settled := buildBriefing(docs, nil, []int{1, 2, 0})
+	got := map[string][]string{}
+	for _, c := range b.Changes {
+		got[c.ID] = c.AlsoIn
+	}
+	if settled != 0 || len(got) != 3 {
+		t.Fatalf("want three entries (first fix, its follow-up, the other branch's follow-up), got %v settled %d", got, settled)
+	}
+	if also := got["etcd@v1.2.1#a"]; len(also) != 1 || also[0] != "v1.3.0" {
+		t.Errorf("the other branch's first release folds into the first fix: also_in %v", also)
+	}
+	for _, id := range []string{"etcd@v1.2.2#a", "etcd@v1.3.1#a"} {
+		if _, ok := got[id]; !ok {
+			t.Errorf("follow-up %s must be listed on its own: %v", id, got)
+		}
+	}
+	// The critical follow-up leads: security is ordered by grade.
+	if b.Changes[0].ID != "etcd@v1.2.2#a" {
+		t.Errorf("the critical follow-up must come first, got %s", b.Changes[0].ID)
+	}
+}
+
+// A key the server does not read is tolerated, and said: "target" meant as
+// target_version must not return the whole path as if the bound had applied.
+// A component without a version is answered per component, not by the schema.
+func TestUnreadKeysAndMissingVersionAreAnswered(t *testing.T) {
+	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	cs := sdkSession(t)
+
+	text, isErr := sdkText(t, cs, "check_stack", map[string]any{
+		"components": []any{map[string]any{"project": "etcd", "version": "v3.5.30", "target": "v3.5.31", "extra": 1}},
+	})
+	if isErr || !strings.Contains(text, "key(s) not read: extra, target") {
+		t.Errorf("unread keys must be named in note: error=%v %s", isErr, text)
+	}
+
+	text, isErr = sdkText(t, cs, "check_stack", map[string]any{
+		"components": []any{map[string]any{"project": "etcd"}, map[string]any{"project": "etcd", "version": "v3.5.31"}},
+	})
+	if isErr || !strings.Contains(text, "running version could not be parsed") || !strings.Contains(text, `"running_version":"v3.5.31"`) {
+		t.Errorf("a component without a version goes to could_not_check and the rest is checked: error=%v %s", isErr, text)
 	}
 }
 
