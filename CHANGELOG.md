@@ -21,6 +21,16 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ### Changed
 
+- **The HTTP transport refuses JSON-RPC batches (`400`); send one request per
+  POST.** The rate limit and the in-flight cap count HTTP requests, and a batch
+  ran every call it carried past both. Protocol revisions 2025-06-18 and later
+  never allowed batches; older revisions now behave the same. stdio is
+  unchanged.
+- **`check_stack` cuts the same range whether or not you write the "v".** For
+  projects that tag without one (falco, istio, keycloak, strimzi), `v0.45.1`
+  as the running version listed 0.45.1 itself as upgrade work, and
+  `target_version: v0.45.1` returned no releases. Both now match
+  `check_upgrade`.
 - **Helm chart memory limit 64Mi → 512Mi.** 1.0 answers carry more, and a
   stack-wide `check_stack` with `detail=full` holds about 50 MiB while it
   runs: at 64Mi two at once got the container killed, while 512Mi held 24

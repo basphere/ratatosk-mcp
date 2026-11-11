@@ -79,7 +79,9 @@ func main() {
 		// The in-flight cap sits behind the rate limiter: an over-limit caller is
 		// turned away without taking a slot (see inflight.go).
 		inflight := inflightFromEnv(os.Getenv("MCP_MAX_INFLIGHT"))
-		mux.Handle("/mcp", callerClassMiddleware(rateLimitMiddleware(rl, inflightMiddleware(inflight, 10*time.Second, handler))))
+		// A batch is refused behind the limiter (the attempt counts as a request)
+		// and before it can take a slot (see batch.go).
+		mux.Handle("/mcp", callerClassMiddleware(rateLimitMiddleware(rl, rejectBatchMiddleware(inflightMiddleware(inflight, 10*time.Second, handler)))))
 		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusOK)
 		})
