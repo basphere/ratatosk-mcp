@@ -384,3 +384,41 @@ func TestUnreadKeysMatchTheDecodeAndAreBounded(t *testing.T) {
 		t.Errorf("thirty long keys must come back as eight short ones and a count: %d chars %q", len(c.unreadKeys), c.unreadKeys)
 	}
 }
+
+// A sibling that asks for something of its own is not folded away: it is the
+// envoy v1.35.13 case, where the second change on one advisory carried the
+// required step.
+func TestBriefingKeepsASiblingThatCarriesItsOwnStep(t *testing.T) {
+	plain := `{"id":"etcd@v1.2.1#a","kind":"security","title":"padding oracle fixed","body":null,"severity":"high","advisories":["GHSA-3333"],` +
+		`"affects":{"text":"","status":"not_stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
+	withStep := `{"id":"etcd@v1.2.1#b","kind":"security","title":"opt-in GCM encryption","body":null,"severity":"high","advisories":["GHSA-3333"],` +
+		`"affects":{"text":"","status":"not_stated"},"also_required":"set use_gcm_encryption to true","security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
+	same := strings.Replace(plain, "#a", "#c", 1)
+	r, err := parseRelease([]byte(doc("v1.2.1", "", "", `[`+plain+`,`+withStep+`,`+same+`]`, "")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := buildBriefing([]*v2Release{r}, nil, []int{1, 2, 0})
+	var ids []string
+	for _, c := range b.Changes {
+		ids = append(ids, c.ID)
+	}
+	if len(ids) != 2 || ids[0] != "etcd@v1.2.1#a" || ids[1] != "etcd@v1.2.1#b" {
+		t.Fatalf("want the first change and the one with its own step, not the plain repeat: %v", ids)
+	}
+	if b.Changes[1].AlsoRequired != "set use_gcm_encryption to true" {
+		t.Errorf("the step must reach the answer: %+v", b.Changes[1])
+	}
+}
+
+// The keys of a component that named no project are echoed in the refusal;
+// that echo is bounded too.
+func TestSentKeysAreBounded(t *testing.T) {
+	var c stackComponent
+	if err := json.Unmarshal([]byte(`{"`+strings.Repeat("k", 300000)+`":1}`), &c); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.sentKeys) > 200 {
+		t.Errorf("a 300,000-character key came back as %d characters", len(c.sentKeys))
+	}
+}

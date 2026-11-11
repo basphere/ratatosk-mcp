@@ -124,6 +124,30 @@ func (s *stackComponents) UnmarshalJSON(b []byte) error {
 	return nil
 }
 
+// boundedKeys joins key names for an answer. Caller-chosen text goes back to
+// the caller, so it is bounded: a model that passes a whole manifest object as
+// a component must not get it echoed (one 1 MiB key name made a 1 MB answer,
+// and a 300,000-character key a 300 KB refusal; reviews of 2026-11-11).
+func boundedKeys(keys []string) string {
+	const maxKeys, maxKeyChars = 8, 40
+	more := 0
+	if len(keys) > maxKeys {
+		more, keys = len(keys)-maxKeys, keys[:maxKeys]
+	}
+	out := make([]string, len(keys))
+	for i, k := range keys {
+		if r := []rune(k); len(r) > maxKeyChars {
+			k = string(r[:maxKeyChars]) + "…"
+		}
+		out[i] = k
+	}
+	s := strings.Join(out, ", ")
+	if more > 0 {
+		s += fmt.Sprintf(" (+%d more)", more)
+	}
+	return s
+}
+
 // componentsShapeHint is carried in every rejection this type can produce.
 // An error that only echoes what was received leaves the model guessing: the
 // measured run varied the same mistake eight times. Showing the shape once is
@@ -166,25 +190,9 @@ func (c *stackComponent) UnmarshalJSON(b []byte) error {
 		sort.Strings(names)
 		sort.Strings(unread)
 		if c.Project == "" {
-			c.sentKeys = strings.Join(names, ", ")
+			c.sentKeys = boundedKeys(names)
 		}
-		// Caller-chosen text goes back in the answer, so it is bounded: a model
-		// that passes a whole manifest object as a component must not get it
-		// echoed (one 1 MiB key name made a 1 MB answer, final review 2026-11-11).
-		const maxKeys, maxKeyChars = 8, 40
-		more := 0
-		if len(unread) > maxKeys {
-			more, unread = len(unread)-maxKeys, unread[:maxKeys]
-		}
-		for i, k := range unread {
-			if r := []rune(k); len(r) > maxKeyChars {
-				unread[i] = string(r[:maxKeyChars]) + "…"
-			}
-		}
-		c.unreadKeys = strings.Join(unread, ", ")
-		if more > 0 {
-			c.unreadKeys += fmt.Sprintf(" (+%d more)", more)
-		}
+		c.unreadKeys = boundedKeys(unread)
 	}
 	return nil
 }
@@ -687,6 +695,22 @@ func attrOf(a *v2Attr) *v2Attr {
 	return a
 }
 
+// carriesItsOwn says a change asks the operator for something the entry it
+// would fold into does not: its own required step, workaround, no-downgrade
+// warning or regression note.
+func carriesItsOwn(c v2Change, kept briefChange) bool {
+	if s := strOf(c.AlsoRequired); s != "" && s != kept.AlsoRequired {
+		return true
+	}
+	if w := attrOf(c.Workaround); w != nil && (kept.Workaround == nil || briefText(w.Text) != kept.Workaround.Text) {
+		return true
+	}
+	if attrOf(c.NoDowngrade) != nil && kept.NoDowngrade == nil {
+		return true
+	}
+	return attrOf(c.RegressionSince) != nil && kept.RegressionSince == nil
+}
+
 // raiseSeverity lifts an entry's grade to sev when sev is the higher one.
 func raiseSeverity(bc *briefChange, sev *string) {
 	if sev == nil || *sev == "" {
@@ -802,22 +826,30 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 					branch := key + "|" + branchOf(d.Version)
 					if i, ok := inRelease[key]; ok {
 						// Another change of this same release citing the same
-						// advisories: one entry stands for them.
-						raiseSeverity(&b.Changes[i], c.Severity)
-						continue
+						// advisories. One entry stands for them unless this one
+						// asks for something the entry does not: measured over
+						// five projects on 2026-11-11, 19 of 53 such changes
+						// carried their own also_required or workaround (envoy
+						// v1.35.13: "set oauth2_use_gcm_encryption to true"), and
+						// folding them dropped that instruction without a trace.
+						if !carriesItsOwn(c, b.Changes[i]) {
+							raiseSeverity(&b.Changes[i], c.Severity)
+							continue
+						}
+					} else {
+						touched = append(touched, branch)
+						if i, ok := firstByAdv[key]; ok && !advOnBranch[branch] {
+							// The same fix landed on another branch inside the range:
+							// one entry at the earliest version, the rest named. The
+							// entry takes the higher grade, so a critical backport is
+							// not hidden under an ungraded first entry.
+							b.Changes[i].AlsoIn = append(b.Changes[i].AlsoIn, d.Version)
+							raiseSeverity(&b.Changes[i], c.Severity)
+							inRelease[key] = i
+							continue
+						}
+						inRelease[key] = len(b.Changes)
 					}
-					touched = append(touched, branch)
-					if i, ok := firstByAdv[key]; ok && !advOnBranch[branch] {
-						// The same fix landed on another branch inside the range:
-						// one entry at the earliest version, the rest named. The
-						// entry takes the higher grade, so a critical backport is
-						// not hidden under an ungraded first entry.
-						b.Changes[i].AlsoIn = append(b.Changes[i].AlsoIn, d.Version)
-						raiseSeverity(&b.Changes[i], c.Severity)
-						inRelease[key] = i
-						continue
-					}
-					inRelease[key] = len(b.Changes)
 				}
 			}
 			bc := briefChange{
