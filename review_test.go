@@ -325,3 +325,62 @@ func TestInflightCapCountsOnlyPosts(t *testing.T) {
 	close(release)
 	<-done
 }
+
+// Two changes of ONE release citing the same advisories are one entry, on any
+// branch: they are not a fix and its follow-up. A backport's higher grade is
+// carried onto the entry it folds into.
+func TestBriefingTreatsSiblingsInOneReleaseAsOne(t *testing.T) {
+	ch := func(ver, id, grade string) string {
+		g := "null"
+		if grade != "" {
+			g = `"` + grade + `"`
+		}
+		return `{"id":"etcd@` + ver + `#` + id + `","kind":"security","title":"fix","body":null,"severity":` + g + `,"advisories":["GHSA-2222"],` +
+			`"affects":{"text":"","status":"not_stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
+	}
+	var docs []*v2Release
+	for _, d := range []string{
+		doc("v1.2.1", "", "", `[`+ch("v1.2.1", "a", "")+`,`+ch("v1.2.1", "b", "")+`]`, ""),
+		doc("v1.3.0", "", "", `[`+ch("v1.3.0", "a", "critical")+`,`+ch("v1.3.0", "b", "critical")+`]`, ""),
+	} {
+		r, err := parseRelease([]byte(d))
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs = append(docs, r)
+	}
+	b, _ := buildBriefing(docs, nil, []int{1, 2, 0})
+	if len(b.Changes) != 1 {
+		t.Fatalf("four changes, one advisory, two releases on two branches: want one entry, got %d", len(b.Changes))
+	}
+	c := b.Changes[0]
+	if c.ID != "etcd@v1.2.1#a" || len(c.AlsoIn) != 1 || c.AlsoIn[0] != "v1.3.0" {
+		t.Errorf("entry %s also_in %v, want the first change with the other branch named once", c.ID, c.AlsoIn)
+	}
+	if string(c.Severity) != `"critical"` {
+		t.Errorf("the backport's grade must be carried onto the entry: %s", c.Severity)
+	}
+}
+
+// Keys are matched without regard to case, as the decode does, and what is
+// echoed back is bounded.
+func TestUnreadKeysMatchTheDecodeAndAreBounded(t *testing.T) {
+	var c stackComponent
+	if err := json.Unmarshal([]byte(`{"Project":"etcd","Version":"v3.5.30","Target_Version":"v3.5.31"}`), &c); err != nil {
+		t.Fatal(err)
+	}
+	if c.Project != "etcd" || c.TargetVersion != "v3.5.31" || c.unreadKeys != "" {
+		t.Errorf("keys that were read must not be reported unread: %+v", c)
+	}
+	junk := `{"project":"etcd","version":"v1"`
+	for i := 0; i < 30; i++ {
+		junk += `,"k` + strings.Repeat("x", 100) + string(rune('a'+i%26)) + string(rune('a'+i/26)) + `":1`
+	}
+	junk += `}`
+	if err := json.Unmarshal([]byte(junk), &c); err != nil {
+		t.Fatal(err)
+	}
+	if len(c.unreadKeys) > 8*45+20 || !strings.Contains(c.unreadKeys, "(+22 more)") {
+		t.Errorf("thirty long keys must come back as eight short ones and a count: %d chars %q", len(c.unreadKeys), c.unreadKeys)
+	}
+}

@@ -85,3 +85,30 @@ func TestHTTPChainRefusesBatchesBehindTheLimiter(t *testing.T) {
 		t.Fatalf("the refused batch must have counted against the limit: got %d with %d handler calls", code, calls)
 	}
 }
+
+// A batch is refused before it can wait for, or take, an in-flight slot: with
+// the only slot held it gets 400 at once, not a wait and a 503.
+func TestHTTPChainRefusesBatchesBeforeTheInflightCap(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	h := mcpHTTPChain(nil, 1, 2*time.Second, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		started <- struct{}{}
+		<-release
+		w.WriteHeader(http.StatusOK)
+	}))
+	single := `{"jsonrpc":"2.0","id":1,"method":"ping"}`
+	done := make(chan struct{})
+	go func() {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(single)))
+		close(done)
+	}()
+	<-started
+	start := time.Now()
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("["+single+"]")))
+	if rec.Code != http.StatusBadRequest || time.Since(start) > time.Second {
+		t.Errorf("batch while the slot is held: got %d after %s, want 400 at once", rec.Code, time.Since(start))
+	}
+	close(release)
+	<-done
+}

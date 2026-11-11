@@ -155,7 +155,9 @@ func (c *stackComponent) UnmarshalJSON(b []byte) error {
 		var unread []string
 		for k := range keys {
 			names = append(names, k)
-			switch k {
+			// Lower-cased: the decode above matches field names without regard
+			// to case, so "Project" was read and must not be reported unread.
+			switch strings.ToLower(k) {
 			case "project", "name", "version", "target_version", "version_source":
 			default:
 				unread = append(unread, k)
@@ -166,7 +168,23 @@ func (c *stackComponent) UnmarshalJSON(b []byte) error {
 		if c.Project == "" {
 			c.sentKeys = strings.Join(names, ", ")
 		}
+		// Caller-chosen text goes back in the answer, so it is bounded: a model
+		// that passes a whole manifest object as a component must not get it
+		// echoed (one 1 MiB key name made a 1 MB answer, final review 2026-11-11).
+		const maxKeys, maxKeyChars = 8, 40
+		more := 0
+		if len(unread) > maxKeys {
+			more, unread = len(unread)-maxKeys, unread[:maxKeys]
+		}
+		for i, k := range unread {
+			if r := []rune(k); len(r) > maxKeyChars {
+				unread[i] = string(r[:maxKeyChars]) + "…"
+			}
+		}
 		c.unreadKeys = strings.Join(unread, ", ")
+		if more > 0 {
+			c.unreadKeys += fmt.Sprintf(" (+%d more)", more)
+		}
 	}
 	return nil
 }
@@ -669,6 +687,16 @@ func attrOf(a *v2Attr) *v2Attr {
 	return a
 }
 
+// raiseSeverity lifts an entry's grade to sev when sev is the higher one.
+func raiseSeverity(bc *briefChange, sev *string) {
+	if sev == nil || *sev == "" {
+		return
+	}
+	if raw, _ := json.Marshal(*sev); gradeRank(raw) > gradeRank(bc.Severity) {
+		bc.Severity = raw
+	}
+}
+
 // branchOf names a version's branch for grouping: its line and major.minor.
 // A version with fewer than two numbers is its own branch.
 func branchOf(v string) string {
@@ -714,13 +742,20 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 	}
 	settled := 0
 	firstByAdv := map[string]int{} // advisory key → index in b.Changes
-	// advisory key + branch → seen. The first time a branch carries an advisory
-	// already listed, that is the backport and folds into also_in. A later
-	// release of a branch that carried it before is a follow-up to an incomplete
-	// fix and is listed on its own: folded, a critical follow-up was reduced to
-	// a version string under an ungraded first entry (re-review, 2026-11-11).
+	// advisory key + branch → an EARLIER release of that branch carried it. The
+	// first release of a branch that carries an advisory already listed is the
+	// backport and folds into also_in. A later release of a branch that carried
+	// it before is a follow-up to an incomplete fix and is listed on its own:
+	// folded, a critical follow-up was reduced to a version string under an
+	// ungraded first entry (re-review, 2026-11-11). Marked only after a release's
+	// changes are all read, so two changes of ONE release citing the same
+	// advisories are not taken for a fix and its follow-up — on envoy that
+	// listed 47 extra entries and pushed five distinct advisories out of the
+	// cap of 20 (final review, same day; 36 of 37 repeats sat inside one release).
 	advOnBranch := map[string]bool{}
 	for _, d := range docs {
+		inRelease := map[string]int{} // advisory key → the entry this release's changes stand under
+		var touched []string          // advisory key + branch pairs to mark once the release is read
 		onRunningBranch := false
 		if k := version.NormalizeVersion(d.Version); k != nil && runningKey != nil {
 			onRunningBranch = sameBranch(k, runningKey)
@@ -765,14 +800,24 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						continue
 					}
 					branch := key + "|" + branchOf(d.Version)
-					seenHere := advOnBranch[branch]
-					advOnBranch[branch] = true
-					if i, ok := firstByAdv[key]; ok && !seenHere {
-						// The same fix landed on another branch inside the range:
-						// one entry at the earliest version, the rest named.
-						b.Changes[i].AlsoIn = append(b.Changes[i].AlsoIn, d.Version)
+					if i, ok := inRelease[key]; ok {
+						// Another change of this same release citing the same
+						// advisories: one entry stands for them.
+						raiseSeverity(&b.Changes[i], c.Severity)
 						continue
 					}
+					touched = append(touched, branch)
+					if i, ok := firstByAdv[key]; ok && !advOnBranch[branch] {
+						// The same fix landed on another branch inside the range:
+						// one entry at the earliest version, the rest named. The
+						// entry takes the higher grade, so a critical backport is
+						// not hidden under an ungraded first entry.
+						b.Changes[i].AlsoIn = append(b.Changes[i].AlsoIn, d.Version)
+						raiseSeverity(&b.Changes[i], c.Severity)
+						inRelease[key] = i
+						continue
+					}
+					inRelease[key] = len(b.Changes)
 				}
 			}
 			bc := briefChange{
@@ -803,6 +848,9 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 				firstByAdv[key] = len(b.Changes)
 			}
 			b.Changes = append(b.Changes, bc)
+		}
+		for _, t := range touched {
+			advOnBranch[t] = true
 		}
 	}
 	// Kind first (security leads); security by grade, so a cap cuts the least
