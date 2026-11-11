@@ -305,6 +305,41 @@ func sameBranch(a, b []int) bool {
 	return len(a) >= 2 && len(b) >= 2 && a[0] == b[0] && a[1] == b[1]
 }
 
+// tagOfRows spells v the way the project's tags on that line do: the row that
+// names the same release if there is one, otherwise v with its leading "v"
+// added or dropped to match the line (a version not on record, such as a
+// pre-release nobody analyzed). With no row to copy from, v comes back as is.
+func tagOfRows(line []v2Row, v string) string {
+	for _, r := range line {
+		if r.Version == v {
+			return v
+		}
+	}
+	for _, r := range line {
+		if sameTag(r.Version, v) {
+			return r.Version
+		}
+	}
+	if len(line) == 0 {
+		return v
+	}
+	hasV := func(s string) bool {
+		return len(s) >= 2 && (s[0] == 'v' || s[0] == 'V') && s[1] >= '0' && s[1] <= '9'
+	}
+	digit := func(s string) bool { return s != "" && s[0] >= '0' && s[0] <= '9' }
+	t := strings.TrimSpace(v)
+	_, rest := version.SplitLine(t)
+	_, like := version.SplitLine(line[0].Version)
+	prefix := t[:len(t)-len(rest)]
+	switch {
+	case hasV(like) && digit(rest):
+		return prefix + like[:1] + rest
+	case digit(like) && hasV(rest):
+		return prefix + rest[1:]
+	}
+	return v
+}
+
 // upgradeRange cuts (running, target] out of a project's rows on the running
 // version's line, oldest first — the same selection /v2/upgrade makes. target
 // "" means the highest version on that line.
@@ -315,19 +350,33 @@ func upgradeRange(rows []v2Row, running, target string) (inRange []v2Row, resolv
 			line = append(line, r)
 		}
 	}
+	// Compare in the project's own spelling. descCmp breaks an equal numeric key
+	// by the raw tag, so "v0.45.1" from the caller and the project's "0.45.1"
+	// ranked as two versions: the running release came back as upgrade work, and
+	// a target written with the other "v" style cut the range to nothing with no
+	// note (falco, istio, keycloak, strimzi — reproduced 2026-11-11). /v2/upgrade
+	// does the same mapping (tagOf).
+	runningTag := tagOfRows(line, running)
 	resolvedTarget = target
-	if resolvedTarget == "" {
+	targetTag := ""
+	if target != "" {
+		targetTag = tagOfRows(line, target)
+	} else {
 		for _, r := range line {
-			if resolvedTarget == "" || descCmp(r.Version, resolvedTarget) < 0 {
-				resolvedTarget = r.Version
+			if targetTag == "" || descCmp(r.Version, targetTag) < 0 {
+				targetTag = r.Version
 			}
 		}
-		if resolvedTarget == "" {
-			resolvedTarget = running
+		if targetTag == "" {
+			targetTag = runningTag
 		}
+		resolvedTarget = targetTag
 	}
 	for _, r := range line {
-		if descCmp(r.Version, running) < 0 && descCmp(r.Version, resolvedTarget) >= 0 {
+		if sameTag(r.Version, runningTag) || descCmp(r.Version, runningTag) >= 0 {
+			continue
+		}
+		if sameTag(r.Version, targetTag) || descCmp(r.Version, targetTag) >= 0 {
 			inRange = append(inRange, r)
 		}
 	}

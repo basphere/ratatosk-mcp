@@ -366,6 +366,45 @@ func TestUpgradeRange(t *testing.T) {
 	}
 }
 
+// Projects that tag without a "v" (falco, istio, keycloak, strimzi): a caller
+// who writes the "v" must get the same range as one who does not. Before
+// 2026-11-11 the running release itself came back as upgrade work, and a target
+// spelled with "v" returned no releases and no note.
+func TestUpgradeRangeIgnoresTheCallersVStyle(t *testing.T) {
+	bare := []v2Row{{Version: "0.45.2"}, {Version: "0.45.1"}, {Version: "0.45.1-rc1"}, {Version: "0.45.0"}}
+	withV := []v2Row{{Version: "v0.45.2"}, {Version: "v0.45.1"}, {Version: "v0.45.1-rc1"}, {Version: "v0.45.0"}}
+	names := func(rows []v2Row, running, target string) []string {
+		r, _ := upgradeRange(rows, running, target)
+		var v []string
+		for _, x := range r {
+			v = append(v, strings.TrimPrefix(x.Version, "v"))
+		}
+		return v
+	}
+	for _, rows := range [][]v2Row{bare, withV} {
+		for _, c := range []struct {
+			running, target string
+			want            []string
+		}{
+			{"0.45.1", "", []string{"0.45.2"}},
+			{"v0.45.1", "", []string{"0.45.2"}},
+			{"0.45.0", "0.45.1", []string{"0.45.1-rc1", "0.45.1"}},
+			{"0.45.0", "v0.45.1", []string{"0.45.1-rc1", "0.45.1"}},
+			{"v0.45.0", "0.45.1", []string{"0.45.1-rc1", "0.45.1"}},
+			{"v0.45.1-rc1", "", []string{"0.45.1", "0.45.2"}},
+			{"0.45.1-rc1", "v0.45.1", []string{"0.45.1"}},
+			{"v0.45.2", "", nil},
+			// Not on record: a pre-release nobody analyzed still sorts below its release.
+			{"v0.45.2-rc9", "", []string{"0.45.2"}},
+			{"0.45.2-rc9", "", []string{"0.45.2"}},
+		} {
+			if got := names(rows, c.running, c.target); !slices.Equal(got, c.want) {
+				t.Errorf("tags like %q, running %q target %q: got %v, want %v", rows[0].Version, c.running, c.target, got, c.want)
+			}
+		}
+	}
+}
+
 func TestSameTag(t *testing.T) {
 	if !sameTag("1.30.2", "v1.30.2") || sameTag("v1.30.2", "api/v1.30.2") || sameTag("v1.24.3", "v1.24.3-rc1") {
 		t.Error("sameTag")
