@@ -10,8 +10,9 @@
 
 [![MCP Registry](https://img.shields.io/badge/MCP_Registry-listed-blue)](https://registry.modelcontextprotocol.io/?q=ratatosk&all=1)
 [![Release](https://img.shields.io/github/v/release/basphere/ratatosk-mcp)](https://github.com/basphere/ratatosk-mcp/releases)
+[![CI](https://github.com/basphere/ratatosk-mcp/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/basphere/ratatosk-mcp/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/basphere/ratatosk-mcp)](LICENSE)
-[![Glama score](https://glama.ai/mcp/servers/garlicKim21/ratatosk-mcp/badges/score.svg)](https://glama.ai/mcp/servers/garlicKim21/ratatosk-mcp)
+[![Glama score](https://glama.ai/mcp/servers/basphere/ratatosk-mcp/badges/score.svg)](https://glama.ai/mcp/servers/basphere/ratatosk-mcp)
 
 
 </div>
