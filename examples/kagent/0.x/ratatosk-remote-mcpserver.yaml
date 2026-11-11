@@ -1,4 +1,4 @@
-## Ratatosk MCP server — CNCF release intelligence
+## Ratatosk MCP server: CNCF release changes
 ## https://github.com/basphere/ratatosk-mcp
 ## kagent 0.x (kagent.dev/v1alpha2). On kagent 1.x use ../1.x/ instead.
 apiVersion: kagent.dev/v1alpha2
