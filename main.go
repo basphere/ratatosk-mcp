@@ -240,6 +240,7 @@ func newServer() *mcp.Server {
 	// Audit stream (P3): observes tools/call when MCP_AUDIT is set; the
 	// identity function otherwise. See audit.go and docs/logging-design.md.
 	server.AddReceivingMiddleware(auditMiddleware)
+	server.AddReceivingMiddleware(deadlineMiddleware)
 	return server
 }
 

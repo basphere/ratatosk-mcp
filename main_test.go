@@ -659,7 +659,7 @@ func TestBriefingCapsPerKind(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		d.Changes = append(d.Changes, v2Change{ID: fmt.Sprint("b", i), Kind: "breaking"})
 	}
-	b, _ := buildBriefing([]*v2Release{d}, nil)
+	b, _ := buildBriefing([]*v2Release{d}, nil, nil)
 	var sec, brk int
 	for _, c := range b.Changes {
 		switch c.Kind {

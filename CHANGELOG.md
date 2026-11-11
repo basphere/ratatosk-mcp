@@ -31,6 +31,30 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   as the running version listed 0.45.1 itself as upgrade work, and
   `target_version: v0.45.1` returned no releases. Both now match
   `check_upgrade`.
+- **`check_stack` with `detail: "full"` carries about 2 MB of release
+  documents per call.** The limit of 15 documents was per component, so a
+  large stack made one answer of tens of MB (measured: 32 MB, 382 MB held
+  while it was built; now 2.3 MB and 36 MB). What does not fit is counted in
+  `releases_full_omitted` and named in `note`; read those releases with
+  `get_release` or split the call.
+- **`check_stack` checks a component listed more than once only once,** and
+  says so in that component's `note`.
+- **A tool call ends after 90 seconds with an answer.** A slow upstream used
+  to run a stack check into the HTTP server's 120 second write timeout, and
+  the caller got an empty reply. Components not reached in time are listed in
+  `could_not_check`. One failed release document now stops the other fetches
+  for that component instead of waiting for them.
+- **`check_stack` lists a later security fix on your own branch even when it
+  cites an advisory your version already carries.** Such a change is a
+  follow-up to an incomplete fix; it was excluded as "already fixed" and
+  appeared only in a count. The same advisory backported onto another branch
+  is still excluded and counted.
+- **In the array form, `components` items may carry keys the server does not
+  know.** `name` is read as `project` there as it already was in the string
+  form, and a component without a project gets the refusal that names the
+  keys received and shows the shape, instead of a bare schema error.
+- **`MCP_MAX_INFLIGHT` counts POST requests only.** In stateful mode a
+  session's open event stream (GET) held a slot for as long as it lived.
 - **Helm chart memory limit 64Mi → 512Mi.** 1.0 answers carry more, and a
   stack-wide `check_stack` with `detail=full` holds about 50 MiB while it
   runs: at 64Mi two at once got the container killed, while 512Mi held 24

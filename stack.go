@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
 	"slices"
@@ -23,6 +24,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -62,6 +64,16 @@ func checkStackSchema() *jsonschema.Schema {
 		panic(fmt.Errorf("check_stack schema: %w", err)) // wiring bug, not runtime input
 	}
 	arrayForm := s.Properties["components"]
+	// The handler reads "name" as an alias for project and names the keys it
+	// received when no project could be read (see stackComponent.UnmarshalJSON).
+	// The inferred item schema forbade unknown keys and required project, so in
+	// the array form the SDK refused both before the handler ran and the caller
+	// got a bare schema error instead of the shape (reproduced 2026-11-11). The
+	// handler still refuses a component without a project.
+	if items := arrayForm.Items; items != nil {
+		items.AdditionalProperties = nil
+		items.Required = slices.DeleteFunc(items.Required, func(k string) bool { return k == "project" })
+	}
 	s.Properties["components"] = &jsonschema.Schema{
 		Description: arrayForm.Description,
 		AnyOf: []*jsonschema.Schema{
@@ -193,6 +205,44 @@ var kindCaps = map[string]int{"security": 20, "breaking": 20, "deprecations": 10
 
 // fullReleasesCap bounds detail:"full", where each release is a whole document.
 const fullReleasesCap = 15
+
+// fullBytesBudget bounds the release documents one detail:"full" call carries,
+// summed over its components. fullReleasesCap alone bounded each component, not
+// the call: forty components of fifteen documents made one 32 MB answer that
+// held 395 MB while it was built (independent review, 2026-11-11). Measured the
+// same day over the 70 newest releases: a document is 15 KB at the median,
+// 120 KB at the 90th percentile, 302 KB at most, so 2 MiB is about nine
+// components of ordinary releases. What does not fit is counted in
+// releases_full_omitted and named in note, never dropped silently.
+const fullBytesBudget = 2 << 20
+
+// toolTimeout bounds one tool call. The HTTP server cuts a response at 120 s
+// (WriteTimeout), and before this bound a slow upstream ran a stack check into
+// that cut: the caller got an empty reply instead of an answer saying what was
+// not checked. 90 s leaves room to write the answer. A var so tests can
+// shorten it.
+var toolTimeout = 90 * time.Second
+
+// deadlineMiddleware puts toolTimeout on every tool call.
+func deadlineMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		if method != "tools/call" {
+			return next(ctx, method, req)
+		}
+		ctx, cancel := context.WithTimeout(ctx, toolTimeout)
+		defer cancel()
+		return next(ctx, method, req)
+	}
+}
+
+// fetchReason words a failed fetch for could_not_check. Out of time is said as
+// such, with what to do next, rather than as a transport error.
+func fetchReason(ctx context.Context, err error) string {
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) {
+		return "not checked: this call ran out of time — call check_stack again with the remaining components"
+	}
+	return "fetch failed: " + err.Error()
+}
 
 // briefTextChars bounds body, workaround and regression_since text in a
 // briefing. Measured on the same envoy range: body was the largest single
@@ -625,7 +675,14 @@ func advisoryKey(ids []string) string {
 // branch, and an operator on 2.2.5 who already has CVE-x from 2.2.4 must not be
 // told to upgrade to 2.3.1 for it (observed on a live cluster, 2026-08-10,
 // containerd CVE-2026-46680 and CVE-2026-47262).
-func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool) (briefing, int) {
+//
+// runningKey is the running version's key. A release on the running version's
+// own branch is above it (the range is exclusive), so a security change there
+// is new work even when it cites an advisory the running version already
+// carries: that is a follow-up to an incomplete fix, and dropping it hid a
+// critical change behind a count (independent review, 2026-11-11). Only other
+// branches' backports are settled. nil (check_upgrade) settles nothing.
+func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey []int) (briefing, int) {
 	b := briefing{
 		Summary:  &stackSummary{Counts: map[string]int{}, Warnings: map[string]int{"critical": 0, "no_downgrade": 0}},
 		Releases: &[]rangeRelease{},
@@ -633,6 +690,10 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool) (briefing, i
 	settled := 0
 	firstByAdv := map[string]int{} // advisory key → index in b.Changes
 	for _, d := range docs {
+		onRunningBranch := false
+		if k := version.NormalizeVersion(d.Version); k != nil && runningKey != nil {
+			onRunningBranch = sameBranch(k, runningKey)
+		}
 		b.Summary.Releases++
 		for k, n := range d.Counts {
 			b.Summary.Counts[k] += n
@@ -668,7 +729,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool) (briefing, i
 							break
 						}
 					}
-					if covered {
+					if covered && !onRunningBranch {
 						settled++
 						continue
 					}
@@ -793,9 +854,16 @@ func fetchDocs(ctx context.Context, rows []v2Row, lang string) (map[string]*v2Re
 	out := make(map[string]*v2Release, len(rows))
 	var mu sync.Mutex
 	var firstErr error
+	// One failed document fails the component, so the rest are not worth
+	// fetching: cancel them instead of reading up to 60 more.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	sem := make(chan struct{}, fetchParallel)
 	var wg sync.WaitGroup
 	for _, r := range rows {
+		if ctx.Err() != nil {
+			break
+		}
 		wg.Add(1)
 		sem <- struct{}{}
 		go func(r v2Row) {
@@ -810,6 +878,7 @@ func fetchDocs(ctx context.Context, rows []v2Row, lang string) (map[string]*v2Re
 				}
 				if firstErr == nil {
 					firstErr = err
+					cancel()
 				}
 				return
 			}
@@ -817,6 +886,7 @@ func fetchDocs(ctx context.Context, rows []v2Row, lang string) (map[string]*v2Re
 			if perr != nil {
 				if firstErr == nil {
 					firstErr = fmt.Errorf("/v2/releases/{project}/{version}: %w", perr)
+					cancel()
 				}
 				return
 			}
@@ -824,6 +894,9 @@ func fetchDocs(ctx context.Context, rows []v2Row, lang string) (map[string]*v2Re
 		}(r)
 	}
 	wg.Wait()
+	if firstErr == nil && ctx.Err() != nil {
+		firstErr = ctx.Err() // the caller's deadline, not our own cancel
+	}
 	return out, firstErr
 }
 
@@ -872,12 +945,29 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		}
 	}
 
-	reports := make([]componentReport, 0, len(args.Components))
+	// The same component listed twice gets one report. Each copy used to be
+	// checked and answered again: a hundred copies of one project made one call
+	// carry forty identical reports (independent review, 2026-11-11).
+	times := map[stackComponent]int{}
+	comps := make([]stackComponent, 0, len(args.Components))
+	for _, comp := range args.Components {
+		comp.Project = strings.TrimSpace(comp.Project)
+		comp.sentKeys = ""
+		if times[comp]++; times[comp] == 1 {
+			comps = append(comps, comp)
+		}
+	}
+
+	reports := make([]componentReport, 0, len(comps))
 	var cannot []uncheckable
 	spent := 0
-	for _, comp := range args.Components {
+	fullBytes := 0
+	for _, comp := range comps {
 		rep := componentReport{Project: comp.Project, RunningVersion: comp.Version, VersionSource: comp.VersionSource}
 		var notes []string
+		if n := times[comp]; n > 1 {
+			notes = append(notes, fmt.Sprintf("listed %d times in this call; checked once", n))
+		}
 		skip := func(reason string) {
 			notes = append(notes, reason)
 			rep.Note = strings.Join(notes, "; ")
@@ -908,7 +998,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		}
 		rows, err := api.projectReleases(ctx, slug)
 		if err != nil {
-			skip("fetch failed: " + err.Error())
+			skip(fetchReason(ctx, err))
 			continue
 		}
 		if len(rows) == 0 {
@@ -946,7 +1036,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		spent += len(set)
 		docs, err := fetchDocs(ctx, set, lang)
 		if err != nil {
-			skip("fetch failed: " + err.Error())
+			skip(fetchReason(ctx, err))
 			continue
 		}
 
@@ -1023,6 +1113,13 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 					rep.FullOmitted = len(rangeDocs) - fullReleasesCap
 					break
 				}
+				// The first document of the call always goes out, whatever its size.
+				if fullBytes > 0 && fullBytes+len(d.Raw) > fullBytesBudget {
+					rep.FullOmitted = len(rangeDocs) - i
+					notes = append(notes, fmt.Sprintf("releases_full stops here: one call carries about %d MB of release documents — read the other %d with get_release, or call again with fewer components", fullBytesBudget>>20, rep.FullOmitted))
+					break
+				}
+				fullBytes += len(d.Raw)
 				rep.Full = append(rep.Full, d.Raw)
 			}
 			for _, d := range rangeDocs {
@@ -1031,7 +1128,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 			rep.Releases = &rels
 		} else {
 			var settled int
-			rep.briefing, settled = buildBriefing(rangeDocs, alreadyFixed)
+			rep.briefing, settled = buildBriefing(rangeDocs, alreadyFixed, currentKey)
 			if settled > 0 {
 				notes = append(notes, fmt.Sprintf(
 					"%d security change(s) in range were excluded: their advisories are already fixed at or below %s on your branch",
@@ -1138,7 +1235,7 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	}
 	// No already-fixed filter here: that needs the releases at or below from,
 	// which this path does not read. The server's range is shown as it is.
-	b, _ := buildBriefing(docs, nil)
+	b, _ := buildBriefing(docs, nil, nil)
 	out := map[string]any{
 		"project":        up.Project,
 		"from":           up.From,

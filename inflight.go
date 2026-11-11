@@ -24,6 +24,14 @@ func inflightMiddleware(n int, wait time.Duration, next http.Handler) http.Handl
 	}
 	slots := make(chan struct{}, n)
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// Only a POST does work. In stateful mode a client keeps a GET open as
+		// its event stream for the whole session; counted, that stream held a
+		// slot and, with a cap of 1, the session's own next call got 503
+		// (reproduced 2026-11-11).
+		if req.Method != http.MethodPost {
+			next.ServeHTTP(w, req)
+			return
+		}
 		t := time.NewTimer(wait)
 		defer t.Stop()
 		select {
