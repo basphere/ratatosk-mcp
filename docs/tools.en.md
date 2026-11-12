@@ -62,8 +62,8 @@ Each change carries only the attributes its kind uses:
 | `to_use` | `string` or `null` | `enhancements` | What it takes to use the feature |
 | `security_unclear` | `boolean` | all | `true` when two checks disagreed on whether this is a security fix and the sources do not settle it; the change stays in the kind first chosen |
 | `silent_failure` | `boolean` | all | `true` when the defect fails without an error |
-| `workaround` | `object` or `null` | all | A stated workaround |
-| `regression_since` | `object` or `null` | all | When the defect started |
+| `workaround` | `object` or `null` | all | A stated workaround. Always returned in English, regardless of `lang` |
+| `regression_since` | `object` or `null` | all | When the defect started. Always returned in English, regardless of `lang` |
 | `also_touches` | `array` | all | Other kinds this change also touches |
 | `evidence` | `array` | all | The lines the change came from, verbatim (`quote`), with their `source` and `url` |
 

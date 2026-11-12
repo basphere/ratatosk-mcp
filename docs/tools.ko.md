@@ -48,8 +48,8 @@
 | `to_use` | `string` 또는 `null` | `enhancements` | 새 기능을 활성화하거나 사용하기 위한 조건 |
 | `security_unclear` | `boolean` | 모든 종류 | 보안 수정 여부를 두 차례 검토했지만 판단이 엇갈리고 출처로 확인할 수 없는 경우 `true`. 이 경우 처음 분류한 종류를 유지 |
 | `silent_failure` | `boolean` | 모든 종류 | 오류 없이 잘못된 결과를 내는 결함이면 `true` |
-| `workaround` | `object` 또는 `null` | 모든 종류 | 즉시 업그레이드하기 어려울 때 원문에서 안내한 임시 조치 |
-| `regression_since` | `object` 또는 `null` | 모든 종류 | 원문에 명시된 결함 최초 발생 버전 |
+| `workaround` | `object` 또는 `null` | 모든 종류 | 즉시 업그레이드하기 어려울 때 원문에서 안내한 임시 조치. `lang`을 지정해도 영어로 반환 |
+| `regression_since` | `object` 또는 `null` | 모든 종류 | 원문에 명시된 결함 최초 발생 버전. `lang`을 지정해도 영어로 반환 |
 | `also_touches` | `array` | 모든 종류 | 해당 변경이 함께 걸친 다른 변경 종류 |
 | `evidence` | `array` | 모든 종류 | 원문 그대로 인용한 근거 문장(`quote`), 출처 유형(`source`), 출처 주소(`url`) |
 

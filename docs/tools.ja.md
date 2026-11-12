@@ -60,8 +60,8 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | `to_use` | `string` または `null` | `enhancements` | 新機能を使うために必要なもの |
 | `security_unclear` | `boolean` | すべて | セキュリティ修正かどうかについて 2 つの判定が食い違い、出典からも判断できない場合は `true`。変更は最初に選ばれた種類のままにします |
 | `silent_failure` | `boolean` | すべて | エラーなしに結果だけが誤る欠陥なら `true` |
-| `workaround` | `object` または `null` | すべて | 原文が示した回避策 |
-| `regression_since` | `object` または `null` | すべて | 欠陥が生じた時期 |
+| `workaround` | `object` または `null` | すべて | 原文が示した回避策。`lang` の値にかかわらず英語で返る |
+| `regression_since` | `object` または `null` | すべて | 欠陥が生じた時期。`lang` の値にかかわらず英語で返る |
 | `also_touches` | `array` | すべて | あわせて関わる別の種類 |
 | `evidence` | `array` | すべて | 根拠となった行の原文のままの引用（`quote`）と、その `source`・`url` |
 
