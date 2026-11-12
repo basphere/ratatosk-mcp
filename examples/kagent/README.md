@@ -1,29 +1,21 @@
-# Ratatosk MCP server
+# kagent integration example
 
 [English](README.md) · [한국어](README.ko.md) · [日本語](README.ja.md)
 
-[Ratatosk](https://ratatosk.io) reads the release notes of the CNCF projects
-and sorts each change into seven kinds: security, breaking, deprecations,
-important fixes, enhancements, dependency updates, other. Each change says who
-it affects and which release-note lines it came from. This MCP server
-exposes those releases to in-cluster agents.
+The manifests in this directory deploy the ratatosk-mcp server in your cluster,
+register it with kagent as an MCP server (`RemoteMCPServer`), and create an
+example agent, `ratatosk-agent`. There is one set for kagent 0.x and one for
+1.x. For what Ratatosk and this server are, see the repository
+[README](../../README.md).
 
-Privacy: `check_stack` compares your running versions inside this process, so
-a `check_stack` call sends only project slugs to ratatosk.io. `check_upgrade`
-and `get_release` are the exception: they send the versions they name. The
-upstream API is public, read-only, and needs no
-credentials (rate limit 1200 req/min per IP).
+`check_stack` compares your running versions inside the server process, so a
+`check_stack` call sends only project slugs to ratatosk.io. `check_upgrade`
+and `get_release` send the versions they name. No account or API key is
+needed, and the manifests contain no secret. Details:
+[How your component versions are handled](../../README.md#how-your-component-versions-are-handled).
 
-## Tools
-
-| Tool | Purpose |
-| --- | --- |
-| `list_projects` | The tracked projects and their slugs; resolve slugs here first |
-| `check_stack` | Compare running versions against each project's releases (local comparison): before-upgrade checks, the changes that ask for a decision, version gaps |
-| `check_upgrade` | One project, one hop, computed by the server: `from` and `to` are sent upstream |
-| `get_release` | One release in full: before-upgrade checks, every change with its evidence |
-| `list_releases` | Recent releases as one-line summaries, newest first |
-| `search` | Find releases by advisory id, flag or text |
+The agent uses six tools. Their parameters and example responses are in the
+[tool reference](../../docs/tools.en.md).
 
 ## Pick the set for your kagent
 
