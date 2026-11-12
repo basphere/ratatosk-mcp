@@ -211,8 +211,17 @@ func TestDocsParametersMatchSchemas(t *testing.T) {
 	tools := serverTools(t)
 	for _, path := range docTrios[2] {
 		for name, sec := range toolSections(t, path, tools) {
+			// The parameter table sits under the section's first "### " heading.
+			// Until 2026-11-12 this read the first table of the whole section
+			// whose first column held backticked names; list_projects takes no
+			// arguments, so its response-fields table was read as its parameters.
+			sub := regexp.MustCompile(`(?m)^### `).Split(sec, -1)
+			if len(sub) < 2 {
+				t.Errorf("%s %s has no \"### \" subsection for its parameters", path, name)
+				continue
+			}
 			got := []string{}
-			for _, tb := range parseMD(path, sec).tables {
+			for _, tb := range parseMD(path, sub[1]).tables {
 				if cells := firstCells(tb); len(cells) > 0 {
 					got = cells
 					break
