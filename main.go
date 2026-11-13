@@ -244,8 +244,9 @@ func newServer() *mcp.Server {
 			"website's search does. q matches case-insensitively anywhere in the text, so a partial id finds the full " +
 			"one. A complete advisory ID (CVE-2026-1234, GHSA-xxxx-xxxx-xxxx) matches only that ID. Three groups: in_analysis (a change or before-upgrade item matched, or the project name or version; " +
 			"matched names its kind, release for the latter, and title), in_release_notes (the release notes matched; excerpt shows where) and " +
-			"in_linked_documents (a document the notes link matched). Each group lists releases newest first and is " +
-			"capped at 200, 100 and 100 results, respectively. Truncation is not marked, so narrow q if a group reaches " +
+			"in_linked_documents (a document the notes link matched). in_analysis lists releases matched by project name " +
+			"or version first, then releases matched through a change item, each set newest first; the other two groups " +
+			"list releases newest first. The groups are capped at 200, 100 and 100 results, respectively. Truncation is not marked, so narrow q if a group reaches " +
 			"its limit. q is 2–200 characters. Drill in with get_release(project, version). " + dataNote,
 	}, searchTool)
 

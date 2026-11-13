@@ -645,11 +645,12 @@ id such as `GHSA-3wh4` finds the full one. A complete id (`CVE-2026-1234`,
 | `in_release_notes` | `array` | Releases where the release notes matched |
 | `in_linked_documents` | `array` | Releases where a document the notes link matched |
 
-Each array lists the newest releases first and contains at most 200
-(`in_analysis`), 100 (`in_release_notes`) and 100 (`in_linked_documents`)
-releases. In `in_analysis`, releases whose project name or version matched the query
+`in_release_notes` and `in_linked_documents` list the newest releases first. In
+`in_analysis`, releases whose project name or version matched the query
 (`matched.kind: "release"`) come first, followed by releases where a change item
-matched the query; each set is ordered newest first.
+matched the query; each set is ordered newest first. The arrays contain at most
+200 (`in_analysis`), 100 (`in_release_notes`) and 100 (`in_linked_documents`)
+releases.
 Truncated results are not marked, so narrow `q` if an array reaches its limit.
 
 ### Example call
