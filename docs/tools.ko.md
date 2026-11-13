@@ -598,7 +598,7 @@
 | `in_release_notes` | `array` | 릴리스 노트 원문이 일치한 릴리스 |
 | `in_linked_documents` | `array` | 노트가 링크한 문서가 일치한 릴리스 |
 
-각 배열은 최근에 발행된 릴리스부터 정렬됩니다. `in_analysis`는 200건, `in_release_notes`와 `in_linked_documents`는 각각 100건까지 반환합니다. 상한을 넘는 결과가 더 있어도 응답에는 그 사실이 표시되지 않습니다. 어느 배열의 결과 수가 상한과 같으면 검색어(`q`)를 더 구체적으로 입력합니다.
+`in_analysis` 배열에서는 프로젝트 이름이나 버전이 검색어와 일치한 릴리스(`matched.kind`가 `"release"`인 결과)가 먼저 나오고, 변경 항목이 일치한 릴리스가 그다음에 나오며, 각 그룹은 최근에 발행된 릴리스부터 정렬됩니다. `in_release_notes`와 `in_linked_documents` 배열은 최근에 발행된 릴리스부터 정렬됩니다. `in_analysis`는 200건, `in_release_notes`와 `in_linked_documents`는 각각 100건까지 반환합니다. 상한을 넘는 결과가 더 있어도 응답에는 그 사실이 표시되지 않습니다. 어느 배열의 결과 수가 상한과 같으면 검색어(`q`)를 더 구체적으로 입력합니다.
 
 ### 호출 예시
 

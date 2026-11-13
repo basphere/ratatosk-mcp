@@ -647,8 +647,10 @@ id such as `GHSA-3wh4` finds the full one. A complete id (`CVE-2026-1234`,
 
 Each array lists the newest releases first and contains at most 200
 (`in_analysis`), 100 (`in_release_notes`) and 100 (`in_linked_documents`)
-releases. Truncated results are not marked, so narrow `q` if an array reaches
-its limit.
+releases. In `in_analysis`, releases whose project name or version matched the query
+(`matched.kind: "release"`) come first, followed by releases where a change item
+matched the query; each set is ordered newest first.
+Truncated results are not marked, so narrow `q` if an array reaches its limit.
 
 ### Example call
 
