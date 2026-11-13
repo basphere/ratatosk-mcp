@@ -242,10 +242,11 @@ func newServer() *mcp.Server {
 		Annotations: &mcp.ToolAnnotations{Title: "Search releases", ReadOnlyHint: true},
 		Description: "Find releases by an advisory id (CVE-…, GHSA-…), a configuration flag, or text, as the " +
 			"website's search does. q matches case-insensitively anywhere in the text, so a partial id finds the full " +
-			"one. Three groups: in_analysis (a change or before-upgrade item matched, or the project name or version; " +
+			"one. A complete advisory ID (CVE-2026-1234, GHSA-xxxx-xxxx-xxxx) matches only that ID. Three groups: in_analysis (a change or before-upgrade item matched, or the project name or version; " +
 			"matched names its kind, release for the latter, and title), in_release_notes (the release notes matched; excerpt shows where) and " +
-			"in_linked_documents (a document the notes link matched). q is 2–200 characters. Drill in with " +
-			"get_release(project, version).",
+			"in_linked_documents (a document the notes link matched). Each group lists releases newest first and is " +
+			"capped at 200, 100 and 100 results, respectively. Truncation is not marked, so narrow q if a group reaches " +
+			"its limit. q is 2–200 characters. Drill in with get_release(project, version). " + dataNote,
 	}, searchTool)
 
 	// Audit stream (P3): observes tools/call when MCP_AUDIT is set; the

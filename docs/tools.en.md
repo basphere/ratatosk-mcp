@@ -121,6 +121,10 @@ top level of its answer, and `later_for_from` in place of `later_for_running`.
 | `privacy` | top level | `string` | An English sentence saying what this call sent upstream |
 | `hint` | top level | `string` | A short guide in English to reading the briefing. Present only with `brief` |
 
+A briefing truncates `body`, `workaround.text` and `regression_since.text` to
+160 characters; truncated text ends with `…`. Use `get_release` to retrieve the
+full text.
+
 **`also_in`**: a project can backport one security fix to several branches, so
 the same advisory can be fixed more than once in range. The change appears
 once, at the earliest release; a release on another branch is named in that
@@ -622,8 +626,9 @@ in X" and "which releases this month had security changes".
 
 Find releases by advisory id, configuration flag, or text, as the website's
 search does. `q` matches case-insensitively anywhere in the text, so a partial
-id such as `GHSA-3wh4` finds the full one. Results come in three arrays, by
-where the match was found.
+id such as `GHSA-3wh4` finds the full one. A complete id (`CVE-2026-1234`,
+`GHSA-xxxx-xxxx-xxxx`) matches only that id: `CVE-2026-1234` does not find
+`CVE-2026-12345`. Results come in three arrays, by where the match was found.
 
 ### Parameters
 
@@ -639,6 +644,11 @@ where the match was found.
 | `in_analysis` | `array` | Releases where a change or before-upgrade item matched, or the project name or version (`matched.kind: "release"`) |
 | `in_release_notes` | `array` | Releases where the release notes matched |
 | `in_linked_documents` | `array` | Releases where a document the notes link matched |
+
+Each array lists the newest releases first and contains at most 200
+(`in_analysis`), 100 (`in_release_notes`) and 100 (`in_linked_documents`)
+releases. Truncated results are not marked, so narrow `q` if an array reaches
+its limit.
 
 ### Example call
 
