@@ -114,6 +114,13 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   was read**, an advisory not yet published included, and the same advisory
   can carry a grade on another release. The descriptions, the hint, the docs
   and the agent prompt said the advisory states none.
+- **`check_stack` lists a running version newer than every analyzed release on
+  its line in `could_not_check`** (ratatosk has not analyzed it yet, or the
+  version was misread), with no range. It used to answer `releases: []` with
+  a `target_version` below the running version (etcd `v3.55.0` →
+  `v3.7.3`), which reads as "already up to date". The upstream requests stay
+  the same as for any other version. `check_upgrade` passes on the `404`
+  ratatosk.io now answers for the same case.
 - `check_stack` sends upstream the same requests whatever version runs: each
   project's release list and its newest releases, then the range is cut in
   this process. Fetching only the releases above the running version would

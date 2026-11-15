@@ -117,7 +117,7 @@ top level of its answer, and `later_for_from` in place of `later_for_running`.
 | `tracked` | component | `boolean` | `false` if ratatosk does not track the project; `true` if it tracks the project but has no analyzed release yet; absent otherwise |
 | `releases_full` | component | `array` | Only with `detail` set to `full`: the releases in range verbatim, up to 15 per component and about 2 MB per call |
 | `releases_full_omitted` | component | `integer` | How many releases did not fit in `releases_full` |
-| `could_not_check` | top level | `array` | Components that could not be checked, with the reason: an untracked project (`tracked: false` means no coverage, not safety), an unparseable version, or a release line with no releases on record |
+| `could_not_check` | top level | `array` | Components that could not be checked, with the reason: an untracked project (`tracked: false` means no coverage, not safety), an unparseable version, a release line with no releases on record, or a running version newer than every analyzed release on its line |
 | `privacy` | top level | `string` | An English sentence saying what this call sent upstream |
 | `hint` | top level | `string` | A short guide in English to reading the briefing. Present only with `brief` |
 
@@ -134,8 +134,9 @@ again appears separately.
 **`note`**: the cases it reports are security changes whose advisory the
 running version's branch already fixed at or below the running version (unless a later release on the
 same branch fixed it again), a target version at or below the running version,
-a running version older than every release on record, and a `version_source`
-that reads as a guess.
+a running version older than every release on record, a running version newer
+than every analyzed release on its line (the component is then listed in
+`could_not_check`), and a `version_source` that reads as a guess.
 
 ## check_stack
 
@@ -782,6 +783,7 @@ If an argument is invalid or an upstream API call fails, the tool returns
 | An element of `components` has no `project` | `check_stack` | `component 1 has no project (keys received: …)` | Add `project` to the component object and retry |
 | More than 100 components | `check_stack` | `too many components: 120 (max 100)` | Split them over several calls |
 | A value that is not accepted | all | `lang must be "en", "ko" or "ja"`, `detail must be "brief" or "full"`, `kind must be one of …`, `since must be a date, YYYY-MM-DD`, `q must be 2–200 characters` | Retry with a value the error allows |
+| A `from` newer than every analyzed release on its line, or on a line with none | `check_upgrade` | `HTTP 404`, `is newer than every analyzed release`, `no analyzed release of … in the release line` | Re-read the running version; pass it with its release-line prefix, as the tags in the error show |
 | More than 60 releases in range | `check_upgrade` | `HTTP 400`, `101 releases between v0.0.1 and v1.0.76`, `(max 60)` | Set `to` to an earlier version and check the range in smaller steps |
 | Rate limit reached | all | `HTTP 429` | Wait, then retry. For several projects, make one `check_stack` call |
 | Upstream API temporarily unavailable | all | `HTTP 503`, `upstream request failed` | Wait, then retry |
@@ -795,5 +797,6 @@ remaining components.
 | An untracked project (`tracked: false`) | Check the slug against `list_projects`. If the project is not listed, ratatosk does not cover it |
 | A version that could not be parsed | Pass the version exactly as published |
 | A release line with no releases on record | Pass the version with its release-line prefix, as shown in the reason (for example, `flagd/v0.16.1`) |
+| A running version newer than every analyzed release on its line | ratatosk has not analyzed that version yet, or the version was misread. Re-read it off a live resource; if it is right, read its release notes yourself |
 | The call timed out after 90 seconds | Retry the remaining components in a separate call |
 | The call reached its limit of 600 releases | Retry the remaining components in a separate call |

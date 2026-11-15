@@ -250,7 +250,8 @@ func newServer() *mcp.Server {
 			"e.g. a daemonset image tag, or that the user stated it): it is echoed back as an audit trail. This " +
 			"server cannot see your environment, so it cannot verify a version; a running version older than every " +
 			"release on record is flagged in note. Components it could not check (unknown project, unparseable " +
-			"version, no releases on that line) are listed in could_not_check — tracked:false means the project is " +
+			"version, no releases on that line, a running version newer than every analyzed release on its line — not " +
+			"analyzed yet, or misread) are listed in could_not_check — tracked:false means the project is " +
 			"NOT covered by ratatosk, so the absence of changes is no coverage, not safety. detail:\"full\" returns " +
 			"every release in range verbatim instead. " + dataNote,
 		InputSchema: checkStackSchema(),

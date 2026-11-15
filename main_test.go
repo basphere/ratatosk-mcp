@@ -181,6 +181,7 @@ func TestCheckStackRequestsDoNotDependOnVersions(t *testing.T) {
 		{Project: "etcd", Version: "v3.6.8"},
 		{Project: "etcd", Version: "3.5.31", TargetVersion: "v3.6.7"},
 		{Project: "etcd", Version: "api/v3.6.7"},
+		{Project: "etcd", Version: "v3.6.99"}, // newer than every release on record: refused after the same fetch
 	} {
 		f := newFakeEtcd()
 		swapAPI(t, httptest.NewServer(f.handler(t)))

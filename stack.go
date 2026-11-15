@@ -499,6 +499,28 @@ func coverageNote(running string, runningKey, oldest []int, oldestTag string) st
 		running, oldestTag)
 }
 
+// newerNote flags a running version above every analyzed release on its line.
+// The range (running, newest] is then empty, and an empty range with a target
+// below the running version read as "already up to date" with no word said
+// (etcd v3.55.0: releases [], target_version v3.7.3; independent review,
+// 2026-11-15). Either ratatosk has not analyzed that version yet or the version
+// was misread, and in both cases nothing was checked against it, so the
+// component goes to could_not_check like a dropped line prefix does — /v2/upgrade
+// answers the same case with a 404. A pre-release of a version not on record
+// counts as that version (NormalizeVersion drops the suffix), so v3.6.9-rc.1
+// above v3.6.8 is flagged and v3.6.8-rc.1 is not.
+func newerNote(running string, runningKey, newest []int, newestTag string) string {
+	if newest == nil || version.Compare(runningKey, newest) <= 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"running version %s is newer than every analyzed release on its line (newest analyzed: %s) — "+
+			"ratatosk has not analyzed this version yet, or the version was misread. Nothing was checked against it, "+
+			"so this is not \"already up to date\": re-check that the version was read off a live resource, and read "+
+			"its release notes yourself",
+		running, newestTag)
+}
+
 // confessionRe matches version_source values that describe an inference
 // rather than a live read. Sixty controlled runs (2026-07-29 hub campaign)
 // gave this a clean separation: all 8 versions whose source contained such
@@ -1190,11 +1212,15 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		inRange, resolved := upgradeRange(rows, comp.Version, target)
 		rep.TargetVersion = resolved
 
-		var oldest []int
-		oldestTag := ""
+		var oldest, newest []int
+		oldestTag, newestTag := "", ""
 		for _, r := range onLine {
-			if k := version.NormalizeVersion(r.Version); oldest == nil || version.Compare(k, oldest) < 0 {
+			k := version.NormalizeVersion(r.Version)
+			if oldest == nil || version.Compare(k, oldest) < 0 {
 				oldest, oldestTag = k, r.Version
+			}
+			if newest == nil || version.Compare(k, newest) > 0 {
+				newest, newestTag = k, r.Version
 			}
 		}
 		if n := coverageNote(comp.Version, currentKey, oldest, oldestTag); n != "" {
@@ -1202,6 +1228,15 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		}
 		if n := confessionNote(comp.VersionSource); n != "" {
 			notes = append(notes, n)
+		}
+		// Decided here, after the documents were read, and not before the fetch
+		// with the other refusals: skipping the fetch would make the upstream
+		// requests depend on the running version, which is what check_stack
+		// exists to prevent (see fetchSet).
+		if n := newerNote(comp.Version, currentKey, newest, newestTag); n != "" {
+			rep.TargetVersion = "" // the range end resolved above sits below the running version
+			skip(n)
+			continue
 		}
 
 		// What the running version's own branch already carries, at or below it.
