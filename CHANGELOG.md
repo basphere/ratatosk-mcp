@@ -121,6 +121,15 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `v3.7.3`), which reads as "already up to date". The upstream requests stay
   the same as for any other version. `check_upgrade` passes on the `404`
   ratatosk.io now answers for the same case.
+- **Every tool reads a project slug without regard to case or surrounding
+  spaces.** `Kubernetes` was answered as an untracked project by `check_stack`
+  and as an empty list by `list_releases`. A slug ratatosk does not know is
+  now an error in `list_releases` too (`unknown project …`), and every answer
+  for an unknown name leads with checking the slug with `list_projects`: the
+  project may be listed under another slug. `check_stack` still marks it
+  `tracked: false`.
+- **`get_release` without a version for a tracked project with nothing
+  analyzed yet says so,** instead of telling the caller to check the slug.
 - `check_stack` sends upstream the same requests whatever version runs: each
   project's release list and its newest releases, then the range is cut in
   this process. Fetching only the releases above the running version would

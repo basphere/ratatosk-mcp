@@ -112,10 +112,10 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | `running_version` | コンポーネント | `string` | 呼び出しで渡された稼働中バージョン |
 | `target_version` | コンポーネント | `string` | 範囲の終わりのバージョン。目標バージョンを指定しなければ同じリリースラインの最新 |
 | `version_source` | コンポーネント | `string` | 呼び出しで渡された値そのまま |
-| `tracked` | コンポーネント | `boolean` | 追跡していないプロジェクトなら `false`。追跡しているが分析済みのリリースがまだなければ `true`。それ以外では省略 |
+| `tracked` | コンポーネント | `boolean` | ratatosk が知らないスラッグなら `false`（`list_projects` でスラッグを確認し、一覧になければ追跡していないプロジェクト）。追跡しているが分析済みのリリースがまだなければ `true`。それ以外では省略 |
 | `releases_full` | コンポーネント | `array` | `detail` が `full` のときだけ。範囲内のリリースの原本で、コンポーネントごとに最大 15 件、1 回の呼び出しで約 2 MB まで |
 | `releases_full_omitted` | コンポーネント | `integer` | `releases_full` に収まらなかったリリースの数 |
-| `could_not_check` | 応答の最上位 | `array` | 確認できなかったコンポーネントとその理由。追跡していないプロジェクト（`tracked: false` は対象外という意味で、安全という意味ではない）、解釈できないバージョン、記録されたリリースのないリリースライン、同じリリースラインの分析済みのどのリリースよりも新しい稼働中バージョン |
+| `could_not_check` | 応答の最上位 | `array` | 確認できなかったコンポーネントとその理由。ratatosk が知らないプロジェクト名（`tracked: false`。`list_projects` にもなければ対象外という意味で、安全という意味ではない）、解釈できないバージョン、記録されたリリースのないリリースライン、同じリリースラインの分析済みのどのリリースよりも新しい稼働中バージョン |
 | `privacy` | 応答の最上位 | `string` | この呼び出しでバージョンがどこまで送られたかを示す英語の文 |
 | `hint` | 応答の最上位 | `string` | ブリーフィングの読み方を短くまとめた英語の案内。`brief` のときだけ |
 
@@ -275,7 +275,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
     {
       "project": "nope",
       "version": "v1",
-      "reason": "NOT tracked by ratatosk — no coverage here, not safety; resolve the slug with list_projects"
+      "reason": "unknown project name — not a slug ratatosk knows: check the slug with list_projects (the project may be listed under another slug); if it is not listed, ratatosk does NOT track it, so no changes here means no coverage, not safety"
     }
   ],
   "privacy": "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)",
@@ -773,7 +773,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | 状況 | ツール | エラー文（一部） | 対処 |
 |---|---|---|---|
 | 分析済みリリースにないバージョン | `get_release` | `HTTP 404`、`no analyzed release etcd v9.9.9`、`recent: v3.7.3, v3.6.16, …` | エラー文にある最近のバージョンのいずれかで呼び直す |
-| 不明なプロジェクト | `get_release`、`check_upgrade` | `HTTP 404`、`unknown project nope` | `list_projects` でスラッグを確認する。`list_releases` はエラーではなく空の一覧を返す |
+| 不明なプロジェクト | `get_release`、`list_releases`、`check_upgrade` | `unknown project nope` | `list_projects` でスラッグを確認する。どのツールもスラッグの大文字小文字と前後の空白を無視する |
 | 必須パラメーターの不足 | すべて | `project is required`、`project and from are required`、`components is required` | 不足しているパラメーターを加えて呼び直す |
 | `components` の要素に `project` がない | `check_stack` | `component 1 has no project (keys received: …)` | エラー文が示す形のとおりに呼び直す |
 | コンポーネントが 100 件を超える | `check_stack` | `too many components: 120 (max 100)` | 複数回に分けて呼び出す |
@@ -788,7 +788,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 
 | `could_not_check` の理由 | 対処 |
 |---|---|
-| 追跡していないプロジェクト（`tracked: false`） | `list_projects` でスラッグを確認する。一覧になければ ratatosk の追跡対象ではありません |
+| ratatosk が知らないプロジェクト名（`tracked: false`） | `list_projects` でスラッグを確認する。別のスラッグで載っていることがあります。一覧になければ ratatosk の追跡対象ではありません |
 | 解釈できないバージョン | 公開されたとおりに渡し直す |
 | 記録されたリリースのないリリースライン | 理由にある例のように、リリースラインの接頭辞を含めて渡し直す（例：`flagd/v0.16.1`） |
 | 同じリリースラインの分析済みのどのリリースよりも新しい稼働中バージョン | ratatosk がまだ分析していないバージョンか、バージョンの読み違い。稼働中のリソースから読み直し、正しければリリースノートを直接確認する |

@@ -114,10 +114,10 @@ top level of its answer, and `later_for_from` in place of `later_for_running`.
 | `running_version` | component | `string` | The running version as passed in the call |
 | `target_version` | component | `string` | Where the range ends: the target passed, or the latest on the same release line |
 | `version_source` | component | `string` | Echoed back as provided |
-| `tracked` | component | `boolean` | `false` if ratatosk does not track the project; `true` if it tracks the project but has no analyzed release yet; absent otherwise |
+| `tracked` | component | `boolean` | `false` if ratatosk knows no project by that slug (check it with `list_projects`; if it is not listed, ratatosk does not track it); `true` if it tracks the project but has no analyzed release yet; absent otherwise |
 | `releases_full` | component | `array` | Only with `detail` set to `full`: the releases in range verbatim, up to 15 per component and about 2 MB per call |
 | `releases_full_omitted` | component | `integer` | How many releases did not fit in `releases_full` |
-| `could_not_check` | top level | `array` | Components that could not be checked, with the reason: an untracked project (`tracked: false` means no coverage, not safety), an unparseable version, a release line with no releases on record, or a running version newer than every analyzed release on its line |
+| `could_not_check` | top level | `array` | Components that could not be checked, with the reason: an unknown project name (`tracked: false`; if `list_projects` does not list it either, it means no coverage, not safety), an unparseable version, a release line with no releases on record, or a running version newer than every analyzed release on its line |
 | `privacy` | top level | `string` | An English sentence saying what this call sent upstream |
 | `hint` | top level | `string` | A short guide in English to reading the briefing. Present only with `brief` |
 
@@ -277,7 +277,7 @@ Each element of `components` takes these fields.
     {
       "project": "nope",
       "version": "v1",
-      "reason": "NOT tracked by ratatosk — no coverage here, not safety; resolve the slug with list_projects"
+      "reason": "unknown project name — not a slug ratatosk knows: check the slug with list_projects (the project may be listed under another slug); if it is not listed, ratatosk does NOT track it, so no changes here means no coverage, not safety"
     }
   ],
   "privacy": "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)",
@@ -778,7 +778,7 @@ If an argument is invalid or an upstream API call fails, the tool returns
 | Situation | Tool | The error says (in part) | What to do |
 |---|---|---|---|
 | A version not on record | `get_release` | `HTTP 404`, `no analyzed release etcd v9.9.9`, `recent: v3.7.3, v3.6.16, …` | Retry with one of the recent versions listed in the error |
-| An unknown project | `get_release`, `check_upgrade` | `HTTP 404`, `unknown project nope` | Find the correct slug with `list_projects`. `list_releases` answers with an empty list, not an error |
+| An unknown project | `get_release`, `list_releases`, `check_upgrade` | `unknown project nope` | Find the correct slug with `list_projects`. Every tool ignores case and surrounding spaces in a slug |
 | A required parameter is missing | all | `project is required`, `project and from are required`, `components is required` | Supply the missing parameter and retry |
 | An element of `components` has no `project` | `check_stack` | `component 1 has no project (keys received: …)` | Add `project` to the component object and retry |
 | More than 100 components | `check_stack` | `too many components: 120 (max 100)` | Split them over several calls |
@@ -794,7 +794,7 @@ remaining components.
 
 | `could_not_check` reason | What to do |
 |---|---|
-| An untracked project (`tracked: false`) | Check the slug against `list_projects`. If the project is not listed, ratatosk does not cover it |
+| An unknown project name (`tracked: false`) | Check the slug against `list_projects`; the project may be listed under another slug. If it is not listed, ratatosk does not cover it |
 | A version that could not be parsed | Pass the version exactly as published |
 | A release line with no releases on record | Pass the version with its release-line prefix, as shown in the reason (for example, `flagd/v0.16.1`) |
 | A running version newer than every analyzed release on its line | ratatosk has not analyzed that version yet, or the version was misread. Re-read it off a live resource; if it is right, read its release notes yourself |

@@ -982,6 +982,14 @@ type componentReport struct {
 	FullOmitted     int               `json:"releases_full_omitted,omitempty"`
 }
 
+// untrackedReason answers a component whose project is neither a slug nor an
+// image alias. It leads with checking the slug, because a name in another form
+// is the likelier cause; the warning that matters if it really is untracked
+// stays: no coverage is not safety.
+const untrackedReason = "unknown project name — not a slug ratatosk knows: check the slug with list_projects " +
+	"(the project may be listed under another slug); if it is not listed, ratatosk does NOT track it, so no " +
+	"changes here means no coverage, not safety"
+
 type uncheckable struct {
 	Project string `json:"project"`
 	Version string `json:"version"`
@@ -1113,7 +1121,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 	times := map[stackComponent]int{}
 	comps := make([]stackComponent, 0, len(args.Components))
 	for _, comp := range args.Components {
-		comp.Project = strings.TrimSpace(comp.Project)
+		comp.Project = slugArg(comp.Project)
 		comp.sentKeys = ""
 		if times[comp]++; times[comp] == 1 {
 			comps = append(comps, comp)
@@ -1139,7 +1147,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 			reports = append(reports, rep)
 			cannot = append(cannot, uncheckable{Project: rep.Project, Version: comp.Version, Reason: reason})
 		}
-		slug := strings.TrimSpace(comp.Project)
+		slug := comp.Project
 		if !slugs[slug] {
 			if s, ok := aliasOf[strings.ToLower(slug)]; ok {
 				notes = append(notes, fmt.Sprintf("%q is an image alias of project %q; checked as %q", slug, s, s))
@@ -1148,7 +1156,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 			} else {
 				f := false
 				rep.Tracked = &f
-				skip("NOT tracked by ratatosk — no coverage here, not safety; resolve the slug with list_projects")
+				skip(untrackedReason)
 				continue
 			}
 		}
@@ -1362,6 +1370,7 @@ var stackHint = "briefing (a data classification, not a recommendation — chang
 
 func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkUpgradeArgs) (*mcp.CallToolResult, any, error) {
 	ctx = requestContext(ctx, "check_upgrade", req)
+	args.Project = slugArg(args.Project)
 	if args.Project == "" || args.From == "" {
 		return errResult(fmt.Errorf("project and from are required (from = the version you run now)")), nil, nil
 	}

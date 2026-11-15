@@ -117,3 +117,51 @@ func TestCheckUpgradePassesTheNewerThanEveryReleaseError(t *testing.T) {
 		t.Errorf("isError=%v %s", res.IsError, text)
 	}
 }
+
+// Every slug in /v2/projects is lower case. Matched as sent, "Kubernetes" was
+// answered as untracked by check_stack and as an empty list by list_releases.
+func TestSlugsAreMatchedWithoutCaseOrSurroundingSpace(t *testing.T) {
+	f := newFakeEtcd()
+	swapAPI(t, httptest.NewServer(f.handler(t)))
+
+	out := runStack(t, checkStackArgs{Components: []stackComponent{{Project: " Etcd ", Version: "v3.6.7"}, {Project: "ETCD", Version: "v3.6.7"}}})
+	if len(out.CouldNotCheck) != 0 || len(out.Components) != 1 {
+		t.Fatalf("Etcd and ETCD are etcd, listed twice: %+v", out)
+	}
+	if c := out.Components[0]; c.Project != "etcd" || len(c.Releases) != 1 || !strings.Contains(c.Note, "listed 2 times") {
+		t.Errorf("component %+v", c)
+	}
+
+	if res, _, _ := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "ETCD ", Version: "v3.6.7"}); res.IsError {
+		t.Errorf("get_release ETCD: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+	if res, _, _ := listReleasesTool(context.Background(), nil, listReleasesArgs{Project: " Etcd"}); res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, `"version":"v3.6.8"`) {
+		t.Errorf("list_releases Etcd: %s", res.Content[0].(*mcp.TextContent).Text)
+	}
+	reqs := strings.Join(f.requests(), " ")
+	for _, want := range []string{"/v2/releases/etcd/v3.6.7", "/v2/releases?limit=10&project=etcd"} {
+		if !strings.Contains(reqs, want) {
+			t.Errorf("no request %s in %s", want, reqs)
+		}
+	}
+
+	// An unknown slug is an error before the release list is asked for.
+	n := len(f.requests())
+	res, _, _ := listReleasesTool(context.Background(), nil, listReleasesArgs{Project: "argo-cd"})
+	if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !strings.HasPrefix(text, "unknown project argo-cd") || !strings.Contains(text, "list_projects") {
+		t.Errorf("list_releases argo-cd: isError=%v %s", res.IsError, text)
+	}
+	if got := f.requests()[n:]; len(got) != 0 {
+		t.Errorf("an unknown slug went upstream: %v", got)
+	}
+
+	var seen string
+	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = r.URL.Path
+		w.Write([]byte(`{"project":"etcd","from":"v3.6.7","to":"v3.6.8","releases":[],"gaps":[],"later_for_from":[]}`))
+	})))
+	checkUpgradeTool(context.Background(), nil, checkUpgradeArgs{Project: "Etcd ", From: "v3.6.7"})
+	if seen != "/v2/upgrade/etcd" {
+		t.Errorf("check_upgrade asked %s", seen)
+	}
+}

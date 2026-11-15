@@ -285,7 +285,7 @@ func TestCheckStackUntrackedAliasAndDroppedPrefix(t *testing.T) {
 	if len(out.CouldNotCheck) != 3 {
 		t.Fatalf("could_not_check %+v, want 3", out.CouldNotCheck)
 	}
-	if c := out.Components[0]; c.Tracked == nil || *c.Tracked || !strings.Contains(c.Note, "NOT tracked") {
+	if c := out.Components[0]; c.Tracked == nil || *c.Tracked || !strings.HasPrefix(c.Note, "unknown project name") || !strings.Contains(c.Note, "check the slug with list_projects") || !strings.Contains(c.Note, "not safety") {
 		t.Errorf("untracked component %+v", c)
 	}
 	if !strings.Contains(out.CouldNotCheck[1].Reason, "release-line prefix was probably dropped") {
@@ -601,10 +601,12 @@ func TestGetReleaseWithoutVersionReadsTheLatest(t *testing.T) {
 	if reqs := f.requests(); !slices.Contains(reqs, "/v2/releases/etcd/v3.6.7?lang=ko") {
 		t.Fatalf("lang not passed: %v", reqs)
 	}
-	for _, slug := range []string{"envoy", "nope"} {
+	// A tracked project with nothing analyzed is told so; an unknown slug is told
+	// to check the slug. Both used to get "check the slug" (spiffe, 2026-11-15).
+	for slug, want := range map[string]string{"envoy": "project envoy is tracked by ratatosk but has no analyzed release yet", "nope": "unknown project nope — not a slug ratatosk knows; check the slug with list_projects"} {
 		res, _, _ := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: slug})
-		if !res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, "no analyzed release for project") {
-			t.Fatalf("%s has no latest release and must say so: %+v", slug, res.Content[0])
+		if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !strings.Contains(text, want) {
+			t.Fatalf("%s: got %q, want %q", slug, text, want)
 		}
 	}
 	if res, _, _ := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "etcd", Lang: "de"}); !res.IsError {

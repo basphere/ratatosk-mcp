@@ -92,10 +92,10 @@
 | `running_version` | 컴포넌트 | `string` | 호출 시 전달한 실행 중인 버전 |
 | `target_version` | 컴포넌트 | `string` | 범위의 끝 버전. 목표 버전을 지정하지 않으면 같은 태그 계열의 최신 버전 |
 | `version_source` | 컴포넌트 | `string` | 호출 시 전달한 값 그대로 |
-| `tracked` | 컴포넌트 | `boolean` | 다루지 않는 프로젝트이면 `false`. 다루지만 분석된 릴리스가 아직 없으면 `true`. 그 밖에는 생략 |
+| `tracked` | 컴포넌트 | `boolean` | ratatosk가 모르는 슬러그이면 `false`(`list_projects`에서 슬러그를 확인하고, 목록에 없으면 다루지 않는 프로젝트). 다루지만 분석된 릴리스가 아직 없으면 `true`. 그 밖에는 생략 |
 | `releases_full` | 컴포넌트 | `array` | `detail`이 `full`일 때만 포함. 범위 안 릴리스의 원본으로, 컴포넌트마다 최대 15개, 한 번 호출에 약 2MB까지 |
 | `releases_full_omitted` | 컴포넌트 | `integer` | `releases_full`에 담지 못한 릴리스 수 |
-| `could_not_check` | 응답 최상위 | `array` | 업그레이드 경로를 확인하지 못한 컴포넌트와 그 사유. 다루지 않는 프로젝트(`tracked: false`는 안전하다는 뜻이 아니라 수집 대상이 아니라는 뜻입니다), 해석할 수 없는 버전 문자열, 수집된 릴리스가 없는 태그 계열, 같은 태그 계열에서 분석된 모든 릴리스보다 높은 실행 중인 버전이 여기에 표시됩니다. |
+| `could_not_check` | 응답 최상위 | `array` | 업그레이드 경로를 확인하지 못한 컴포넌트와 그 사유. ratatosk가 모르는 프로젝트 이름(`tracked: false`. `list_projects`에도 없으면 안전하다는 뜻이 아니라 수집 대상이 아니라는 뜻입니다), 해석할 수 없는 버전 문자열, 수집된 릴리스가 없는 태그 계열, 같은 태그 계열에서 분석된 모든 릴리스보다 높은 실행 중인 버전이 여기에 표시됩니다. |
 | `privacy` | 응답 최상위 | `string` | 이 호출에서 버전 정보가 전달된 범위를 알리는 영어 문장 |
 | `hint` | 응답 최상위 | `string` | 브리핑 읽는 법을 요약한 영어 안내문. `brief`일 때만 포함 |
 
@@ -240,7 +240,7 @@
     {
       "project": "nope",
       "version": "v1",
-      "reason": "NOT tracked by ratatosk — no coverage here, not safety; resolve the slug with list_projects"
+      "reason": "unknown project name — not a slug ratatosk knows: check the slug with list_projects (the project may be listed under another slug); if it is not listed, ratatosk does NOT track it, so no changes here means no coverage, not safety"
     }
   ],
   "privacy": "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)",
@@ -719,7 +719,7 @@
 | 상황 | 도구 | 오류 문장(일부) | 대응 |
 |---|---|---|---|
 | 존재하지 않는 버전 | `get_release` | `HTTP 404`, `no analyzed release etcd v9.9.9`, `recent: v3.7.3, v3.6.16, …` | 오류 문장에 적힌 최근 버전 중 하나를 지정해 다시 호출 |
-| 존재하지 않는 프로젝트 | `get_release`, `check_upgrade` | `HTTP 404`, `unknown project nope` | `list_projects`에서 슬러그 확인. `list_releases`는 오류 없이 빈 목록 반환 |
+| 존재하지 않는 프로젝트 | `get_release`, `list_releases`, `check_upgrade` | `unknown project nope` | `list_projects`에서 슬러그 확인. 모든 도구는 슬러그의 대소문자와 앞뒤 공백을 무시 |
 | 필수 파라미터 누락 | 전체 | `project is required`, `project and from are required`, `components is required` | 빠진 파라미터를 넣어 다시 호출 |
 | `components` 원소에 `project` 없음 | `check_stack` | `component 1 has no project (keys received: …)` | 오류 문장에 함께 제시된 예시 형식으로 다시 호출 |
 | 컴포넌트 100개 초과 | `check_stack` | `too many components: 120 (max 100)` | 여러 차례로 나누어 호출 |
@@ -733,7 +733,7 @@
 
 | `could_not_check` 사유 | 대응 |
 |---|---|
-| 다루지 않는 프로젝트(`tracked: false`) | `list_projects`에서 슬러그 확인. 목록에 없으면 수집 대상이 아님 |
+| ratatosk가 모르는 프로젝트 이름(`tracked: false`) | `list_projects`에서 슬러그 확인. 다른 슬러그로 등록되어 있을 수 있음. 목록에 없으면 수집 대상이 아님 |
 | 해석할 수 없는 버전 문자열 | 발행된 표기 그대로 다시 입력 |
 | 수집된 릴리스가 없는 태그 계열 | 사유에 나온 예시처럼 태그 계열 접두사를 포함해 다시 입력(예: `flagd/v0.16.1`) |
 | 같은 태그 계열에서 분석된 모든 릴리스보다 높은 실행 중인 버전 | ratatosk가 아직 분석하지 않은 버전이거나 버전을 잘못 읽은 것. 실행 중인 리소스에서 버전을 다시 읽고, 맞다면 릴리스 노트를 직접 확인 |

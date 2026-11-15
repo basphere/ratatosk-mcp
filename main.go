@@ -16,6 +16,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -251,8 +252,9 @@ func newServer() *mcp.Server {
 			"server cannot see your environment, so it cannot verify a version; a running version older than every " +
 			"release on record is flagged in note. Components it could not check (unknown project, unparseable " +
 			"version, no releases on that line, a running version newer than every analyzed release on its line — not " +
-			"analyzed yet, or misread) are listed in could_not_check — tracked:false means the project is " +
-			"NOT covered by ratatosk, so the absence of changes is no coverage, not safety. detail:\"full\" returns " +
+			"analyzed yet, or misread) are listed in could_not_check — tracked:false means ratatosk knows no " +
+			"project by that slug: check it with list_projects (case and surrounding spaces are ignored); a project not " +
+			"listed there is NOT covered by ratatosk, so the absence of changes is no coverage, not safety. detail:\"full\" returns " +
 			"every release in range verbatim instead. " + dataNote,
 		InputSchema: checkStackSchema(),
 	}, checkStackTool)
@@ -309,6 +311,24 @@ func langArg(lang string) (string, error) {
 	return "", fmt.Errorf(`lang must be "en", "ko" or "ja"`)
 }
 
+// slugArg reads a project slug the way /v2/projects spells every one of them:
+// lower case, no surrounding space (79 of 79 on 2026-11-15). Matched as sent,
+// "Kubernetes" was answered as an untracked project by check_stack and as an
+// empty release list by list_releases — "no coverage" and "no releases" for a
+// project ratatosk tracks (independent review, 2026-11-15).
+func slugArg(s string) string {
+	return strings.ToLower(strings.TrimSpace(s))
+}
+
+// unknownProject is the answer for a slug the roster does not have. It leads
+// with checking the slug: the caller may have the project's name in another
+// form, and only list_projects can say which. The caller's text is bounded
+// before it is echoed.
+func unknownProject(slug string) error {
+	return fmt.Errorf("unknown project %s — not a slug ratatosk knows; check the slug with list_projects "+
+		"(the project may be listed under another slug, or not tracked)", truncate(slug, 80))
+}
+
 func rawResult(b []byte) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}
 }
@@ -340,7 +360,8 @@ type getReleaseArgs struct {
 
 func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getReleaseArgs) (*mcp.CallToolResult, any, error) {
 	ctx = requestContext(ctx, "get_release", req)
-	if args.Project == "" {
+	project := slugArg(args.Project)
+	if project == "" {
 		return errResult(fmt.Errorf("project is required")), nil, nil
 	}
 	lang, err := langArg(args.Lang)
@@ -359,16 +380,25 @@ func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getRelea
 		if err != nil {
 			return errResult(fmt.Errorf("could not read the project list: %w", err)), nil, nil
 		}
+		known := false
 		for _, p := range roster {
-			if p.Slug == args.Project && p.Latest != nil {
-				ver = p.Latest.Version
+			if p.Slug == project {
+				known = true
+				if p.Latest != nil {
+					ver = p.Latest.Version
+				}
 			}
 		}
+		if !known {
+			return errResult(unknownProject(project)), nil, nil
+		}
+		// A tracked project with nothing analyzed yet (spiffe on 2026-11-15) used
+		// to be told to check its slug, though the slug was right.
 		if ver == "" {
-			return errResult(fmt.Errorf("no analyzed release for project %q — check the slug with list_projects", args.Project)), nil, nil
+			return errResult(fmt.Errorf("project %s is tracked by ratatosk but has no analyzed release yet — there is no release to show", project)), nil, nil
 		}
 	}
-	raw, err := api.releaseRaw(ctx, args.Project, ver, lang, false)
+	raw, err := api.releaseRaw(ctx, project, ver, lang, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
@@ -404,6 +434,19 @@ func listReleasesTool(ctx context.Context, req *mcp.CallToolRequest, args listRe
 			return errResult(fmt.Errorf("since must be a date, YYYY-MM-DD")), nil, nil
 		}
 	}
+	// An unknown slug is an error, not an empty list: "no releases" for a name
+	// that was merely spelled differently reads as "nothing happened". The
+	// roster is cached, so this costs one upstream request per five minutes.
+	project := slugArg(args.Project)
+	if project != "" {
+		roster, err := api.projects(ctx)
+		if err != nil {
+			return errResult(fmt.Errorf("could not read the project list: %w", err)), nil, nil
+		}
+		if !slices.ContainsFunc(roster, func(p v2Project) bool { return p.Slug == project }) {
+			return errResult(unknownProject(project)), nil, nil
+		}
+	}
 	// 10, not the upstream 50: a row is small, but this answer stays in the
 	// agent's context for the rest of its session.
 	limit := args.Limit
@@ -413,7 +456,7 @@ func listReleasesTool(ctx context.Context, req *mcp.CallToolRequest, args listRe
 	if limit > 50 {
 		limit = 50
 	}
-	raw, err := api.releasesRaw(ctx, releasesQuery{Project: args.Project, Kind: args.Kind, Since: args.Since, Before: args.Before, Limit: limit, Lang: lang}, false)
+	raw, err := api.releasesRaw(ctx, releasesQuery{Project: project, Kind: args.Kind, Since: args.Since, Before: args.Before, Limit: limit, Lang: lang}, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
