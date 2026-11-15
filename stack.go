@@ -240,9 +240,10 @@ const fetchParallel = 6
 // a sorted list: measured on the preview API (2026-11-03), envoy v1.36.0 →
 // v1.38.3 has 253 changes in range, 55 of the first 60 security — a single cap
 // would have cut every breaking change and important fix without a trace in
-// the list itself. Inside a kind, entries that say what to do come first (see
-// carriesAStep), then security by grade, so what is cut is an entry that asks
-// nothing of the operator, and among those the least severe.
+// the list itself. Security is ordered by grade first, so what is cut is the
+// least severe; inside a grade, and inside the kinds that have no grade,
+// entries that say what to do come first (see carriesAStep), so what is cut is
+// an entry that asks nothing of the operator.
 var kindCaps = map[string]int{"security": 20, "breaking": 20, "deprecations": 10, "important_fixes": 10}
 
 // fullReleasesCap bounds detail:"full", where each release is a whole document.
@@ -928,21 +929,26 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 			advOnBranch[t] = true
 		}
 	}
-	// Kind first (security leads); inside a kind, entries that carry a step
-	// before those that do not, so a cap never cuts what the operator has to
-	// do while it keeps something that asks nothing; then security by grade,
-	// so a cap cuts the least severe; then version. Within one release the
-	// server's order (the screen order) is kept by the stable sort.
+	// Kind first (security leads); security by grade, so a cap cuts the least
+	// severe; then, inside a grade and inside the kinds that have no grade,
+	// entries that carry a step before those that do not, so a cap never cuts
+	// what the operator has to do while it keeps something that asks nothing;
+	// then version. Within one release the server's order (the screen order)
+	// is kept by the stable sort.
 	sort.SliceStable(b.Changes, func(i, j int) bool {
 		ci, cj := b.Changes[i], b.Changes[j]
 		if ki, kj := kindRank(ci.Kind), kindRank(cj.Kind); ki != kj {
 			return ki < kj
 		}
-		if si, sj := carriesAStep(ci), carriesAStep(cj); si != sj {
-			return si
-		}
+		// Grade before step: only security carries a grade, and there the cap
+		// must cut the least severe. With step first, envoy v1.36.0 → v1.40.2
+		// kept critical 2 · high 2 · medium 8 · ungraded 8 and cut 17 high
+		// advisories that had no extra step (measured 2026-11-15).
 		if gi, gj := gradeRank(ci.Severity), gradeRank(cj.Severity); gi != gj {
 			return gi > gj
+		}
+		if si, sj := carriesAStep(ci), carriesAStep(cj); si != sj {
+			return si
 		}
 		return descCmp(ci.Version, cj.Version) > 0
 	})
@@ -1355,9 +1361,9 @@ var stackHint = "briefing (a data classification, not a recommendation — chang
 	"severity is the grade the project's own advisory states; null means no grade was found in what was read " +
 	"(an advisory not yet published included), and the same advisory can carry a grade on another release — rank urgency with it, " +
 	"never decide who is affected with it. also_in names other releases in range carrying the same advisories. " +
-	"changes_omitted counts, per kind, what did not fit (each kind keeps first the changes that say what to do — " +
-	"action_required, also_required, a stated or inferred no_downgrade or removed_in — and security then keeps the " +
-	"most severe) — narrow with target_version " +
+	"changes_omitted counts, per kind, what did not fit (security keeps the most severe; within a grade, and in the " +
+	"other kinds, the changes that say what to do — action_required, also_required, a stated or inferred no_downgrade " +
+	"or removed_in — are kept first) — narrow with target_version " +
 	"or read the releases with get_release; never read an omitted count as nothing to do. " +
 	"gaps: version numbers skip there, so releases in between may exist that were not analyzed — check their " +
 	"release notes yourself. later_for_running (later_for_from in check_upgrade): " + laterNote("the running version") + " " +

@@ -722,14 +722,15 @@ func TestBriefingKeepsEntriesThatCarryAStepBeforeTheCap(t *testing.T) {
 		}
 		d.Changes = append(d.Changes, c)
 	}
-	// Security: a low-grade change with a step beyond upgrading leads, then the
-	// rest by grade as before.
+	// Security: grade first — a low-grade change with a step beyond upgrading
+	// does not jump a critical one — and a step leads only inside its grade.
 	low, crit, high := "low", "critical", "high"
 	also := "rotate the tokens"
 	d.Changes = append(d.Changes,
 		v2Change{ID: "s-crit", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-1"}},
 		v2Change{ID: "s-low-step", Kind: "security", Severity: &low, Advisories: []string{"CVE-2026-2"}, AlsoRequired: &also},
 		v2Change{ID: "s-high", Kind: "security", Severity: &high, Advisories: []string{"CVE-2026-3"}},
+		v2Change{ID: "s-high-step", Kind: "security", Severity: &high, Advisories: []string{"CVE-2026-4"}, AlsoRequired: &also},
 	)
 	b, _ := buildBriefing([]*v2Release{d}, nil, nil)
 
@@ -756,7 +757,7 @@ func TestBriefingKeepsEntriesThatCarryAStepBeforeTheCap(t *testing.T) {
 	if len(dep) != kindCaps["deprecations"] || dep[0] != "d11" || b.ChangesOmitted["deprecations"] != 2 {
 		t.Errorf("deprecations %v omitted %d: the one with a stated removed_in must lead and stay", dep, b.ChangesOmitted["deprecations"])
 	}
-	if want := []string{"s-low-step", "s-crit", "s-high"}; !slices.Equal(sec, want) {
+	if want := []string{"s-crit", "s-high-step", "s-high", "s-low-step"}; !slices.Equal(sec, want) {
 		t.Errorf("security order %v, want %v", sec, want)
 	}
 }

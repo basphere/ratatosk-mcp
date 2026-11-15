@@ -119,8 +119,9 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 - **In a briefing (`check_stack`, `check_upgrade`), changes that say what to do
   lead their kind, so the per-kind cap no longer cuts them.** A change with
   `action_required`, `also_required`, or a stated or inferred `no_downgrade`
-  or `removed_in` comes before the others of its kind; inside each group the
-  order is as before (security by grade, then version, then screen order).
+  or `removed_in` comes before the others of its kind. Security stays ordered
+  by grade first, and the rule applies within a grade; otherwise the order is
+  as before (version, then screen order).
   kubernetes v1.35.10 → v1.36.6 has 78 breaking changes, and the cap of 20
   kept 1 of the 4 with `action_required`; it now keeps all 4.
   `changes_omitted` still counts what did not fit, per kind.
