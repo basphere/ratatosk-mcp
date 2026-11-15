@@ -186,3 +186,72 @@ func TestCheckUpgradeAnswersArraysForAnEmptyRange(t *testing.T) {
 		t.Errorf("a null in the answer: %s", text)
 	}
 }
+
+// "." and ".." are dot segments: the upstream resolved them before routing, so
+// get_release(kubernetes, "..") returned the whole release list as one release
+// and ("..", "..") the website's HTML. They are refused before any request.
+func TestDotSegmentsAreRefusedBeforeAnyRequest(t *testing.T) {
+	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v2/projects" {
+			t.Errorf("upstream was asked %s", r.URL.RequestURI())
+		}
+		w.Write([]byte(`{"projects":[{"slug":"kubernetes","name":"Kubernetes"}]}`))
+	})))
+	for _, c := range []struct {
+		tool string
+		call func() *mcp.CallToolResult
+		want string
+	}{
+		{"get_release version ..", func() *mcp.CallToolResult {
+			r, _, _ := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "kubernetes", Version: ".."})
+			return r
+		}, `version ".." is not a release version`},
+		{"get_release version .", func() *mcp.CallToolResult {
+			r, _, _ := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "kubernetes", Version: "."})
+			return r
+		}, `version "." is not a release version`},
+		{"get_release project ..", func() *mcp.CallToolResult {
+			r, _, _ := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "..", Version: ".."})
+			return r
+		}, `project ".." is not a project slug`},
+		{"check_upgrade project ..", func() *mcp.CallToolResult {
+			r, _, _ := checkUpgradeTool(context.Background(), nil, checkUpgradeArgs{Project: "..", From: "v1"})
+			return r
+		}, `project ".." is not a project slug`},
+	} {
+		res := c.call()
+		if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !strings.Contains(text, c.want) {
+			t.Errorf("%s: isError=%v %s", c.tool, res.IsError, text)
+		}
+	}
+}
+
+// What a tool passes through must be a JSON object; a web page answered with
+// 200 is an error, not a result. check_upgrade does not turn a JSON object that
+// is not an upgrade answer into an empty briefing either.
+func TestAnswersThatAreNotAPIAnswersAreErrors(t *testing.T) {
+	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/v2/upgrade/"):
+			w.Write([]byte(`{"name":"Ratatosk agent API","version":"v2","endpoints":[]}`))
+		default:
+			w.Header().Set("Content-Type", "text/html")
+			w.Write([]byte("<!DOCTYPE html><html><body>home</body></html>"))
+		}
+	})))
+	res, _, _ := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "etcd", Version: "v3.6.7"})
+	if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !strings.Contains(text, "not a JSON object") || strings.Contains(text, "<html>") {
+		t.Errorf("get_release on an HTML answer: isError=%v %s", res.IsError, text)
+	}
+	res, _, _ = searchTool(context.Background(), nil, searchArgs{Q: "CVE-2026-1"})
+	if !res.IsError {
+		t.Errorf("search on an HTML answer was a result")
+	}
+	res, _, _ = checkUpgradeTool(context.Background(), nil, checkUpgradeArgs{Project: "etcd", From: "v3.6.7"})
+	if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !strings.Contains(text, "not an upgrade answer") {
+		t.Errorf("check_upgrade on a catalog answer: isError=%v %s", res.IsError, text)
+	}
+	if !isJSONObject([]byte(" \n{\"a\":1}")) || isJSONObject([]byte(`[1]`)) || isJSONObject([]byte(`{"a":`)) || isJSONObject(nil) {
+		t.Error("isJSONObject")
+	}
+}

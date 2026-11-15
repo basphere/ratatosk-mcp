@@ -1400,6 +1400,12 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	if err := json.Unmarshal(raw, &up); err != nil {
 		return errResult(fmt.Errorf("/v2/upgrade: %w", err)), nil, nil
 	}
+	// A JSON object that is not an upgrade answer must not become an empty
+	// briefing: /v2/upgrade/.. used to return the API catalog, and it was
+	// answered with from "" and no releases — nothing to do (2026-11-15).
+	if up.Project == "" || up.Releases == nil {
+		return errResult(fmt.Errorf("/v2/upgrade answered without a project and a release range — not an upgrade answer; check the arguments")), nil, nil
+	}
 	var docs []*v2Release
 	for _, r := range up.Releases {
 		d, err := parseRelease(r)

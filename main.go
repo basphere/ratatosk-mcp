@@ -10,6 +10,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -329,8 +330,23 @@ func unknownProject(slug string) error {
 		"(the project may be listed under another slug, or not tracked)", truncate(slug, 80))
 }
 
+// rawResult passes an upstream answer through as the tool's answer. Every /v2
+// answer these tools read is a JSON object; anything else is not an API answer
+// and goes back as an error, never as a result: a dot-segment path once
+// brought back the website's HTML home page as a normal get_release answer
+// (independent review, 2026-11-15). The body is not echoed — it can be a whole
+// web page.
 func rawResult(b []byte) *mcp.CallToolResult {
+	if !isJSONObject(b) {
+		return errResult(fmt.Errorf("the upstream answer is not a JSON object (%d bytes), so it is not an API answer — "+
+			"check the arguments; if they are right, RATATOSK_URL may not point at the ratatosk API", len(b)))
+	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(b)}}}
+}
+
+func isJSONObject(b []byte) bool {
+	t := bytes.TrimLeft(b, " \t\r\n")
+	return len(t) > 0 && t[0] == '{' && json.Valid(t)
 }
 
 // ---------------------------------------------------------------------------

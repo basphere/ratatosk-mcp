@@ -133,6 +133,13 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 - **`check_upgrade` answers `changes`, `before_upgrade` and `later_for_from`
   as arrays when they are empty,** as documented; an empty range gave
   `null`.
+- **A project or version of `.` or `..` is refused, and an upstream answer
+  that is not a JSON object is an error.** Both are dot segments, which the
+  upstream resolved before routing: `get_release` with version `..` returned
+  every project's release list as if it were one release, and project `..`
+  with version `..` returned the website's HTML as a normal answer.
+  `check_upgrade` no longer turns a JSON object that is not an upgrade answer
+  into an empty briefing.
 - `check_stack` sends upstream the same requests whatever version runs: each
   project's release list and its newest releases, then the range is cut in
   this process. Fetching only the releases above the running version would

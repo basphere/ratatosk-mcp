@@ -366,9 +366,33 @@ func (c *apiClient) projectReleases(ctx context.Context, project string) ([]v2Ro
 	return all, nil
 }
 
+// pathSegment escapes one caller-supplied path segment and refuses "." and
+// "..". url.PathEscape leaves both as they are, and they are dot segments: the
+// upstream resolves them before routing, so get_release(kubernetes, "..")
+// read /v2/releases and returned every project's release list as if it were
+// one release, and ("..", "..") returned the website's HTML home page as a
+// normal answer (independent review, 2026-11-15). Neither is a slug or a
+// version on record.
+func pathSegment(what, v string) (string, error) {
+	if v == "." || v == ".." {
+		if what == "project" {
+			return "", fmt.Errorf("project %q is not a project slug — check it with list_projects", v)
+		}
+		return "", fmt.Errorf("%s %q is not a release version — pass it as the project publishes it, e.g. v1.36.6", what, v)
+	}
+	return url.PathEscape(v), nil
+}
+
 func (c *apiClient) releaseRaw(ctx context.Context, project, version, lang string, cached bool) ([]byte, error) {
-	path := "/v2/releases/" + url.PathEscape(project) + "/" + url.PathEscape(version)
-	return c.getRaw(ctx, "/v2/releases/{project}/{version}", path, langQuery(nil, lang), cached)
+	p, err := pathSegment("project", project)
+	if err != nil {
+		return nil, err
+	}
+	v, err := pathSegment("version", version)
+	if err != nil {
+		return nil, err
+	}
+	return c.getRaw(ctx, "/v2/releases/{project}/{version}", "/v2/releases/"+p+"/"+v, langQuery(nil, lang), cached)
 }
 
 func parseRelease(b []byte) (*v2Release, error) {
@@ -383,11 +407,15 @@ func parseRelease(b []byte) (*v2Release, error) {
 // upgradeRaw is the explicit server-side range: from and to travel to the
 // server. check_upgrade uses it and says so; check_stack never does.
 func (c *apiClient) upgradeRaw(ctx context.Context, project, from, to, lang string) ([]byte, error) {
+	p, err := pathSegment("project", project)
+	if err != nil {
+		return nil, err
+	}
 	q := url.Values{"from": {from}}
 	if to != "" {
 		q.Set("to", to)
 	}
-	return c.getRaw(ctx, "/v2/upgrade/{project}", "/v2/upgrade/"+url.PathEscape(project), langQuery(q, lang), false)
+	return c.getRaw(ctx, "/v2/upgrade/{project}", "/v2/upgrade/"+p, langQuery(q, lang), false)
 }
 
 func (c *apiClient) searchRaw(ctx context.Context, query, lang string) ([]byte, error) {
