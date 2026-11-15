@@ -52,3 +52,16 @@ func TestDescriptionsSayWhatLaterEventsMean(t *testing.T) {
 		t.Errorf("list_releases must say it lists by release date and where later events are: %s", lr)
 	}
 }
+
+// severity:null was described as "the advisory states none". It means no grade
+// was found in what was read, an advisory not yet published included: the docs
+// example measured on 2026-11-03 showed GHSA-3wh4-j44w-pg92 on etcd v3.5.32 as
+// null, and the same change reads medium on 2026-11-15.
+func TestDescriptionsSayWhatSeverityNullMeans(t *testing.T) {
+	d := toolDescriptions(t)
+	for _, c := range []struct{ where, text string }{{"get_release", d["get_release"]}, {"hint", stackHint}} {
+		if strings.Contains(c.text, "states none") || !strings.Contains(c.text, "no grade was found in what was read") {
+			t.Errorf("%s must say null is a grade not found: %s", c.where, c.text)
+		}
+	}
+}

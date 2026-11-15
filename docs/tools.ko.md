@@ -39,7 +39,7 @@
 | 필드 | 타입 | 대상 종류 | 설명 |
 |---|---|---|---|
 | `affects` | `object` | `dependency_updates` 외 모든 종류 | 변경의 영향을 받는 플래그, 필드, 기능, 플랫폼, 설정 구성 |
-| `severity` | `string` 또는 `null` | `security` | 프로젝트 보안 공지에 명시된 심각도 등급(`critical` · `high` · `medium` · `low`, 미지정 시 `null`) |
+| `severity` | `string` 또는 `null` | `security` | 프로젝트 보안 공지에 명시된 심각도 등급(`critical` · `high` · `medium` · `low`). `null`은 읽은 원문에서 등급을 찾지 못했다는 뜻으로, 보안 공지가 아직 공개되지 않은 경우를 포함합니다. 같은 보안 공지라도 다른 릴리스에서는 등급이 있을 수 있습니다. |
 | `advisories` | `array` | `security` | 보안 공지 번호 |
 | `also_required` | `string` 또는 `null` | `security` | 버전 업그레이드 외에 추가로 수행해야 하는 보안 조치 |
 | `action_required` | `string` 또는 `null` | `breaking` | 업그레이드 시 수행해야 하는 설정 변경 및 조치 |

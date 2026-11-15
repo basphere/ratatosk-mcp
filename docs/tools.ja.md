@@ -51,7 +51,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | 属性 | 型 | 種類 | 意味 |
 |---|---|---|---|
 | `affects` | `object` | `dependency_updates` 以外のすべて | この変更が及ぶもの：フラグ・フィールド・機能・プラットフォーム・構成 |
-| `severity` | `string` または `null` | `security` | プロジェクト自身のアドバイザリが示す深刻度（`critical`・`high`・`medium`・`low`、示していなければ `null`） |
+| `severity` | `string` または `null` | `security` | プロジェクト自身のアドバイザリが示す深刻度（`critical`・`high`・`medium`・`low`）。`null` は読んだ原文に深刻度が見つからなかったという意味で、アドバイザリがまだ公開されていない場合を含みます。同じアドバイザリでも別のリリースでは深刻度がありえます |
 | `advisories` | `array` | `security` | アドバイザリ番号 |
 | `also_required` | `string` または `null` | `security` | アップグレード以外に必要な対応 |
 | `action_required` | `string` または `null` | `breaking` | アップグレード時に必要な対応 |

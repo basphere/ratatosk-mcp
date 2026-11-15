@@ -110,6 +110,10 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   release (an advisory published later, a defect a later version fixed) is not
   in it; `check_stack` (`later_for_running`), `get_release` (`later`) and
   ratatosk.io's `/v2/events` carry it.
+- **`severity: null` is described as what it is: no grade was found in what
+  was read**, an advisory not yet published included, and the same advisory
+  can carry a grade on another release. The descriptions, the hint, the docs
+  and the agent prompt said the advisory states none.
 - `check_stack` sends upstream the same requests whatever version runs: each
   project's release list and its newest releases, then the range is cut in
   this process. Fetching only the releases above the running version would

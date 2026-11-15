@@ -96,8 +96,8 @@ claude mcp list
 いない etcd なら、エージェントは誰にも確認せずにこの項目を外します。`status` は
 リリースノートが
 そう述べたか（`stated`）、ノートから推定したか（`inferred`）を示し、
-`severity: null` はセキュリティアドバイザリ自体が深刻度を示していないという意味
-です。同じ応答の `gaps` は v3.5.32 の次が v3.6.7 なので、その間に分析されていない
+`severity: null` は読んだ原文に深刻度が見つからなかったという意味です（アドバイザリが
+まだ公開されていないこともあり、別のリリースには深刻度がありえます）。同じ応答の `gaps` は v3.5.32 の次が v3.6.7 なので、その間に分析されていない
 リリースがありうることを示し、応答には次のプライバシーに関する文言がそのまま
 含まれます：
 *"versions were compared in this process; upstream requests named project slugs

@@ -91,7 +91,8 @@ One entry from a real `check_stack` answer, as the agent receives it
 `affects` is what the agent checks against your setup: an etcd that does not
 split its client endpoints skips this entry without asking anyone. `status`
 says whether the release notes stated it or it was inferred from them;
-`severity: null` means the advisory itself states no grade. The same answer
+`severity: null` means no grade was found in what was read (the advisory may
+not be published yet; another release can carry one). The same answer
 lists `gaps` (here v3.5.32 then v3.6.7, so releases in between may exist that
 were not analyzed) and carries its own privacy line, verbatim: *"versions were
 compared in this process; upstream requests named project slugs only (each

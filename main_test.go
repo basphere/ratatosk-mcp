@@ -245,7 +245,7 @@ func TestCheckStackBriefing(t *testing.T) {
 		t.Errorf("also_in %v, want [v3.6.7]", got)
 	}
 	if string(c.Changes[0].Severity) != "null" {
-		t.Errorf("security severity %s, want null (the advisory states no grade)", c.Changes[0].Severity)
+		t.Errorf("security severity %s, want null (no grade found)", c.Changes[0].Severity)
 	}
 	if c.Changes[1].Severity != nil {
 		t.Errorf("a breaking change carries severity %s", c.Changes[1].Severity)

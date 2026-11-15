@@ -154,8 +154,9 @@ spec:
           - Severity is how bad it is IF the condition holds, never the odds
             that it holds here. Never turn severity alone into urgency. Read
             affects first: severity is the grade the project's own advisory
-            states (null when it states none), so it cannot tell you who is
-            affected.
+            states (null when none was found in what was read; another
+            release can carry a grade for the same advisory), so it cannot
+            tell you who is affected.
           - Every change carries evidence via get_release: the release-note
             lines it came from, verbatim, with their URL. Cite the quote
             whenever you report a change as applying, and link the source for

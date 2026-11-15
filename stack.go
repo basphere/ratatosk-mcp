@@ -621,8 +621,8 @@ type briefChange struct {
 	Kind    string `json:"kind"`
 	Title   string `json:"title"`
 	Body    string `json:"body,omitempty"`
-	// Severity is present on security changes only, and null there when the
-	// project's advisory states no grade — absent and null mean different things.
+	// Severity is present on security changes only, and null there when no
+	// grade was found in what was read — absent and null mean different things.
 	Severity        json.RawMessage   `json:"severity,omitempty"`
 	Advisories      []string          `json:"advisories,omitempty"`
 	Affects         *v2Attr           `json:"affects,omitempty"`
@@ -664,8 +664,8 @@ type briefing struct {
 	ChangesOmitted map[string]int  `json:"changes_omitted,omitempty"`
 }
 
-// gradeRank orders a briefing's raw severity: critical first, an advisory with
-// no stated grade (null) and non-security changes (absent) last.
+// gradeRank orders a briefing's raw severity: critical first, a change whose
+// grade was not found (null) and non-security changes (absent) last.
 func gradeRank(raw json.RawMessage) int {
 	var g string
 	_ = json.Unmarshal(raw, &g)
@@ -1309,7 +1309,8 @@ var stackHint = "briefing (a data classification, not a recommendation — chang
 	"applies to every install of this project; security_unclear — two separate checks disagreed on whether the change is a security fix and the sources do not settle it; it stays in the kind first chosen, so verify against the evidence. " +
 	"action_required (breaking) and also_required (security) are what the notes say to do; no_downgrade means " +
 	"rolling back after the upgrade is not possible; removed_in is when a deprecation turns into a removal. " +
-	"severity is the grade the project's own advisory states, null when it states none — rank urgency with it, " +
+	"severity is the grade the project's own advisory states; null means no grade was found in what was read " +
+	"(an advisory not yet published included), and the same advisory can carry a grade on another release — rank urgency with it, " +
 	"never decide who is affected with it. also_in names other releases in range carrying the same advisories. " +
 	"changes_omitted counts, per kind, what did not fit (each kind keeps first the changes that say what to do — " +
 	"action_required, also_required, a stated or inferred no_downgrade or removed_in — and security then keeps the " +

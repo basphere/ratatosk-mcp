@@ -193,7 +193,8 @@ func newServer() *mcp.Server {
 			"already fixes, which does not make it vulnerable; a problem it has, fixed in a newer version). Every " +
 			"change carries evidence: the release-note lines it came from, verbatim, " +
 			"with their URL — cite those when you report a change. severity is the grade the project's own advisory " +
-			"states; null means the advisory states none. Omit version for the latest release of the project: its " +
+			"states; null means no grade was found in what was read (an advisory not yet published included), and the " +
+			"same advisory can carry a grade on another release. Omit version for the latest release of the project: its " +
 			"highest version, which is not always the most recently published one (a patch on an older branch can " +
 			"ship later). " +
 			"version is accepted with or without the leading 'v'; a wrong one returns an error listing the project's " +

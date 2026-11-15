@@ -67,7 +67,7 @@ claude mcp list
 }
 ```
 
-에이전트는 `affects` 필드를 현재 설정과 대조하며, 위 예시처럼 클라이언트 엔드포인트를 분리하지 않은 etcd 환경이라면 사용자에게 묻지 않고 이 항목을 건너뜁니다. `status`는 해당 내용이 릴리스 노트에 직접 명시되었는지(`stated`) 문맥상 추정했는지(`inferred`)를 나타내고, `severity: null`은 보안 공지에 심각도 등급이 기재되지 않았다는 뜻입니다. 함께 반환되는 `gaps` 필드는 `v3.5.32`와 `v3.6.7` 사이에 분석되지 않은 릴리스가 있을 수 있음을 알리며, 응답에는 버전 비교가 로컬 프로세스 안에서 이루어졌음을 밝히는 문구(*"versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)."*)가 그대로 포함됩니다.
+에이전트는 `affects` 필드를 현재 설정과 대조하며, 위 예시처럼 클라이언트 엔드포인트를 분리하지 않은 etcd 환경이라면 사용자에게 묻지 않고 이 항목을 건너뜁니다. `status`는 해당 내용이 릴리스 노트에 직접 명시되었는지(`stated`) 문맥상 추정했는지(`inferred`)를 나타내고, `severity: null`은 읽은 원문에서 심각도 등급을 찾지 못했다는 뜻입니다(보안 공지가 아직 공개되지 않았을 수 있고, 다른 릴리스에는 등급이 있을 수 있습니다). 함께 반환되는 `gaps` 필드는 `v3.5.32`와 `v3.6.7` 사이에 분석되지 않은 릴리스가 있을 수 있음을 알리며, 응답에는 버전 비교가 로컬 프로세스 안에서 이루어졌음을 밝히는 문구(*"versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)."*)가 그대로 포함됩니다.
 
 Claude, ChatGPT, Grok, Codex, Gemini CLI, Antigravity, kagent 및 클러스터 내부 에이전트별 상세 설정 방법은 [설치 가이드](docs/install.ko.md)에서 다룹니다.
 
