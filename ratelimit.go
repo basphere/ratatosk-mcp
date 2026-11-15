@@ -3,8 +3,8 @@ package main
 // Per-caller rate limiting for the HTTP transport (2026-08-10).
 //
 // Why this lives here and not upstream in the web API. The hosted endpoint
-// reaches ratatosk's /v1 over the compose network, deliberately bypassing the
-// CDN and reverse proxy so that /v1 paths — which carry project slugs and
+// reaches ratatosk's /v2 over the compose network, deliberately bypassing the
+// CDN and reverse proxy so that /v2 paths — which carry project slugs and
 // running versions — never reach an access log. The cost of that design is
 // that no forwarding header survives the hop, so upstream cannot tell hosted
 // callers apart and every one of them shares a single bucket. Forwarding the

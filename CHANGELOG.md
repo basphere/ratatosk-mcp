@@ -18,6 +18,34 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `detail=full` could fill it with hundreds of release documents.
 - Helm chart values `maxInflight` and `cacheMaxMB` for the two settings above,
   and a "Memory and concurrency" section in the install guide on sizing them.
+- **kagent 1.x support, alongside kagent 0.x.** kagent 1.x (1.0.0-rc1 as of
+  this release) serves a new API, `api.kagent.dev/v1alpha3`, and reads no
+  `kagent.dev/v1alpha2` object. The chart renders whichever API the cluster
+  serves. On 1.x the example agent runs on a Harness named by the new
+  `kagent.harness` value; kagent creates no Harness, so with the value unset
+  the chart installs the server and its RemoteMCPServer, skips the agent, and
+  its install notes say how to add it. Plain manifests come in two sets,
+  `examples/kagent/0.x/` and `examples/kagent/1.x/`. The install guides gain a
+  read-only note: a kagent 1.x Claude Harness exposes every tool on kagent's
+  tool server, write tools included, whatever the agent's tool list says.
+  **kagent 0.x support will be removed once kagent 1.x is generally
+  available.**
+- Chart values `clusterDomain`, `kagent.harness` and
+  `kagent.agent.toolServer.{name,namespace}` (the last for a kagent tool
+  server outside the release namespace).
+- `check_upgrade`: one project, one hop, computed by the server
+  (`/v2/upgrade`). `from` and `to` are sent upstream, and the tool says so.
+- `search`: find releases by advisory id, configuration flag or text.
+- `lang` (`en`, `ko`, `ja`) on every tool that returns text.
+- The install guide says where each client registers the server, hosted or
+  over stdio: Claude, ChatGPT, Grok, Claude Code, Grok Build, Codex, Gemini
+  CLI, Antigravity and kagent. The README shows the Ratatosk symbol.
+- CI checks the docs against the server: the tools and parameters they name
+  against the tool list a client receives, image pins against the chart's
+  `appVersion`, no older release number left in an example, and the English,
+  Korean and Japanese pages against each other (headings, tables, code,
+  links). An opt-in test (`DOCS_LIVE_URL`) replays every documented example
+  call and fails on a documented key the live answer lacks.
 
 ### Changed
 
@@ -164,37 +192,6 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   sets, the prompt check also requires the four copies to say the same thing,
   a new check pins which shape each API gets, and the install rehearsal runs
   against pinned kagent-crds 0.10.4 and 1.0.0-rc1 in turn.
-
-### Added
-
-- **kagent 1.x support, alongside kagent 0.x.** kagent 1.x (1.0.0-rc1 as of
-  this release) serves a new API, `api.kagent.dev/v1alpha3`, and reads no
-  `kagent.dev/v1alpha2` object. The chart renders whichever API the cluster
-  serves. On 1.x the example agent runs on a Harness named by the new
-  `kagent.harness` value; kagent creates no Harness, so with the value unset
-  the chart installs the server and its RemoteMCPServer, skips the agent, and
-  its install notes say how to add it. Plain manifests come in two sets,
-  `examples/kagent/0.x/` and `examples/kagent/1.x/`. The install guides gain a
-  read-only note: a kagent 1.x Claude Harness exposes every tool on kagent's
-  tool server, write tools included, whatever the agent's tool list says.
-  **kagent 0.x support will be removed once kagent 1.x is generally
-  available.**
-- Chart values `clusterDomain`, `kagent.harness` and
-  `kagent.agent.toolServer.{name,namespace}` (the last for a kagent tool
-  server outside the release namespace).
-- `check_upgrade`: one project, one hop, computed by the server
-  (`/v2/upgrade`). `from` and `to` are sent upstream, and the tool says so.
-- `search`: find releases by advisory id, configuration flag or text.
-- `lang` (`en`, `ko`, `ja`) on every tool that returns text.
-- The install guide says where each client registers the server, hosted or
-  over stdio: Claude, ChatGPT, Grok, Claude Code, Grok Build, Codex, Gemini
-  CLI, Antigravity and kagent. The README shows the Ratatosk symbol.
-- CI checks the docs against the server: the tools and parameters they name
-  against the tool list a client receives, image pins against the chart's
-  `appVersion`, no older release number left in an example, and the English,
-  Korean and Japanese pages against each other (headings, tables, code,
-  links). An opt-in test (`DOCS_LIVE_URL`) replays every documented example
-  call and fails on a documented key the live answer lacks.
 
 ### Removed
 

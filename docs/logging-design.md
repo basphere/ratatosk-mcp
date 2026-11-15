@@ -17,7 +17,7 @@ inert** (quiet logs, audit off, exporter off).
 | **P2** | Trace phase 0: read `traceparent` from `_meta`, stamp `trace_id` into logs, forward the header upstream | with P0/P1 | a request carrying a traceparent produces a log line with the same trace_id, and the upstream HTTP request carries the header (integration test) |
 | **P3** | Audit stream (spec below): `MCP_AUDIT=metadata\|full` | after P1 ships | dogfooding: a kagent conversation's tool calls reconstructed from the audit stream alone; docs (3 languages) state the layer boundary; default-off verified by the probe test |
 | **P4** | Trace phase 1: real spans, OTLP export gated on `OTEL_EXPORTER_OTLP_ENDPOINT` | after P2; needs a collector to test against | spans visible in a local collector in the smoke rig; endpoint unset ⇒ bit-identical behavior to P2 |
-| **P5** | Upstream joins the trace: ratatosk.io `/v1` accepts/propagates traceparent, web logs carry trace_id | app-repo work; after P2 | one trace id resolves across MCP log and web log for the same call |
+| **P5** | Upstream joins the trace: ratatosk.io `/v2` accepts/propagates traceparent, web logs carry trace_id | app-repo work; after P2 | one trace id resolves across MCP log and web log for the same call |
 
 Release mapping: P0–P2 bundle into the next tagged release (its headline:
 MCP 2026-07-28 support). P3 and P4 ride whichever bump comes after. The
@@ -79,7 +79,7 @@ for two weeks.
 **No request arguments in any log line or field, in any mode, at any level.**
 Not the version, not `version_source`, not free-text error strings that embed
 them — `get_release` failures carry the version inside the URL
-(`/v1/releases/cilium/v1.16.0: HTTP 404`), so error log lines are
+(`/v2/releases/cilium/v1.16.0: HTTP 404`), so error log lines are
 *reconstructed* (tool, upstream kind, status class), never copied. Project
 slugs are permitted: the privacy model already sends slugs upstream.
 
@@ -95,7 +95,7 @@ One-line JSON via `log/slog`, the same house schema as the ratatosk worker
 (`time`, `level`, `msg`, `service:"mcp"`, plus event fields):
 
 ```json
-{"time":"2026-07-30T01:20:00Z","level":"ERROR","msg":"upstream fetch failed","service":"mcp","tool":"check_stack","upstream":"/v1/changes","status":502}
+{"time":"2026-07-30T01:20:00Z","level":"ERROR","msg":"upstream fetch failed","service":"mcp","tool":"check_stack","upstream":"/v2/releases","status":502}
 ```
 
 JSON because collectors (alloy/Loki here, whatever the operator runs there)
@@ -156,7 +156,7 @@ MCP 2026-07-28 documents `_meta` conventions for W3C trace context
 *user conversation → agent run → MCP tool call → upstream API* into one trace.
 
 - **Phase 0 — near-free, with the SDK bump**: read `traceparent` from
-  incoming `_meta`, forward it as the standard HTTP header on upstream `/v1`
+  incoming `_meta`, forward it as the standard HTTP header on upstream `/v2`
   calls, and stamp `trace_id` into every JSON log line (and future audit
   record). No OTel SDK, no exporter — just propagation plus log correlation,
   which is most of the enterprise value.
