@@ -54,7 +54,7 @@ Each change carries only the attributes its kind uses:
 |---|---|---|---|
 | `affects` | `object` | all but `dependency_updates` | What the change touches: a flag, field, feature, platform or setup |
 | `severity` | `string` or `null` | `security` | The grade the project's own advisory states (`critical`, `high`, `medium`, `low`). `null` means no grade was found in what was read, including an advisory not yet published; the same advisory can carry a grade on another release |
-| `advisories` | `array` | `security` | The advisory ids |
+| `advisories` | `array` | `security`; other kinds only when the change names advisory ids | The advisory ids |
 | `also_required` | `string` or `null` | `security` | What to do beyond upgrading |
 | `action_required` | `string` or `null` | `breaking` | What to do when upgrading |
 | `no_downgrade` | `object` or `null` | all but `dependency_updates` | Whether rolling back is impossible (`null` if not) |

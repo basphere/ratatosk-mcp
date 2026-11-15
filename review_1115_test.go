@@ -255,3 +255,24 @@ func TestAnswersThatAreNotAPIAnswersAreErrors(t *testing.T) {
 		t.Error("isJSONObject")
 	}
 }
+
+// A target above every analyzed release used to come back as an empty (or
+// short) range with no word: etcd v3.7.3 with target_version v3.7.4 read as
+// "nothing between here and there". The component is still checked up to the
+// newest analyzed release, and the note says the target itself was not.
+func TestCheckStackNotesATargetNewerThanEveryAnalyzedRelease(t *testing.T) {
+	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	out := runStack(t, checkStackArgs{Components: []stackComponent{
+		{Project: "etcd", Version: "v3.6.8", TargetVersion: "v3.6.9"},
+		{Project: "etcd", Version: "v3.6.8"},
+	}})
+	if len(out.CouldNotCheck) != 0 {
+		t.Fatalf("could_not_check %+v, want none: the range up to the newest analyzed release is still checked", out.CouldNotCheck)
+	}
+	if c := out.Components[0]; !strings.Contains(c.Note, "target_version v3.6.9 is newer than every analyzed release on its line (newest analyzed: v3.6.8)") {
+		t.Errorf("a target above the newest analyzed release must be named in the note: %q", c.Note)
+	}
+	if c := out.Components[1]; strings.Contains(c.Note, "target_version") {
+		t.Errorf("no target, no target note: %q", c.Note)
+	}
+}

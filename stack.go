@@ -1252,6 +1252,17 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 			skip(n)
 			continue
 		}
+		// A target above every analyzed release: the range stops at the newest
+		// analyzed one and the target itself was never read. Without a word that
+		// came back as releases [] and read as "nothing between here and there"
+		// (etcd v3.7.3 with target_version v3.7.4; independent review, 2026-11-15)
+		// — /v2/upgrade answers the same to= with a 404.
+		if targetKey != nil && newest != nil && version.Compare(targetKey, newest) > 0 {
+			notes = append(notes, fmt.Sprintf(
+				"target_version %s is newer than every analyzed release on its line (newest analyzed: %s) — the checked range stops at %s; "+
+					"%s itself and anything after %s was not checked, so read their release notes yourself",
+				comp.TargetVersion, newestTag, newestTag, comp.TargetVersion, newestTag))
+		}
 
 		// What the running version's own branch already carries, at or below it.
 		alreadyFixed := map[string]bool{}
