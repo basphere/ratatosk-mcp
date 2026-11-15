@@ -101,8 +101,8 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | `summary` | コンポーネント | `object` | 範囲内のリリース数（`releases`）、種類ごとの変更数（`counts`）、注意が必要な変更の数（`warnings`） |
 | `releases` | コンポーネント | `array` | （稼働中, 目標] の間のバージョン。古い順、稼働中バージョンのリリースラインのみ |
 | `before_upgrade` | コンポーネント | `array` | 範囲内の前提条件・既知の問題・アップグレードガイドすべて、バージョン付き。多くは新しい minor を始めるリリースにあります。すべて読んでください |
-| `changes` | コンポーネント | `array` | 判断が必要な種類。`security`（深刻なものから）・`breaking`・`deprecations`・`important_fixes`。残りの 3 種類は `summary.counts` に件数だけあり、`get_release` にすべてあります |
-| `changes_omitted` | コンポーネント | `object` | 種類ごとに収まらなかった件数（セキュリティは深刻なものを残す）。実在する変更の数であり「何もない」ではありません。`target_version` で絞るか `get_release` で読んでください |
+| `changes` | コンポーネント | `array` | 判断が必要な種類。`security`・`breaking`・`deprecations`・`important_fixes`。種類ごとに、すべきことが書かれた変更（`action_required`・`also_required`・`stated` か `inferred` の `no_downgrade` または `removed_in`）が先に来て、セキュリティはその次に深刻なものから並びます。残りの 3 種類は `summary.counts` に件数だけあり、`get_release` にすべてあります |
+| `changes_omitted` | コンポーネント | `object` | 種類ごとに収まらなかった件数（すべきことが書かれた変更を先に残し、セキュリティはその次に深刻なものを残す）。実在する変更の数であり「何もない」ではありません。`target_version` で絞るか `get_release` で読んでください |
 | `affects` | 変更 | `object` | 変更が誰に当てはまるかを決めます。`stated`・`inferred`：稼働中の設定でそれが成り立つときだけ当てはまるので、確認してから報告してください。`not_stated`：ノートが範囲を絞っていないので、タイトルが特定のものを指していない限り、すべてのインストールに当てはまると見なしてください |
 | `also_in` | 変更 | `array` | 範囲内の別ブランチで同じアドバイザリを修正したリリースのバージョン。表の下の説明を参照 |
 | `note` | コンポーネント | `string` | 何をなぜ除外したか。表の下の説明を参照 |

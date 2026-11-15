@@ -88,6 +88,14 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `later_for_running`. Components it cannot check are listed in
   `could_not_check`. `severity_min` is gone: security is ordered by grade
   instead, so a cap cuts the least severe.
+- **In a briefing (`check_stack`, `check_upgrade`), changes that say what to do
+  lead their kind, so the per-kind cap no longer cuts them.** A change with
+  `action_required`, `also_required`, or a stated or inferred `no_downgrade`
+  or `removed_in` comes before the others of its kind; inside each group the
+  order is as before (security by grade, then version, then screen order).
+  kubernetes v1.35.10 → v1.36.6 has 78 breaking changes, and the cap of 20
+  kept 1 of the 4 with `action_required`; it now keeps all 4.
+  `changes_omitted` still counts what did not fit, per kind.
 - `check_stack` sends upstream the same requests whatever version runs: each
   project's release list and its newest releases, then the range is cut in
   this process. Fetching only the releases above the running version would

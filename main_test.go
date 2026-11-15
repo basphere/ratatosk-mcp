@@ -692,3 +692,68 @@ func TestBriefingCapsPerKind(t *testing.T) {
 		t.Fatalf("security does not lead with critical: %s", b.Changes[0].Severity)
 	}
 }
+
+// Replay of kubernetes v1.35.10 → v1.36.6 (independent review, 2026-11-15): 78
+// breaking changes, the four with action_required sat late in screen order, and
+// the cap of 20 kept one of them. Entries that say what to do lead their kind;
+// inside each group the old order holds; the omitted count means what it meant.
+func TestBriefingKeepsEntriesThatCarryAStepBeforeTheCap(t *testing.T) {
+	d := &v2Release{Version: "v1.36.0"}
+	ar := "migrate the flex-volume mount before upgrading"
+	stated := &v2Attr{Text: "1.37", Status: "stated"}
+	notStated := &v2Attr{Text: "", Status: "not_stated"}
+	for i := 0; i < 30; i++ {
+		c := v2Change{ID: fmt.Sprint("b", i), Kind: "breaking", NoDowngrade: notStated}
+		switch i {
+		case 25, 27, 29:
+			c.ActionRequired = &ar
+		case 28:
+			c.NoDowngrade = &v2Attr{Text: "", Status: "inferred"}
+		}
+		d.Changes = append(d.Changes, c)
+	}
+	for i := 0; i < 12; i++ {
+		c := v2Change{ID: fmt.Sprint("d", i), Kind: "deprecations", RemovedIn: notStated}
+		if i == 11 {
+			c.RemovedIn = stated
+		}
+		d.Changes = append(d.Changes, c)
+	}
+	// Security: a low-grade change with a step beyond upgrading leads, then the
+	// rest by grade as before.
+	low, crit, high := "low", "critical", "high"
+	also := "rotate the tokens"
+	d.Changes = append(d.Changes,
+		v2Change{ID: "s-crit", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-1"}},
+		v2Change{ID: "s-low-step", Kind: "security", Severity: &low, Advisories: []string{"CVE-2026-2"}, AlsoRequired: &also},
+		v2Change{ID: "s-high", Kind: "security", Severity: &high, Advisories: []string{"CVE-2026-3"}},
+	)
+	b, _ := buildBriefing([]*v2Release{d}, nil, nil)
+
+	var brk, dep, sec []string
+	for _, c := range b.Changes {
+		switch c.Kind {
+		case "breaking":
+			brk = append(brk, c.ID)
+		case "deprecations":
+			dep = append(dep, c.ID)
+		case "security":
+			sec = append(sec, c.ID)
+		}
+	}
+	if len(brk) != kindCaps["breaking"] {
+		t.Fatalf("kept %d breaking, want the cap %d", len(brk), kindCaps["breaking"])
+	}
+	if want := []string{"b25", "b27", "b28", "b29", "b0", "b1"}; !slices.Equal(brk[:6], want) {
+		t.Errorf("breaking order %v, want the four that carry a step first, in screen order, then the rest: %v…", brk, want)
+	}
+	if b.ChangesOmitted["breaking"] != 30-kindCaps["breaking"] {
+		t.Errorf("omitted breaking %d, want %d", b.ChangesOmitted["breaking"], 30-kindCaps["breaking"])
+	}
+	if len(dep) != kindCaps["deprecations"] || dep[0] != "d11" || b.ChangesOmitted["deprecations"] != 2 {
+		t.Errorf("deprecations %v omitted %d: the one with a stated removed_in must lead and stay", dep, b.ChangesOmitted["deprecations"])
+	}
+	if want := []string{"s-low-step", "s-crit", "s-high"}; !slices.Equal(sec, want) {
+		t.Errorf("security order %v, want %v", sec, want)
+	}
+}

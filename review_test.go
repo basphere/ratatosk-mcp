@@ -403,11 +403,12 @@ func TestBriefingKeepsASiblingThatCarriesItsOwnStep(t *testing.T) {
 	for _, c := range b.Changes {
 		ids = append(ids, c.ID)
 	}
-	if len(ids) != 2 || ids[0] != "etcd@v1.2.1#a" || ids[1] != "etcd@v1.2.1#b" {
-		t.Fatalf("want the first change and the one with its own step, not the plain repeat: %v", ids)
+	// The one with its own step leads its kind (carriesAStep, 2026-11-15).
+	if len(ids) != 2 || ids[0] != "etcd@v1.2.1#b" || ids[1] != "etcd@v1.2.1#a" {
+		t.Fatalf("want the one with its own step and the first change, not the plain repeat: %v", ids)
 	}
-	if b.Changes[1].AlsoRequired != "set use_gcm_encryption to true" {
-		t.Errorf("the step must reach the answer: %+v", b.Changes[1])
+	if b.Changes[0].AlsoRequired != "set use_gcm_encryption to true" {
+		t.Errorf("the step must reach the answer: %+v", b.Changes[0])
 	}
 }
 
