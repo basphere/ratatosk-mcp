@@ -96,6 +96,20 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   kubernetes v1.35.10 → v1.36.6 has 78 breaking changes, and the cap of 20
   kept 1 of the 4 with `action_required`; it now keeps all 4.
   `changes_omitted` still counts what did not fit, per kind.
+- **The tool descriptions, the briefing hint and the docs say what
+  `later_for_running`, `later_for_from` and `later` hold.** An
+  `advisory_after_release` there is an advisory published after the release
+  for a vulnerability that release already fixes; it does not mean the release
+  is vulnerable. `known_issue_fixed` and `regression_fixed` are problems the
+  release has, fixed in `fixed_in`. Only events recorded on that one release
+  are listed: a defect that started in an earlier version is recorded on that
+  version, so an empty list is not "no known defect". The old wording, "what
+  happened to the running version after it shipped", read as if the release
+  were vulnerable.
+- **`list_releases` says it lists by release date.** What was learned after a
+  release (an advisory published later, a defect a later version fixed) is not
+  in it; `check_stack` (`later_for_running`), `get_release` (`later`) and
+  ratatosk.io's `/v2/events` carry it.
 - `check_stack` sends upstream the same requests whatever version runs: each
   project's release list and its newest releases, then the range is cut in
   this process. Fetching only the releases above the running version would

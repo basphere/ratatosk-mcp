@@ -19,7 +19,7 @@ server itself (hosted endpoint, Docker, Helm, kagent), see the
 
 1.0 reads `/v2`. The 0.x tools `list_changes`, `changes_by_entity` and `get_matter`
 are gone with the `/v1` API they read; their questions are now
-answered by `list_releases` (what is new), `search` (one CVE or flag) and the
+answered by `list_releases` (recent releases), `search` (one CVE or flag) and the
 `also_in` field of a briefing (one fix on several branches).
 
 ## The release model in one page
@@ -34,7 +34,7 @@ A **release** is what the website shows for one version:
 | `before_upgrade` | `object` | What to check before upgrading: `prerequisites`, `known_issues`, `upgrade_guide` |
 | `changes` | `array` | What the release did, one entry each, in screen order |
 | `folded` | `object` | Lines kept out of `changes`: dependency bumps the notes do not tie to security, and entries already shipped in an earlier release |
-| `later` | `array` | What happened after the release: `advisory_after_release` (an advisory published later, matched to this release) and `known_issue_fixed` (a known issue listed in this release's notes, fixed in `fixed_in`) and `regression_fixed` (a defect that started here, fixed in `fixed_in`) |
+| `later` | `array` | What was learned after the release: `advisory_after_release` (an advisory published later for a vulnerability this release already fixes; it does not mean the release is vulnerable) and `known_issue_fixed` (a known issue listed in this release's notes, fixed in `fixed_in`) and `regression_fixed` (a defect that started here, fixed in `fixed_in`) |
 
 A change has one of seven **kinds**:
 
@@ -110,7 +110,7 @@ top level of its answer, and `later_for_from` in place of `later_for_running`.
 | `note` | component | `string` | What was excluded and why. See the paragraph below the table |
 | `gaps` | component | `array` | Neighbouring versions whose numbers skip (v3.5.32 then v3.6.7): releases in between may exist that were not analyzed. Check their release notes yourself |
 | `releases_not_read` | component | `array` | Versions in range whose documents were not read; the newest 60 releases of a project are read per call |
-| `later_for_running` | component | `array` | What happened to the running version after it shipped |
+| `later_for_running` | component | `array` | What was learned about the running version after it shipped, as recorded on that release: `advisory_after_release` is an advisory published later for a vulnerability it already fixes (not a sign that it is vulnerable); `known_issue_fixed` and `regression_fixed` are problems it has, fixed in `fixed_in`. A defect that started in an earlier version is recorded on that version, not here, so an empty list does not mean no known defect |
 | `running_version` | component | `string` | The running version as passed in the call |
 | `target_version` | component | `string` | Where the range ends: the target passed, or the latest on the same release line |
 | `version_source` | component | `string` | Echoed back as provided |
@@ -532,8 +532,12 @@ latest; a wrong version returns an error naming the project's recent versions.
 
 ## list_releases
 
-Recent releases as one-line summaries, newest first. The tool for "what is new
-in X" and "which releases this month had security changes".
+Recent releases as one-line summaries, newest first, for "recent releases of
+X" and "which releases this month had security changes". Rows are listed by
+release date, so what was learned after a release (an advisory published
+later, a defect a later version fixed) does not appear here: `check_stack`
+(`later_for_running`), `get_release` (`later`) and ratatosk.io's `/v2/events`
+carry it.
 
 ### Parameters
 
