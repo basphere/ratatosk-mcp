@@ -130,6 +130,9 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `tracked: false`.
 - **`get_release` without a version for a tracked project with nothing
   analyzed yet says so,** instead of telling the caller to check the slug.
+- **`check_upgrade` answers `changes`, `before_upgrade` and `later_for_from`
+  as arrays when they are empty,** as documented; an empty range gave
+  `null`.
 - `check_stack` sends upstream the same requests whatever version runs: each
   project's release list and its newest releases, then the range is cut in
   this process. Fetching only the releases above the running version would

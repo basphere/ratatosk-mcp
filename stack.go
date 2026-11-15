@@ -1426,6 +1426,18 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	// No already-fixed filter here: that needs the releases at or below from,
 	// which this path does not read. The server's range is shown as it is.
 	b, _ := buildBriefing(docs, nil, nil)
+	// Arrays, never null, as the docs say: an empty range came back as
+	// "changes": null and "before_upgrade": null (independent review,
+	// 2026-11-15), which a client reading the documented shape may not expect.
+	if b.Changes == nil {
+		b.Changes = []briefChange{}
+	}
+	if b.BeforeUpgrade == nil {
+		b.BeforeUpgrade = []briefItem{}
+	}
+	if up.LaterForFrom == nil {
+		up.LaterForFrom = []json.RawMessage{}
+	}
 	out := map[string]any{
 		"project":        up.Project,
 		"from":           up.From,

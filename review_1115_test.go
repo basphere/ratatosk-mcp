@@ -165,3 +165,24 @@ func TestSlugsAreMatchedWithoutCaseOrSurroundingSpace(t *testing.T) {
 		t.Errorf("check_upgrade asked %s", seen)
 	}
 }
+
+// An empty range answered "changes": null and "before_upgrade": null; the docs
+// say array. Same for later_for_from when the server leaves it out.
+func TestCheckUpgradeAnswersArraysForAnEmptyRange(t *testing.T) {
+	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"project":"etcd","from":"v3.7.3","to":"v3.7.3","releases":[],"gaps":[]}`))
+	})))
+	res, _, err := checkUpgradeTool(context.Background(), nil, checkUpgradeArgs{Project: "etcd", From: "v3.7.3"})
+	if err != nil || res.IsError {
+		t.Fatalf("check_upgrade: %v %+v", err, res)
+	}
+	text := res.Content[0].(*mcp.TextContent).Text
+	for _, want := range []string{`"changes":[]`, `"before_upgrade":[]`, `"later_for_from":[]`, `"releases":[]`} {
+		if !strings.Contains(text, want) {
+			t.Errorf("no %s in %s", want, text)
+		}
+	}
+	if strings.Contains(text, ":null") {
+		t.Errorf("a null in the answer: %s", text)
+	}
+}
