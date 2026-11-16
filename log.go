@@ -35,7 +35,7 @@ var traceparentRe = regexp.MustCompile(`^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[
 // requestContext tags the context with the tool name and, when the caller sent
 // W3C trace context in _meta (the MCP 2026-07-28 convention), the traceparent —
 // the join key across the agent layer, this server's log lines, and the
-// upstream /v1 call. Malformed values are dropped, not forwarded.
+// upstream /v2 call. Malformed values are dropped, not forwarded.
 func requestContext(ctx context.Context, tool string, req *mcp.CallToolRequest) context.Context {
 	ctx = context.WithValue(ctx, ctxKeyTool, tool)
 	if req == nil || req.Params == nil {

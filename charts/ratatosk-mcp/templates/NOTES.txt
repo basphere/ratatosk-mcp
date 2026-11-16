@@ -1,14 +1,38 @@
 ratatosk-mcp is up. In-cluster MCP endpoint (streamable HTTP):
 
-  http://{{ include "ratatosk-mcp.fullname" . }}.{{ .Release.Namespace }}.svc:{{ .Values.service.port }}/mcp
+  {{ include "ratatosk-mcp.mcpURL" . }}
 
 {{- if .Values.kagent.enabled }}
+{{- $v1 := include "ratatosk-mcp.kagentV1" . }}
 
-kagent integration is ON:
+kagent integration is ON ({{ if $v1 }}kagent 1.x API, api.kagent.dev/v1alpha3{{ else }}kagent 0.x API, kagent.dev/v1alpha2{{ end }}):
   - RemoteMCPServer "{{ include "ratatosk-mcp.fullname" . }}" registered (its tools discover automatically)
 {{- if .Values.kagent.agent.enabled }}
-  - Agent "{{ .Values.kagent.agent.name }}" installed — it appears in the kagent UI; try asking
-    which of your running component versions need action.
+{{- if and $v1 (not .Values.kagent.harness) }}
+
+  ! Agent "{{ .Values.kagent.agent.name }}" was NOT installed: kagent 1.x runs every Agent on a
+    Harness, and kagent.harness is empty. kagent creates no default Harness.
+    List the ones in this namespace:
+
+      kubectl get harnesses.api.kagent.dev -n {{ .Release.Namespace }}
+
+    (none? create one first; see the kagent 1.x part of docs/install.en.md),
+    then add the agent:
+
+      helm upgrade {{ .Release.Name }} <chart> -n {{ .Release.Namespace }} --reuse-values --set kagent.harness=<name>
+{{- else }}
+  - Agent "{{ .Values.kagent.agent.name }}" installed{{ if $v1 }} on Harness "{{ .Values.kagent.harness }}" (it must exist in namespace {{ .Release.Namespace }}){{ end }}.
+    It appears in the kagent UI; try asking which of your running component
+    versions need action.
+{{- if $v1 }}
+    Check it with: kubectl describe agents.api.kagent.dev {{ .Values.kagent.agent.name }} -n {{ .Release.Namespace }}
+{{- end }}
+{{- if and $v1 .Values.kagent.agent.k8sTools }}
+    Its cluster tools stay read-only only on runtimes that enforce the tool
+    list: a Claude Harness exposes every kagent tool-server tool, write tools
+    included. See the read-only note in docs/install.en.md.
+{{- end }}
+{{- end }}
 {{- end }}
 {{- else }}
 

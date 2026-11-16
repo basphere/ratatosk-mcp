@@ -14,27 +14,16 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - run: go build ./...
+      # The kagent checks below render the chart, in both kagent APIs.
+      - uses: azure/setup-helm@v4
       # kagent needs every tool named in an allowlist to see it at all, and that
-      # list lives in two YAML files nothing type-checks. v0.4.0 shipped
-      # list_releases invisible to both install paths for exactly that reason:
-      # adding a tool means editing main.go plus two manifests, and only a human
-      # in a live cluster notices when the last two are forgotten. main.go is the
-      # source of truth here; the manifests must agree with it on every push.
+      # list lives in YAML nothing type-checks: the chart (rendered for kagent
+      # 0.x and 1.x) and the two example sets. v0.4.0 shipped list_releases
+      # invisible to both install paths for exactly that reason, and kagent 1.x
+      # turns a misspelled name into a ready agent that never calls the tool.
+      # main.go is the source of truth; every allowlist must agree with it.
       - name: kagent tool allowlists match the registered tools
-        run: |
-          # gofmt는 구조체 리터럴 필드를 정렬해 "Name:" 뒤 공백이 여러 칸이 된다 —
-          # 한 칸만 허용하던 구 패턴은 2026-08-10 도구 재작성 이후 아무것도 못 잡아
-          # 이 검사가 3일간 조용히 빨간불이었다. \s+로 정렬 무관하게 잡는다.
-          TOOLS="$(grep -oE '^\s*Name:\s+"[a-z_]+"' main.go | grep -oE '"[a-z_]+"' | tr -d '"' | sort)"
-          echo "registered: $(echo "$TOOLS" | tr '\n' ' ')"
-          for f in charts/ratatosk-mcp/templates/agent.yaml examples/kagent/ratatosk-agent.yaml; do
-            LISTED="$(grep -oE '^ *- [a-z0-9_]+$' "$f" | sed 's/^ *- //' | grep -v '^k8s_' | sort)"
-            if [ "$LISTED" != "$TOOLS" ]; then
-              echo "::error file=$f::toolNames disagree with main.go"
-              diff <(echo "$TOOLS") <(echo "$LISTED") || true
-              exit 1
-            fi
-          done
+        run: ./scripts/check-tool-allowlists.sh
 
       # The allowlist check above keeps the tools reachable; this one keeps the
       # instructions honest. Both prompt regressions so far were deletions —
@@ -44,11 +33,18 @@ jobs:
       - name: agent prompt keeps the rules live failures put there
         run: ./scripts/check-agent-prompt.sh
 
-  # The static check above compares files. This one installs the chart on a real
+      # kagent 1.x reads none of the 0.x API and 0.x none of 1.x, so the chart
+      # picks the shape from the cluster. A wrong branch installs objects that
+      # nothing reconciles, silently; pin the branching on every push.
+      - name: chart renders each kagent API in its own shape
+        run: ./scripts/check-chart-kagent.sh
+
+  # The static checks above compare files. This one installs the chart on a real
   # cluster and asks the running server what it serves — the step whose absence
   # let v0.4.0 ship a chart pinned to the previous image with a tool the agent
   # could not call. Runs against the chart's appVersion, which is always an
-  # already-published image on main.
+  # already-published image on main, and against the CRDs of both kagent lines
+  # (pinned in the script).
   chart-smoke:
     runs-on: ubuntu-latest
     steps:

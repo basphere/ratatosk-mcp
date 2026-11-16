@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
   "name": "io.github.basphere/ratatosk-mcp",
-  "description": "CNCF release intelligence: typed changes from release notes; check_stack compares versions locally.",
+  "description": "CNCF release changes from release notes; check_stack compares running versions locally.",
   "repository": {
     "url": "https://github.com/basphere/ratatosk-mcp",
     "source": "github"

@@ -5,6 +5,201 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-11-16
+
+### Added
+
+- **`MCP_MAX_INFLIGHT`, off by default: a cap on requests the HTTP transport
+  works on at once.** Over the cap a request waits up to 10 s for a slot, then
+  gets `503` with `Retry-After`. Per-caller rate limiting bounds each caller,
+  not the crowd; a stack-wide `check_stack` holds tens of MiB while it runs.
+- **`MCP_CACHE_MAX_MB` (default 32): a byte budget for the response cache.**
+  The cache was bounded only by entry count, so one stack-wide call with
+  `detail=full` could fill it with hundreds of release documents.
+- Helm chart values `maxInflight` and `cacheMaxMB` for the two settings above,
+  and a "Memory and concurrency" section in the install guide on sizing them.
+- **kagent 1.x support, alongside kagent 0.x.** kagent 1.x (1.0.0-rc1 as of
+  this release) serves a new API, `api.kagent.dev/v1alpha3`, and reads no
+  `kagent.dev/v1alpha2` object. The chart renders whichever API the cluster
+  serves. On 1.x the example agent runs on a Harness named by the new
+  `kagent.harness` value; kagent creates no Harness, so with the value unset
+  the chart installs the server and its RemoteMCPServer, skips the agent, and
+  its install notes say how to add it. Plain manifests come in two sets,
+  `examples/kagent/0.x/` and `examples/kagent/1.x/`. The install guides gain a
+  read-only note: a kagent 1.x Claude Harness exposes every tool on kagent's
+  tool server, write tools included, whatever the agent's tool list says.
+  **kagent 0.x support will be removed once kagent 1.x is generally
+  available.**
+- Chart values `clusterDomain`, `kagent.harness` and
+  `kagent.agent.toolServer.{name,namespace}` (the last for a kagent tool
+  server outside the release namespace).
+- `check_upgrade`: one project, one hop, computed by the server
+  (`/v2/upgrade`). `from` and `to` are sent upstream, and the tool says so.
+- `search`: find releases by advisory id, configuration flag or text.
+- `lang` (`en`, `ko`, `ja`) on every tool that returns text.
+- The install guide says where each client registers the server, hosted or
+  over stdio: Claude, ChatGPT, Grok, Claude Code, Grok Build, Codex, Gemini
+  CLI, Antigravity and kagent. The README shows the Ratatosk symbol.
+- CI checks the docs against the server: the tools and parameters they name
+  against the tool list a client receives, image pins against the chart's
+  `appVersion`, no older release number left in an example, and the English,
+  Korean and Japanese pages against each other (headings, tables, code,
+  links). An opt-in test (`DOCS_LIVE_URL`) replays every documented example
+  call and fails on a documented key the live answer lacks.
+
+### Changed
+
+- **The HTTP transport refuses JSON-RPC batches (`400`); send one request per
+  POST.** The rate limit and the in-flight cap count HTTP requests, and a batch
+  ran every call it carried past both. Protocol revisions 2025-06-18 and later
+  never allowed batches; older revisions now behave the same. stdio is
+  unchanged.
+- **`check_stack` cuts the same range whether or not you write the "v".** For
+  projects that tag without one (falco, istio, keycloak, strimzi), `v0.45.1`
+  as the running version listed 0.45.1 itself as upgrade work, and
+  `target_version: v0.45.1` returned no releases. The range is now cut in the
+  project's own spelling, as `check_upgrade` does.
+- **`check_stack` with `detail: "full"` carries about 2 MB of release
+  documents per call.** The limit of 15 documents was per component, so a
+  large stack made one answer of tens of MB (measured: 32 MB, 382 MB held
+  while it was built; now 2.3 MB and 36 MB). What does not fit is counted in
+  `releases_full_omitted` and named in `note`; read those releases with
+  `get_release` or split the call.
+- **`check_stack` checks a component listed more than once only once,** and
+  says so in that component's `note`.
+- **A tool call ends after 90 seconds with an answer.** A slow upstream used
+  to run a stack check into the HTTP server's 120 second write timeout, and
+  the caller got an empty reply. Components not reached in time are listed in
+  `could_not_check`. One failed release document now stops the other fetches
+  for that component instead of waiting for them.
+- **`check_stack` lists a later security fix on your own branch even when it
+  cites an advisory your version already carries.** Such a change is a
+  follow-up to an incomplete fix; it was excluded as "already fixed" and
+  appeared only in a count. The same advisory backported onto another branch
+  is still excluded and counted. Inside the range the same rule holds: the
+  first release of each other branch that carries an advisory folds into
+  `also_in`, and a later release of a branch that cites it again is listed on
+  its own with its own severity.
+- **In the array form, `components` items may carry keys the server does not
+  know, and may leave out `project` or `version`.** `name` is read as
+  `project` there as it already was in the string form. A component without a
+  project gets the refusal that names the keys received and shows the shape,
+  and one without a version is listed in `could_not_check`, instead of a bare
+  schema error. Keys that were not read are named in the component's `note`.
+- **`MCP_MAX_INFLIGHT` counts POST requests only.** In stateful mode a
+  session's open event stream (GET) held a slot for as long as it lived.
+- **`get_release` without a version returns the project's highest version.**
+  It used to return the most recently published release, so a patch on an
+  older branch that shipped later was answered as the latest (kubernetes
+  v1.36.6 while v1.37.2 was on record). ratatosk.io changed `latest` in
+  `/v2/projects` the same way, and this tool reads it from there.
+- **Helm chart memory limit 64Mi → 512Mi.** 1.0 answers carry more, and a
+  stack-wide `check_stack` with `detail=full` holds about 50 MiB while it
+  runs: at 64Mi two at once got the container killed, while 512Mi held 24
+  (measured 2026-11-05). If you set `resources` yourself, check the limit.
+- **ratatosk.io moved its API from `/v1` to `/v2`, and every tool moved with
+  it.** `/v1` answers `410 Gone` from the switch on, so 0.x stops working that
+  day; this is a major version because tools were removed and every response
+  changed shape. A release now has `before_upgrade` (prerequisites, known
+  issues, upgrade guides) and `changes` in seven kinds (`security`,
+  `breaking`, `deprecations`, `important_fixes`, `enhancements`,
+  `dependency_updates`, `other`), each with `affects` (who it touches, and
+  whether the release notes stated it), what to do, and the release-note lines
+  it came from. Events after a release (an advisory published later, a problem
+  fixed in a newer version) are attached as `later`. The 0.x axes (family,
+  bucket, applies_if) and matters are gone.
+- `check_stack` takes the same input and returns a new briefing per
+  component: the releases in range, every before-upgrade item, the changes
+  that ask for a decision (security, breaking, deprecations, important fixes)
+  with per-kind caps whose cuts are counted in `changes_omitted`, `gaps` where
+  version numbers skip (releases in between may be unanalyzed), and
+  `later_for_running`. Components it cannot check are listed in
+  `could_not_check`. `severity_min` is gone: security is ordered by grade
+  instead, so a cap cuts the least severe.
+- **In a briefing (`check_stack`, `check_upgrade`), changes that say what to do
+  lead their kind, so the per-kind cap no longer cuts them.** A change with
+  `action_required`, `also_required`, or a stated or inferred `no_downgrade`
+  or `removed_in` comes before the others of its kind. Security stays ordered
+  by grade first, and the rule applies within a grade; otherwise the order is
+  as before (version, then screen order).
+  kubernetes v1.35.10 → v1.36.6 has 78 breaking changes, and the cap of 20
+  kept 1 of the 4 with `action_required`; it now keeps all 4.
+  `changes_omitted` still counts what did not fit, per kind.
+- **The tool descriptions, the briefing hint and the docs say what
+  `later_for_running`, `later_for_from` and `later` hold.** An
+  `advisory_after_release` there is an advisory published after the release
+  for a vulnerability that release already fixes; it does not mean the release
+  is vulnerable. `known_issue_fixed` and `regression_fixed` are problems the
+  release has, fixed in `fixed_in`. Only events recorded on that one release
+  are listed: a defect that started in an earlier version is recorded on that
+  version, so an empty list is not "no known defect". The old wording, "what
+  happened to the running version after it shipped", read as if the release
+  were vulnerable.
+- **`list_releases` says it lists by release date.** What was learned after a
+  release (an advisory published later, a defect a later version fixed) is not
+  in it; `check_stack` (`later_for_running`), `get_release` (`later`) and
+  ratatosk.io's `/v2/events` carry it.
+- **`severity: null` is described as what it is: no grade was found in what
+  was read**, an advisory not yet published included, and the same advisory
+  can carry a grade on another release. The descriptions, the hint, the docs
+  and the agent prompt said the advisory states none.
+- **`check_stack` lists a running version newer than every analyzed release on
+  its line in `could_not_check`** (ratatosk has not analyzed it yet, or the
+  version was misread), with no range. It used to answer `releases: []` with
+  a `target_version` below the running version (etcd `v3.55.0` →
+  `v3.7.3`), which reads as "already up to date". The upstream requests stay
+  the same as for any other version. `check_upgrade` passes on the `404`
+  ratatosk.io now answers for the same case.
+- **Every tool reads a project slug without regard to case or surrounding
+  spaces.** `Kubernetes` was answered as an untracked project by `check_stack`
+  and as an empty list by `list_releases`. A slug ratatosk does not know is
+  now an error in `list_releases` too (`unknown project …`), and every answer
+  for an unknown name leads with checking the slug with `list_projects`: the
+  project may be listed under another slug. `check_stack` still marks it
+  `tracked: false`.
+- **`get_release` without a version for a tracked project with nothing
+  analyzed yet says so,** instead of telling the caller to check the slug.
+- **`check_upgrade` answers `changes`, `before_upgrade` and `later_for_from`
+  as arrays when they are empty,** as documented; an empty range gave
+  `null`.
+- **A project or version of `.` or `..` is refused, and an upstream answer
+  that is not a JSON object is an error.** Both are dot segments, which the
+  upstream resolved before routing: `get_release` with version `..` returned
+  every project's release list as if it were one release, and project `..`
+  with version `..` returned the website's HTML as a normal answer.
+  `check_upgrade` no longer turns a JSON object that is not an upgrade answer
+  into an empty briefing.
+- `check_stack` sends upstream the same requests whatever version runs: each
+  project's release list and its newest releases, then the range is cut in
+  this process. Fetching only the releases above the running version would
+  have revealed it. Public documents are cached for five minutes, so a repeat
+  call is free.
+- `get_release`, `list_releases` and `list_projects` keep their names and
+  return the `/v2` shape. `get_release` takes `lang`; `include_raw` is gone.
+  `list_releases` filters by `kind` and `since`, and works across projects.
+- The kagent agent prompt (chart and example) carries every rule earned from
+  live runs, moved to the new vocabulary.
+- The kagent RemoteMCPServer registers the full Service name
+  (`ratatosk-mcp.<namespace>.svc.cluster.local`, from the release namespace
+  and the new `clusterDomain` value) on both kagent lines: kagent 1.x agents
+  run in a sandbox that cannot resolve a short one.
+- The kagent 0.x manifests moved from `examples/kagent/` to
+  `examples/kagent/0.x/`. A raw URL that pointed at
+  `examples/kagent/ratatosk-remote-mcpserver.yaml` or `ratatosk-agent.yaml`
+  needs the `0.x/` segment; `ratatosk-deploy.yaml` stays where it was and
+  serves both sets.
+- CI reads the chart as rendered for each kagent API, not as template source:
+  the tool-allowlist and prompt checks cover both renderings and both example
+  sets, the prompt check also requires the four copies to say the same thing,
+  a new check pins which shape each API gets, and the install rehearsal runs
+  against pinned kagent-crds 0.10.4 and 1.0.0-rc1 in turn.
+
+### Removed
+
+- `list_changes`, `changes_by_entity`, `get_matter`: their `/v1` endpoints
+  have no `/v2` counterpart. `list_releases`, `search` and a briefing's
+  `also_in` answer the same questions.
+
 ## [0.10.0] — 2026-10-18
 
 ### Changed

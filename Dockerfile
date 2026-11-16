@@ -1,7 +1,7 @@
 # ratatosk-mcp — static Go binary on distroless. stdio by default; set
 # MCP_HTTP_ADDR=:8080 for the in-cluster streamable-HTTP mode (Helm chart).
 
-# Read-only client of the public ratatosk.io /v1 API. No credentials.
+# Read-only client of the public ratatosk.io /v2 API. No credentials.
 FROM golang:1.26 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
