@@ -25,6 +25,7 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | `rateLimitPerMin` | `0` (= 꺼짐) | `MCP_RATE_LIMIT_PER_MIN` 설정값으로, 직접 통제하지 않는 외부 호출자의 요청을 받는 서버에서 호출자 주소당 분당 요청 상한 지정(모든 MCP 메시지 합산) |
 | `maxInflight` | `0` (= 꺼짐) | `MCP_MAX_INFLIGHT` 설정값으로, 호출이 한꺼번에 몰릴 때 메모리 사용량을 제한하기 위한 전체 동시 처리 요청 수 상한(초과 요청은 최대 10초 동안 빈자리를 기다리고 자리가 나지 않으면 `Retry-After`가 붙은 `503` 반환) |
 | `cacheMaxMB` | `0` (= 32) | `MCP_CACHE_MAX_MB` 설정값으로, 응답 캐시 크기 상한(MiB) 지정 |
+| `metricsPort` | `0` (= 꺼짐) | `MCP_METRICS_ADDR` 설정값으로, 이 컨테이너 포트의 `GET /metrics`에서 요청 수 등 지표를 제공. Service에는 추가하지 않으므로 파드에서 수집. [지표](../../docs/install.ko.md#지표) 참고 |
 | `service.port` | `8080` | Service 및 MCP 엔드포인트 포트 |
 | `service.type` | `ClusterIP` | Service 유형 |
 | `resources` | requests: CPU 10m, 메모리 16Mi; limits: CPU 100m, 메모리 512Mi | 메모리 설정에 따라 동시에 처리할 수 있는 무거운 호출 수가 달라지고, CPU 설정에 따라 처리 속도가 달라집니다. [메모리와 동시 처리](../../docs/install.ko.md#메모리와-동시-처리)를 참조합니다 |

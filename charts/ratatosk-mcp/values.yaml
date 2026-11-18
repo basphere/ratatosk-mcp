@@ -59,6 +59,13 @@ maxInflight: 0
 # 32. Answers are cached for five minutes; this caps the bytes they hold.
 cacheMaxMB: 0
 
+# Metrics port (MCP_METRICS_ADDR=":<port>"): 0 = off (default). When set, the
+# server serves request counters at GET /metrics on this container port, a
+# listener of its own. It is not added to the Service, so only what can reach
+# the pod (your Prometheus) sees it. Labels carry no arguments, addresses or
+# sessions; see "Metrics" in docs/install.en.md.
+metricsPort: 0
+
 service:
   type: ClusterIP
   port: 8080

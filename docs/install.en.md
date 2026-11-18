@@ -157,6 +157,9 @@ anywhere:
 - The MCP server log keeps only the startup line and upstream error lines;
   normal requests are not logged. Error lines carry no request arguments
   either.
+- The MCP server counts requests by method, tool name, outcome, and one bit
+  for whether the caller is the operator's own (see [Metrics](#metrics)). The
+  counts carry no arguments, addresses or sessions.
 - The upstream API's request log writes one line only when the caller sends a
   `traceparent`, and even that line holds only a normalized endpoint label
   and the trace_id. Paths and queries are not recorded.
@@ -473,6 +476,7 @@ the [chart README](../charts/ratatosk-mcp/README.md).
 | `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *(off)* | Per-caller ceiling on requests per minute (every MCP message counts, one per tool call), for a server that fronts callers you do not control. Each caller address gets its own budget, so one busy caller cannot starve the rest; over the limit answers `429` with `Retry-After`. The address is an in-memory bucket key for the length of the window. It is never logged and never sent upstream. It is read from `CF-Connecting-IP`, then `X-Forwarded-For`, then `X-Real-IP`, then the peer address; the proxy in front must set one of those **and strip whatever the client sent**, since a limiter keyed on a caller-controlled value is not a limiter. Leave off for a single-tenant install |
 | `MCP_MAX_INFLIGHT` | `maxInflight` | *(off)* | Maximum number of requests the server handles concurrently across all callers. Requests above the cap wait up to 10 s for a slot, then receive `503` with `Retry-After`. See [Memory and concurrency](#memory-and-concurrency) |
 | `MCP_CACHE_MAX_MB` | `cacheMaxMB` | `32` | Response cache budget in MiB. Responses are cached for five minutes |
+| `MCP_METRICS_ADDR` | `metricsPort` | *(off)* | HTTP mode only: when set (e.g. `:9090`), serve request counters at `GET /metrics` on that address, a listener separate from `/mcp`. See [Metrics](#metrics) |
 
 Running HTTP mode directly with Docker:
 
@@ -608,6 +612,51 @@ agent → MCP server → upstream. This is what joins the layers the audit
 record cannot: it links a prompt in your agent platform to the tool call
 here. Malformed values are dropped and not forwarded; send nothing and
 nothing is recorded.
+
+## Metrics
+
+Metrics are off by default. Set `MCP_METRICS_ADDR` in HTTP mode (chart value
+`metricsPort`) and the server serves Prometheus text at `GET /metrics` on that
+address. It is a listener of its own, separate from `/mcp`, so a proxy that
+forwards the MCP port does not expose it. On stdio the variable is ignored,
+with a warning.
+
+```bash
+helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9090
+```
+
+| Metric | Type | Labels | What it measures |
+|---|---|---|---|
+| `ratatosk_mcp_requests_total` | counter | `method`, `tool`, `outcome`, `self` | Requests to `/mcp`, one per POST |
+| `ratatosk_mcp_upstream_requests_total` | counter | `tool`, `outcome` | Requests sent to the upstream `/v2` API. Answers from the response cache are not requests |
+| `ratatosk_mcp_request_duration_seconds` | histogram | `tool` | How long a tool call took in the server, from the request to the answer |
+| `ratatosk_mcp_response_bytes` | histogram | `tool` | The size of a tool call's answer text, as the agent receives it |
+| `ratatosk_mcp_build_info` | gauge | `version` | The server version; the value is always 1 |
+
+Every label value comes from a fixed list:
+
+- `method`: `initialize`, `tools/list`, `tools/call`, or `other`
+  (notifications, `ping`, anything else).
+- `tool`: one of the six tool names; `unknown` for any other name a caller
+  sends; empty when the method is not `tools/call`.
+- `outcome` of a request: `ok`; `error` (a request refused as malformed, a
+  protocol error, or a tool answer marked `isError`, such as an unknown slug
+  or a failed upstream request); `rate_limited` (`429` from
+  `MCP_RATE_LIMIT_PER_MIN`); `busy` (no slot under `MCP_MAX_INFLIGHT` within
+  10 s, or the caller stopped waiting).
+- `outcome` of an upstream request: `ok` (`200`); `error` (any other status,
+  including a `404` for a version not on record); `timeout`; `transport` (no
+  answer: connection refused, DNS, connection reset); `canceled` (the call
+  ended first).
+- `self`: `true` when the caller's address is in `MCP_SELF_CALLERS`
+  (comma-separated; an entry ending in `.` matches as a prefix), the same
+  judgement the server sends upstream in `X-Ratatosk-Caller`. Unset, every
+  caller is `false`.
+
+Nothing a caller sends becomes a label: no arguments, project names,
+addresses, user agents or sessions. The set of series is fixed when the server
+starts, and every series starts at 0, so a rate over a window that begins at a
+restart still counts the first call.
 
 ## Troubleshooting
 

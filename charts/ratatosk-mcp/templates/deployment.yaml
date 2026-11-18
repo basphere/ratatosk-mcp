@@ -51,9 +51,17 @@ spec:
             - name: MCP_CACHE_MAX_MB
               value: {{ .Values.cacheMaxMB | quote }}
 {{- end }}
+{{- if .Values.metricsPort }}
+            - name: MCP_METRICS_ADDR
+              value: ":{{ .Values.metricsPort }}"
+{{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.port }}
+{{- if .Values.metricsPort }}
+            - name: metrics
+              containerPort: {{ .Values.metricsPort }}
+{{- end }}
           livenessProbe:
             httpGet: { path: /healthz, port: http }
           readinessProbe:

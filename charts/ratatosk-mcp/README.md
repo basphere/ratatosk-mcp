@@ -27,6 +27,7 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | `rateLimitPerMin` | `0` (= off) | `MCP_RATE_LIMIT_PER_MIN`: requests per minute per caller address (every MCP message counts). Only for a server that fronts callers you do not control |
 | `maxInflight` | `0` (= off) | `MCP_MAX_INFLIGHT`: maximum number of requests the server handles concurrently across all callers. Requests above the cap wait up to 10 s, then receive `503` with `Retry-After`. Set this when many callers may arrive together, and choose a cap the memory limit can support |
 | `cacheMaxMB` | `0` (= 32) | `MCP_CACHE_MAX_MB`: response cache budget in MiB |
+| `metricsPort` | `0` (= off) | `MCP_METRICS_ADDR`: serve request counters at `GET /metrics` on this container port. It is not added to the Service; scrape the pod. See [Metrics](../../docs/install.en.md#metrics) |
 | `service.port` | `8080` | Service / MCP endpoint port |
 | `service.type` | `ClusterIP` | Service type |
 | `resources` | requests 10m CPU, 16Mi; limits 100m CPU, 512Mi | Memory determines how many heavy calls can run concurrently; CPU determines how quickly they finish. See [Memory and concurrency](../../docs/install.en.md#memory-and-concurrency) |

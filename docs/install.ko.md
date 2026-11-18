@@ -92,6 +92,7 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
 호스팅 엔드포인트에서는 `check_stack`에 전달한 실행 중인 버전 목록이 서버 메모리를 거쳐 처리되지만, 요청 내용은 어디에도 기록되지 않습니다.
 
 - MCP 서버 로그에는 서버 시작 줄과 업스트림 오류 줄만 남고 정상 요청은 기록되지 않으며, 오류 줄에도 요청 인자 값은 포함되지 않습니다.
+- MCP 서버는 요청 수를 호출 방식, 도구 이름, 결과, 그리고 운영자 자신의 호출인지를 나타내는 한 비트로만 셉니다([지표](#지표) 참고). 인자, 주소, 세션은 세지 않습니다.
 - 업스트림 API 요청 로그는 호출자가 `traceparent`를 전달한 경우에만 한 줄을 남기며, 경로와 쿼리 없이 정규화된 엔드포인트 라벨과 `trace_id`만 기록합니다.
 - 서버 앞단의 접근 로그에서는 쿼리 문자열을 제거합니다. 슬러그나 버전이 경로에 들어가는 `/v2/releases/…`·`/v2/upgrade/…` 경로는 앞부분만 남기고 IP는 가립니다. 요청 본문은 기록하지 않습니다. 접근 로그는 서버 안에서 7일 이내에 순환 삭제되며, 사본은 운영자의 중앙 로그 저장소에 전송되어 그곳에서도 7일간 보관됩니다.
 - 도구 호출 내역을 남기는 감사 스트림은 호스팅 환경에서 비활성화되어 있으며 앞으로도 켜지 않습니다.
@@ -327,6 +328,7 @@ kagent 도구 서버(`kagent-tool-server`)에는 `k8s_apply_manifest`, `k8s_dele
 | `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *(꺼짐)* | 직접 통제하지 않는 외부 호출자의 요청을 받는 서버에서 적용하는 호출자당 분당 요청 상한(모든 MCP 메시지를 세며 도구 호출 하나가 1회, 단일 사용자 설치에서는 불필요). 호출자 주소별로 한도를 따로 집계하므로 특정 호출자가 요청을 많이 보내도 다른 호출자에게 영향이 없으며, 상한 초과 시 `Retry-After`가 붙은 `429`를 반환함. 주소는 윈도우 유지 시간 동안 메모리 버킷 키로만 쓰이고 기록하거나 업스트림으로 보내지 않으며, `CF-Connecting-IP` → `X-Forwarded-For` → `X-Real-IP` → 피어 주소 순으로 읽으므로 앞단 프록시가 그중 하나를 채우고 **클라이언트가 임의로 보낸 헤더 값은 반드시 제거**해야 함 |
 | `MCP_MAX_INFLIGHT` | `maxInflight` | *(꺼짐)* | 모든 호출자를 합쳐 서버가 동시에 처리하는 요청 수의 상한. 상한을 넘은 요청은 최대 10초 동안 빈자리를 기다리고, 그 안에 자리가 나지 않으면 `Retry-After`가 붙은 `503`을 받음([메모리와 동시 처리](#메모리와-동시-처리) 참고) |
 | `MCP_CACHE_MAX_MB` | `cacheMaxMB` | `32` | 응답 캐시 크기 상한(MiB)이며 응답은 5분 동안 캐시됨 |
+| `MCP_METRICS_ADDR` | `metricsPort` | *(꺼짐)* | HTTP 모드에서만 동작. 설정 시(예: `:9090`) 그 주소의 `GET /metrics`에서 요청 수 등 지표를 제공하며, `/mcp`와 다른 별도 리스너를 씀([지표](#지표) 참고) |
 
 Docker로 HTTP 모드를 직접 실행하는 예시는 다음과 같습니다.
 
@@ -407,6 +409,32 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=met
 ```
 
 유효한 `traceparent`를 보내면 해당 호출이 남기는 오류·`debug` 로그와 감사 레코드에 `trace_id` 필드가 찍히고, 업스트림 `/v2` 요청에도 같은 `traceparent` 헤더가 전달되어 에이전트 플랫폼의 프롬프트부터 MCP 서버의 도구 호출과 업스트림 요청까지 하나의 `trace_id`로 연결할 수 있습니다. 형식이 잘못된 값은 버려져 전달되지 않으며, 보내지 않으면 아무것도 기록되지 않습니다.
+
+## 지표
+
+지표는 기본적으로 꺼져 있습니다. HTTP 모드에서 `MCP_METRICS_ADDR`(차트 값 `metricsPort`)을 설정하면 그 주소의 `GET /metrics`에서 Prometheus 텍스트 형식으로 지표를 제공합니다. `/mcp`와 다른 별도 리스너이므로 MCP 포트를 프록시로 열어도 지표는 노출되지 않습니다. stdio에서는 이 변수를 무시하고 경고를 남깁니다.
+
+```bash
+helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9090
+```
+
+| 지표 | 타입 | 라벨 | 설명 |
+|---|---|---|---|
+| `ratatosk_mcp_requests_total` | counter | `method`, `tool`, `outcome`, `self` | `/mcp`로 들어온 요청 수. POST 하나가 요청 하나 |
+| `ratatosk_mcp_upstream_requests_total` | counter | `tool`, `outcome` | 업스트림 `/v2` API로 보낸 요청 수. 응답 캐시에서 꺼낸 답은 세지 않음 |
+| `ratatosk_mcp_request_duration_seconds` | histogram | `tool` | 서버가 도구 호출 요청을 받아 답할 때까지 걸린 시간 |
+| `ratatosk_mcp_response_bytes` | histogram | `tool` | 에이전트가 받는 도구 응답 글의 크기(바이트) |
+| `ratatosk_mcp_build_info` | gauge | `version` | 서버 버전. 값은 항상 1 |
+
+라벨 값은 모두 정해진 목록에서만 나옵니다.
+
+- `method`: `initialize`, `tools/list`, `tools/call`, 그 밖의 메서드(알림, `ping` 등)는 `other`.
+- `tool`: 도구 여섯 개의 이름. 호출자가 그 밖의 이름을 보내면 `unknown`, 메서드가 `tools/call`이 아니면 빈 값.
+- 요청의 `outcome`: `ok`, `error`(형식이 잘못되어 거절된 요청, 프로토콜 오류, 또는 모르는 슬러그나 업스트림 요청 실패처럼 `isError`로 표시된 도구 응답), `rate_limited`(`MCP_RATE_LIMIT_PER_MIN`에 걸린 `429`), `busy`(`MCP_MAX_INFLIGHT` 아래에서 10초 안에 빈자리가 나지 않았거나 호출자가 기다리다 끊은 요청).
+- 업스트림 요청의 `outcome`: `ok`(`200`), `error`(그 밖의 상태 코드. 기록에 없는 버전의 `404` 포함), `timeout`, `transport`(응답 없음: 연결 거부, DNS, 연결 끊김), `canceled`(호출이 먼저 끝남).
+- `self`: 호출자 주소가 `MCP_SELF_CALLERS`(쉼표로 구분, `.`으로 끝나는 항목은 앞부분 일치)에 있으면 `true`. 서버가 업스트림에 `X-Ratatosk-Caller`로 보내는 판정과 같습니다. 설정하지 않으면 모든 호출자가 `false`입니다.
+
+호출자가 보낸 내용은 라벨이 되지 않습니다. 인자, 프로젝트 이름, 주소, User-Agent, 세션은 어디에도 없습니다. 지표 계열의 목록은 서버가 시작할 때 정해지고 모든 계열이 0에서 시작하므로, 재시작 시점부터 재는 구간에서도 첫 호출이 빠지지 않습니다.
 
 ## 문제 해결
 

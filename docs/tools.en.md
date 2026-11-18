@@ -100,7 +100,8 @@ top level of its answer, and `later_for_from` in place of `later_for_running`.
 
 | Field | Where | Type | Meaning |
 |---|---|---|---|
-| `summary` | component | `object` | Releases in range (`releases`), change counts by kind (`counts`) and warnings (`warnings`) |
+| `summary` | component | `object` | Releases in range (`releases`), change counts by kind (`counts`), warnings (`warnings`) and `distinct_advisories`. `counts` and `warnings` add up the releases in range one by one, so a fix shipped on several release lines is counted once per release |
+| `distinct_advisories` | `summary` | `object` | The advisories the security changes in range cite, each counted once: `total`, and by grade `critical`, `high`, `medium`, `low` and `ungraded` (no grade found). A CVE and the GHSA cited with it are one advisory. An advisory's grade is the highest grade of the changes that cite it alone. Security changes that cite no advisory id are not counted here, and neither are those `note` says your branch already fixed. Quote this, not `warnings.critical`, when you say how many advisories an upgrade fixes |
 | `releases` | component | `array` | The versions in (running, target], oldest first, on the running version's release line |
 | `before_upgrade` | component | `array` | Every prerequisite, known issue and upgrade guide in range, each with its version. They usually sit on the release that starts a new minor; read all of them |
 | `changes` | component | `array` | The kinds that ask for a decision: `security`, `breaking`, `deprecations`, `important_fixes`. Security goes most severe first; within a grade, and within each of the other kinds, changes that say what to do (`action_required`, `also_required`, a stated or inferred `no_downgrade` or `removed_in`) come first. The other three kinds are counted in `summary.counts`; `get_release` has them |
@@ -130,6 +131,13 @@ the same advisory can be fixed more than once in range. The change appears
 once, at the earliest release; a release on another branch is named in that
 change's `also_in`. A later release on the same branch that fixes the advisory
 again appears separately.
+
+Two changes are the same fix when they cite the same advisories, and a CVE and
+the GHSA cited with it count as one advisory. Argo CD v3.2.11 cites
+GHSA-3v3m-wc6v-x4x3, and v3.3.9 cites it together with CVE-2026-42880: the
+entry is v3.2.11, `also_in` names v3.3.9, and its `advisories` lists both ids.
+A change that cites several advisories, such as one card for a release's eight
+security fixes, is the same fix only as a change citing the same advisories.
 
 **`note`**: the cases it reports are security changes whose advisory the
 running version's branch already fixed at or below the running version (unless a later release on the

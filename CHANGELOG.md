@@ -5,6 +5,40 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+### Added
+
+- **`summary.distinct_advisories` in `check_stack` and `check_upgrade`: the
+  advisories in range, each counted once.** `summary.counts` and
+  `summary.warnings` add up the releases in range one by one, so a fix shipped
+  on several release lines is counted once per release: Argo CD v2.10.7 to
+  v3.6.1 says `critical: 15` where five advisories are critical.
+  `distinct_advisories` gives `total` and a count per grade (`critical`,
+  `high`, `medium`, `low`, `ungraded`), and says 5. `counts` and `warnings`
+  keep their values. Security changes that cite no advisory id, and those
+  `note` reports as already fixed on your branch, are not counted.
+- **Request metrics, off by default.** Set `MCP_METRICS_ADDR` (HTTP mode;
+  chart value `metricsPort`) and the server serves Prometheus text at
+  `GET /metrics` on that address, a listener separate from `/mcp`:
+  `ratatosk_mcp_requests_total{method, tool, outcome, self}`,
+  `ratatosk_mcp_upstream_requests_total{tool, outcome}`,
+  `ratatosk_mcp_request_duration_seconds{tool}`,
+  `ratatosk_mcp_response_bytes{tool}` and `ratatosk_mcp_build_info{version}`.
+  Every label value comes from a fixed list; arguments, project names,
+  addresses and sessions never become labels. Requests the rate limit or the
+  in-flight cap turn away are counted too (`rate_limited`, `busy`). See
+  "Metrics" in the install guide.
+
+### Changed
+
+- **`also_in` groups the same fix when the releases cite it under different
+  ids.** A fix was matched by its whole id set, so Argo CD's GHSA-3v3m, cited
+  alone on v3.2.11 and with CVE-2026-42880 on v3.3.9, came back as two
+  entries. Changes are now the same fix when they cite the same advisories,
+  and a CVE and the GHSA cited with it count as one. The entry's `advisories`
+  lists every id its releases cite. A change that cites several advisories
+  (one card for a release's eight security fixes) still matches only a change
+  citing the same advisories, so it never merges separate fixes.
+
 ## [1.0.0] — 2026-11-16
 
 ### Added
