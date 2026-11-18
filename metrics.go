@@ -489,7 +489,14 @@ func metricsHTTPMiddleware(next http.Handler) http.Handler {
 		case outcome != "":
 		case sw.status >= 400:
 			outcome = "error"
-			t.body.fill() // the SDK can refuse before it reads (a missing Accept header)
+			// The SDK can refuse before it reads the body (a missing Accept
+			// header). Reading it now is safe only without Expect: once a status
+			// is written, net/http no longer sends 100 Continue, and a client
+			// waiting for it would hold this read until its own timeout. Such a
+			// request is labelled from what was read: method "other".
+			if req.Header.Get("Expect") == "" {
+				t.body.fill()
+			}
 		case sw.status == http.StatusAccepted:
 			outcome = "ok"
 		default:

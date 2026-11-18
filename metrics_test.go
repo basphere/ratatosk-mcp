@@ -470,6 +470,35 @@ func TestMetricsUpstreamOutcomes(t *testing.T) {
 	}
 }
 
+// A refusal written before the body was read (the SDK's Accept check), to a
+// client that waits for 100 Continue before it sends the body: once a status
+// is written net/http sends no 100 Continue, so the count must not wait for a
+// body that will not come. (In the full chain the batch refusal reads the
+// first byte before any status, which still triggers 100 Continue.)
+func TestMetricsDoNotWaitForABodyBehindExpect(t *testing.T) {
+	m := withMetrics(t)
+	h := metricsHTTPMiddleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "Accept must contain both 'application/json' and 'text/event-stream'", http.StatusBadRequest)
+	}))
+	pr, pw := io.Pipe() // a body that never arrives
+	defer pw.Close()
+	r := httptest.NewRequest(http.MethodPost, "/mcp", pr)
+	r.Header.Set("Expect", "100-continue")
+	done := make(chan struct{})
+	go func() {
+		h.ServeHTTP(httptest.NewRecorder(), r)
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the HTTP layer waited for a body the client holds back until 100 Continue")
+	}
+	if got := series(t, m)[req("other", "", "error", "false")]; got != 1 {
+		t.Errorf("other/error = %v, want 1", got)
+	}
+}
+
 func TestPeekLabels(t *testing.T) {
 	big := `{"components":[` + strings.Repeat(`{"project":"x","version":"v1"},`, 3000) + `{}]}`
 	cases := []struct{ body, method, tool string }{
