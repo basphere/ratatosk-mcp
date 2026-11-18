@@ -166,6 +166,7 @@ func rateLimitMiddleware(rl *rateLimiter, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ok, retry := rl.allow(callerKey(req), time.Now())
 		if !ok {
+			refusedFor(req, "rate_limited") // before the answer: it may read the body (metrics.go)
 			w.Header().Set("Retry-After", strconv.Itoa(retry))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)

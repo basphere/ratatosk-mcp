@@ -6,7 +6,8 @@
 // tell"): the caller's running versions are compared INSIDE this process, and
 // what goes upstream depends only on project slugs — see stack.go.
 //
-// Config: RATATOSK_URL (default https://ratatosk.io).
+// Config: RATATOSK_URL (default https://ratatosk.io); the rest is listed in
+// docs/install.en.md "Configuration reference".
 package main
 
 import (
@@ -15,6 +16,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"slices"
@@ -63,11 +65,35 @@ func main() {
 	api = newAPIClient(base)
 
 	server := newServer()
+	metricsAddr := os.Getenv("MCP_METRICS_ADDR")
 
 	// Two transports, one binary: stdio for local agents (Claude Code, MCP
 	// inspector), streamable HTTP for the in-cluster Service the Helm chart
 	// deploys — agents in the cluster connect to http://<svc>:8080/mcp.
 	if addr := os.Getenv("MCP_HTTP_ADDR"); addr != "" {
+		// Metrics, when asked for, listen on an address of their own: a proxy
+		// that forwards this server's port (the hosted Caddy forwards /mcp)
+		// cannot expose them, and the /mcp mux has no route to them.
+		metricsField := "off"
+		if metricsAddr != "" {
+			if metricsAddr == addr {
+				slog.Error("MCP_METRICS_ADDR must differ from MCP_HTTP_ADDR: metrics are served on a listener of their own")
+				os.Exit(1)
+			}
+			mx = newMetrics(buildVersion)
+			ln, err := net.Listen("tcp", metricsAddr)
+			if err != nil {
+				slog.Error("metrics listener failed", "kind", errKind(err))
+				os.Exit(1)
+			}
+			go func() {
+				if err := metricsServer(mx).Serve(ln); err != nil {
+					slog.Error("metrics server exited", "kind", errKind(err))
+					os.Exit(1)
+				}
+			}()
+			metricsField = metricsAddr + "/metrics"
+		}
 		// MCP_HTTP_STATELESS=1 serves every POST on a temporary session: no
 		// Mcp-Session-Id round-trip, GET/DELETE answer 405 — and, per go-sdk
 		// v1.7.0, it is the only HTTP mode that speaks the 2026-07-28 revision
@@ -93,16 +119,12 @@ func main() {
 		// upstream API deliberately cannot (see ratelimit.go). Off by default,
 		// which is what a self-hosted single-tenant server wants.
 		rl := rateLimitFromEnv(os.Getenv("MCP_RATE_LIMIT_PER_MIN"))
-		mux := http.NewServeMux()
 		// The in-flight cap sits behind the rate limiter: an over-limit caller is
 		// turned away without taking a slot (see inflight.go).
 		inflight := inflightFromEnv(os.Getenv("MCP_MAX_INFLIGHT"))
 		// A batch is refused behind the limiter (the attempt counts as a request)
 		// and before it can take a slot (see batch.go).
-		mux.Handle("/mcp", mcpHTTPChain(rl, inflight, 10*time.Second, handler))
-		mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-			w.WriteHeader(http.StatusOK)
-		})
+		mux := mcpMux(mcpHTTPChain(rl, inflight, 10*time.Second, handler))
 		mode := "stateful"
 		if stateless {
 			mode = "stateless"
@@ -116,7 +138,7 @@ func main() {
 		if inflight > 0 {
 			inflightField = strconv.Itoa(inflight)
 		}
-		slog.Info("listening", "transport", "http", "addr", addr+"/mcp", "mode", mode, "upstream", base, "version", buildVersion, "rate_limit", rateField, "max_inflight", inflightField)
+		slog.Info("listening", "transport", "http", "addr", addr+"/mcp", "mode", mode, "upstream", base, "version", buildVersion, "rate_limit", rateField, "max_inflight", inflightField, "metrics", metricsField)
 		// Explicit timeouts: this is an unauthenticated public endpoint, and the
 		// zero-value http.Server leaves every timeout unset (unbounded), so a
 		// client that dribbles a request header one byte at a time holds a
@@ -138,6 +160,11 @@ func main() {
 		}
 		return
 	}
+	if metricsAddr != "" {
+		// One stdio process serves one caller and is started by that caller;
+		// a port per process would collide as soon as a second client starts one.
+		slog.Warn("MCP_METRICS_ADDR is ignored on stdio: metrics are served in HTTP mode only")
+	}
 	slog.Info("listening", "transport", "stdio", "upstream", base, "version", buildVersion)
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		slog.Error("stdio session ended with error", "kind", errKind(err))
@@ -153,8 +180,23 @@ func main() {
 // caller class, the per-caller rate limit, the batch refusal, the in-flight
 // cap. A function of its own so a test can hold the order to account — the
 // batch refusal is only worth something between the limiter and the handler.
+//
+// The metrics layer sits right inside the caller class (it labels self from
+// it) and outside every refusal, so it sees each one; it is the identity while
+// metrics are off.
 func mcpHTTPChain(rl *rateLimiter, inflight int, wait time.Duration, handler http.Handler) http.Handler {
-	return callerClassMiddleware(rateLimitMiddleware(rl, rejectBatchMiddleware(inflightMiddleware(inflight, wait, handler))))
+	return callerClassMiddleware(metricsHTTPMiddleware(rateLimitMiddleware(rl, rejectBatchMiddleware(inflightMiddleware(inflight, wait, handler)))))
+}
+
+// mcpMux is everything the MCP listener serves: /mcp and /healthz. Metrics are
+// not here — they have a listener of their own (metricsServer).
+func mcpMux(mcpHandler http.Handler) *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", mcpHandler)
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	return mux
 }
 
 func newServer() *mcp.Server {
@@ -280,6 +322,9 @@ func newServer() *mcp.Server {
 	// identity function otherwise. See audit.go and docs/logging-design.md.
 	server.AddReceivingMiddleware(auditMiddleware)
 	server.AddReceivingMiddleware(deadlineMiddleware)
+	// Added last, so it is the outermost: a tool call is timed from the
+	// moment it arrives to its answer. The identity while metrics are off.
+	server.AddReceivingMiddleware(metricsMiddleware)
 	return server
 }
 

@@ -37,12 +37,16 @@ func inflightMiddleware(n int, wait time.Duration, next http.Handler) http.Handl
 		select {
 		case slots <- struct{}{}:
 		case <-t.C:
+			refusedFor(req, "busy") // before the answer: it may read the body (metrics.go)
 			w.Header().Set("Retry-After", "5")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_, _ = w.Write([]byte(`{"error":"server busy, retry shortly"}`))
 			return
 		case <-req.Context().Done():
+			// The caller stopped waiting for a slot: still a request the cap
+			// turned away, and counted as such.
+			refusedFor(req, "busy")
 			return
 		}
 		defer func() { <-slots }()

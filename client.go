@@ -221,6 +221,7 @@ func (c *apiClient) getRaw(ctx context.Context, endpoint, path string, q url.Val
 	start := time.Now()
 	resp, err := c.http.Do(req)
 	if err != nil {
+		mx.countUpstream(toolFrom(ctx), upstreamOutcome(err))
 		slog.ErrorContext(ctx, "upstream fetch failed", "upstream", endpoint, "kind", errKind(err))
 		// Transport errors carry the full request URL and the resolved address
 		// ("dial tcp 172.x.x.x:3000: ..."). That string is returned to the
@@ -233,8 +234,16 @@ func (c *apiClient) getRaw(ctx context.Context, endpoint, path string, q url.Val
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
+		mx.countUpstream(toolFrom(ctx), upstreamOutcome(err))
 		slog.ErrorContext(ctx, "upstream body read failed", "upstream", endpoint, "kind", errKind(err))
 		return nil, fmt.Errorf("upstream response read failed (%s)", errKind(err))
+	}
+	// ok is a 200; error is any other answer (a 404 for a version not on
+	// record included). Requests that got no answer are counted above.
+	if resp.StatusCode == http.StatusOK {
+		mx.countUpstream(toolFrom(ctx), "ok")
+	} else {
+		mx.countUpstream(toolFrom(ctx), "error")
 	}
 	switch {
 	case resp.StatusCode == http.StatusOK:
