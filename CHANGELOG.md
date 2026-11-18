@@ -13,12 +13,16 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   on several release lines is counted once per release: Argo CD v2.10.7 to
   v3.6.1 says `critical: 15` where five advisories are critical.
   `distinct_advisories` gives `total` and a count per grade (`critical`,
-  `high`, `medium`, `low`, `ungraded`), and says 5. `counts` and `warnings`
-  keep their values. A CVE and the GHSA cited with it are one advisory, except
-  where cards in range pair those ids differently: then each id counts on its
-  own, so an advisory can be counted twice but two are never counted as one.
-  Security changes that cite no advisory id, and those `note` reports as
-  already fixed on your branch, are not counted.
+  `high`, `medium`, `low`, `ungraded`), and says 5. A CVE and the GHSA cited
+  with it are one advisory, except where cards in range pair those ids
+  differently: then each id counts on its own, so an advisory can be counted
+  twice but two are never counted as one. An advisory's grade is the highest
+  grade of the changes citing it alone, or, when every change citing it cites
+  other advisories too, the highest grade of those. Security changes that cite
+  no advisory id, and those `note` reports as already fixed on your branch,
+  are not counted. Everything else in a briefing is as in 1.0.0: `counts` and
+  `warnings` keep their values, and the changes listed, their order and
+  `also_in` do not change.
 - **Request metrics, off by default.** Set `MCP_METRICS_ADDR` (HTTP mode;
   chart value `metricsPort`) and the server serves Prometheus text at
   `GET /metrics` on that address, a listener separate from `/mcp`:
@@ -33,31 +37,6 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   waits for `100 Continue`, so a refusal is still answered at once. With
   metrics off nothing of a refused request is read. See "Metrics" in the
   install guide.
-
-### Changed
-
-- **`also_in` can group the same fix cited under different ids.** A fix was
-  matched by its whole id set. A release that cites the same advisory under
-  other ids now joins the entry's `also_in` when it shares an id with every
-  change the entry stands for and says nothing the entry does not (the same
-  `affects`, workaround, regression note and steps); the entry's
-  `advisories` then lists the ids of both. A release that says more stays an
-  entry of its own, as in 1.0.0: Argo CD's GHSA-3v3m, cited alone on v3.2.11
-  and with CVE-2026-42880 on v3.3.9, stays two entries because v3.3.9 names a
-  regression since 3.3.0 and words `affects` differently. In practice releases
-  word `affects` in their own way, so this rarely joins entries. Every
-  `also_in` version and every field 1.0.0 returned for a range is still
-  returned. What this guarantees: two changes in one entry always share an
-  id, and ids that the cards in range pair in conflicting ways (Envoy cites
-  CVE-2026-48743 with two different GHSAs) group nothing. A wrong id that no
-  other card contradicts is taken at its word.
-
-### Fixed
-
-- **A second change of one release citing the same ids is kept when its
-  regression or no-downgrade note differs from the first.** Only a missing
-  note kept it listed; a different value was folded into the first change
-  and dropped from the answer.
 
 ## [1.0.0] — 2026-11-16
 
