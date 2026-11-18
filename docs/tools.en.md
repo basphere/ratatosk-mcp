@@ -132,17 +132,6 @@ once, at the earliest release; a release on another branch is named in that
 change's `also_in`. A later release on the same branch that fixes the advisory
 again appears separately.
 
-Two changes are the same fix when they cite the same ids. A release that cites
-the advisory under other ids (a CVE and the GHSA cited with it are one
-advisory) goes into `also_in` only when it shares an id with every change the
-entry stands for and says nothing the entry does not: the same `affects`,
-workaround, regression note and steps. Its ids are then added to `advisories`.
-Otherwise it is listed on its own. Argo CD v3.2.11 cites GHSA-3v3m-wc6v-x4x3,
-and v3.3.9 cites it together with CVE-2026-42880; v3.3.9 names a regression
-since 3.3.0 and words `affects` differently, so both are listed. A change that
-cites several advisories, such as one card for a release's eight security
-fixes, is the same fix only as a change citing the same advisories.
-
 **`note`**: the cases it reports are security changes whose advisory the
 running version's branch already fixed at or below the running version (unless a later release on the
 same branch fixed it again), a target version at or below the running version,

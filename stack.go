@@ -660,10 +660,6 @@ type briefChange struct {
 	AlsoIn          []string          `json:"also_in,omitempty"`
 	Later           []json.RawMessage `json:"later,omitempty"`
 	advKey          string
-	// members are the ids of the changes this entry stands for besides its
-	// own (folded in: same release, another branch, or the same fix). Never
-	// sent; the regression harness (ranges_test.go) reads it.
-	members []string
 }
 
 type rangeRelease struct {
@@ -720,13 +716,7 @@ func attrOf(a *v2Attr) *v2Attr {
 
 // carriesItsOwn says a change asks the operator for something the entry it
 // would fold into does not: its own required step, workaround, no-downgrade
-// warning or regression note. Until 1.1.0 a no-downgrade warning or regression
-// note counted only when the entry had none, so a different one was dropped
-// with the fold (independent review, 2026-11-18, which found the same loss in
-// the first 1.1.0 draft's grouping: envoy v1.39.0 regression_since 1.18.0 and
-// 1.37.0 folded under an entry saying 1.36.0). A different value now keeps
-// its change listed. On seven live ranges the same day no two changes of one
-// release with the same ids differed there, so no 1.0.0 answer changes.
+// warning or regression note.
 func carriesItsOwn(c v2Change, kept briefChange) bool {
 	if s := strOf(c.AlsoRequired); s != "" && s != kept.AlsoRequired {
 		return true
@@ -734,41 +724,10 @@ func carriesItsOwn(c v2Change, kept briefChange) bool {
 	if w := attrOf(c.Workaround); w != nil && (kept.Workaround == nil || briefText(w.Text) != kept.Workaround.Text) {
 		return true
 	}
-	if nd := attrOf(c.NoDowngrade); nd != nil && (kept.NoDowngrade == nil || nd.Text != kept.NoDowngrade.Text) {
+	if attrOf(c.NoDowngrade) != nil && kept.NoDowngrade == nil {
 		return true
 	}
-	rs := attrOf(c.RegressionSince)
-	return rs != nil && (kept.RegressionSince == nil || briefText(rs.Text) != kept.RegressionSince.Text)
-}
-
-// addsToEntry says a briefing entry carries something the entry it would be
-// grouped into lacks or says differently — any field the agent reads besides
-// the title and body: who it affects, a step, a workaround, a no-downgrade or
-// regression note, a removal, a flag, or a later finding. Grouping such an
-// entry would drop that from the answer, where 1.0.0 listed it (see
-// sameFix.group in advisories.go).
-func addsToEntry(own, kept briefChange) bool {
-	if own.ActionRequired != "" && own.ActionRequired != kept.ActionRequired ||
-		own.AlsoRequired != "" && own.AlsoRequired != kept.AlsoRequired {
-		return true
-	}
-	for _, p := range [][2]*v2Attr{
-		{own.Affects, kept.Affects}, {own.NoDowngrade, kept.NoDowngrade}, {own.RemovedIn, kept.RemovedIn},
-		{own.Workaround, kept.Workaround}, {own.RegressionSince, kept.RegressionSince},
-	} {
-		if p[0] != nil && (p[1] == nil || *p[0] != *p[1]) {
-			return true
-		}
-	}
-	if own.SecurityUnclear && !kept.SecurityUnclear || own.SilentFailure && !kept.SilentFailure {
-		return true
-	}
-	for _, l := range own.Later {
-		if !slices.ContainsFunc(kept.Later, func(k json.RawMessage) bool { return string(k) == string(l) }) {
-			return true
-		}
-	}
-	return false
+	return attrOf(c.RegressionSince) != nil && kept.RegressionSince == nil
 }
 
 // carriesAStep says a briefing entry tells the operator what to do or plan:
@@ -811,11 +770,8 @@ func branchOf(v string) string {
 	return version.Line(v) + "/" + strconv.Itoa(k[0]) + "." + strconv.Itoa(k[1])
 }
 
-// advisoryKey is a change's whole id set: sorted, upper-cased, as one string.
-// It is the 1.0.0 identity of a fix across branches, and still the first one
-// buildBriefing groups by; sameFix.group then groups further where it is
-// safe. It also decides "already fixed on the running branch" (every id must
-// be there).
+// advisoryKey is the identity of a security fix across branches: the sorted,
+// upper-cased advisory ids. A change citing none has no identity to compare.
 func advisoryKey(ids []string) string {
 	if len(ids) == 0 {
 		return ""
@@ -842,27 +798,17 @@ func advisoryKey(ids []string) string {
 // carries: that is a follow-up to an incomplete fix, and dropping it hid a
 // critical change behind a count (independent review, 2026-11-11). Only other
 // branches' backports are settled. nil (check_upgrade) settles nothing.
-//
-// Security changes are grouped in two steps. The first is the 1.0.0 grouping,
-// by whole id set, unchanged but for carriesItsOwn comparing values. The
-// second, sameFix.group (1.1.0, advisories.go), joins entries of that first
-// step that are the same fix under different ids. Two steps, and not one pass keyed by the
-// advisory, because a 1.x answer may group more than 1.0.0 did and never less:
-// keyed by the advisory, the entry a backport folded into was no longer the
-// one 1.0.0 chose, and also_in relations 1.0.0 gave were split across entries
-// (envoy CVE-2026-48044: also_in [v1.38.3] in 1.0.0, two entries in the
-// one-pass draft — independent review, 2026-11-18).
 func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey []int) (briefing, int) {
 	b := briefing{
 		Summary:  &stackSummary{Counts: map[string]int{}, Warnings: map[string]int{"critical": 0, "no_downgrade": 0}},
 		Releases: &[]rangeRelease{},
 	}
 	settled := 0
-	// Read the whole range before grouping: a link between two ids can sit on
-	// a later release than the changes it joins (see advisories.go).
+	// distinct_advisories (1.1.0) counts what is listed; it reads the whole
+	// range first, as a link between two ids can sit on a later release than
+	// the changes it joins (advisories.go). It changes nothing below.
 	ix := newAdvisoryIndex(docs)
 	tally := newAdvisoryTally()
-	same := newSameFix(ix)
 	firstByAdv := map[string]int{} // advisory key → index in b.Changes
 	// advisory key + branch → an EARLIER release of that branch carried it. The
 	// first release of a branch that carries an advisory already listed is the
@@ -875,7 +821,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 	// listed 47 extra entries and pushed five distinct advisories out of the
 	// cap of 20 (final review, same day; 36 of 37 repeats sat inside one release).
 	advOnBranch := map[string]bool{}
-	for at, d := range docs {
+	for _, d := range docs {
 		inRelease := map[string]int{} // advisory key → the entry this release's changes stand under
 		var touched []string          // advisory key + branch pairs to mark once the release is read
 		onRunningBranch := false
@@ -923,7 +869,6 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 					}
 				}
 				tally.add(ix.advisories(c.Advisories), c.Advisories, c.Severity)
-				same.cited(c.Advisories, d.Version, at)
 				if key != "" {
 					branch := key + "|" + branchOf(d.Version)
 					if i, ok := inRelease[key]; ok {
@@ -936,7 +881,6 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						// folding them dropped that instruction without a trace.
 						if !carriesItsOwn(c, b.Changes[i]) {
 							raiseSeverity(&b.Changes[i], c.Severity)
-							b.Changes[i].members = append(b.Changes[i].members, c.ID)
 							continue
 						}
 					} else {
@@ -948,7 +892,6 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 							// not hidden under an ungraded first entry.
 							b.Changes[i].AlsoIn = append(b.Changes[i].AlsoIn, d.Version)
 							raiseSeverity(&b.Changes[i], c.Severity)
-							b.Changes[i].members = append(b.Changes[i].members, c.ID)
 							inRelease[key] = i
 							continue
 						}
@@ -989,7 +932,6 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 			advOnBranch[t] = true
 		}
 	}
-	b.Changes = same.group(b.Changes)
 	// Kind first (security leads); security by grade, so a cap cuts the least
 	// severe; then, inside a grade and inside the kinds that have no grade,
 	// entries that carry a step before those that do not, so a cap never cuts
@@ -1437,9 +1379,7 @@ var stackHint = "briefing (a data classification, not a recommendation — chang
 	"rolling back after the upgrade is not possible; removed_in is when a deprecation turns into a removal. " +
 	"severity is the grade the project's own advisory states; null means no grade was found in what was read " +
 	"(an advisory not yet published included), and the same advisory can carry a grade on another release — rank urgency with it, " +
-	"never decide who is affected with it. also_in names other releases in range carrying the same fix: the same ids, " +
-	"or the same advisory under other ids when that release says nothing the entry does not; advisories lists the ids " +
-	"all of them cite. A release that says more about the same advisory is listed on its own. " +
+	"never decide who is affected with it. also_in names other releases in range carrying the same advisories. " +
 	"changes_omitted counts, per kind, what did not fit (security keeps the most severe; within a grade, and in the " +
 	"other kinds, the changes that say what to do — action_required, also_required, a stated or inferred no_downgrade " +
 	"or removed_in — are kept first) — narrow with target_version " +
