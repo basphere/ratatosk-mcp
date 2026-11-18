@@ -834,3 +834,44 @@ func TestPeekLabelsReadKeysAsTheSDK(t *testing.T) {
 		}
 	}
 }
+
+// blockingWriter holds every Write until release is closed.
+type blockingWriter struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (b *blockingWriter) Write(p []byte) (int, error) {
+	close(b.entered)
+	<-b.release
+	return len(p), nil
+}
+
+// A scrape that reads slowly does not hold the counters: writeTo wrote the
+// exposition with the lock held, so every request waited on the scraper's
+// network write (final review, 2026-11-18).
+func TestMetricsSlowScrapeDoesNotStallCounting(t *testing.T) {
+	m := newMetrics("test")
+	w := &blockingWriter{entered: make(chan struct{}), release: make(chan struct{})}
+	scraped := make(chan struct{})
+	go func() {
+		_ = m.writeTo(w)
+		close(scraped)
+	}()
+	<-w.entered
+	counted := make(chan struct{})
+	go func() {
+		m.countRequest("tools/call", "search", "ok", false)
+		m.countUpstream("search", "ok")
+		m.observeTool("search", time.Millisecond, 10)
+		close(counted)
+	}()
+	select {
+	case <-counted:
+	case <-time.After(2 * time.Second):
+		t.Error("counting waited for a scrape's network write")
+	}
+	close(w.release)
+	<-scraped
+	<-counted
+}

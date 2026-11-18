@@ -239,8 +239,17 @@ func formatBound(v float64) string {
 }
 
 // writeTo writes every series, sorted, so two scrapes of the same state are
-// byte-identical.
+// byte-identical. The exposition is formatted under the lock and written after
+// it is released: written under it, a scraper that reads slowly held every
+// counter of every request waiting on its network write (final review,
+// 2026-11-18).
 func (m *metrics) writeTo(w io.Writer) error {
+	_, err := w.Write(m.exposition())
+	return err
+}
+
+// exposition formats every series under the lock.
+func (m *metrics) exposition() []byte {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var b bytes.Buffer
@@ -291,9 +300,7 @@ func (m *metrics) writeTo(w io.Writer) error {
 
 	writeHistograms(&b, "ratatosk_mcp_request_duration_seconds", "Time a tool call took in this server, from the request to the answer.", m.duration)
 	writeHistograms(&b, "ratatosk_mcp_response_bytes", "Size in bytes of a tool call's answer text, as the agent receives it.", m.respBytes)
-
-	_, err := w.Write(b.Bytes())
-	return err
+	return b.Bytes()
 }
 
 func writeHistograms(b *bytes.Buffer, name, help string, hs map[string]*histogram) {
