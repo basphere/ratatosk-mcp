@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -874,4 +875,21 @@ func TestMetricsSlowScrapeDoesNotStallCounting(t *testing.T) {
 	close(w.release)
 	<-scraped
 	<-counted
+}
+
+// The privacy bullets say every kind of number the metrics keep: per-tool
+// durations, answer sizes and upstream requests too, not only request counts
+// (final review, 2026-11-18). English is pinned here; the Korean and Japanese
+// bullets say the same.
+func TestPrivacyBulletsNameEveryMetric(t *testing.T) {
+	for _, p := range []string{"README.md", "docs/install.en.md"} {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.Join(strings.Fields(string(raw)), " ")
+		if !strings.Contains(text, "how long calls took, how large the answers were and how many upstream requests they sent") {
+			t.Errorf("%s: the privacy bullet does not name durations, answer sizes and upstream requests", p)
+		}
+	}
 }

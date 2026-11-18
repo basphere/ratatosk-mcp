@@ -14,13 +14,14 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   v3.6.1 says `critical: 15` where five advisories are critical.
   `distinct_advisories` gives `total` and a count per grade (`critical`,
   `high`, `medium`, `low`, `ungraded`), and says 5. A CVE and the GHSA cited
-  with it are one advisory, except where cards in range pair those ids
-  differently: then each id counts on its own, so an advisory can be counted
-  twice but two are never counted as one. An advisory's grade is the highest
-  grade of the changes citing it alone, or, when every change citing it cites
-  other advisories too, the highest grade of those. Security changes that cite
-  no advisory id, and those `note` reports as already fixed on your branch,
-  are not counted. Everything else in a briefing is as in 1.0.0: `counts` and
+  together on a change are one advisory. Where cards in range pair those ids
+  differently, each id counts on its own, so an advisory can be counted twice;
+  a pairing no other card contradicts is taken at its word. An advisory's
+  grade is the highest grade of the changes citing it alone or, when none of
+  those carries a grade or none cites it alone, the highest grade of the
+  changes citing it with other advisories. Security changes that cite no
+  advisory id of a recognised kind (CVE, GHSA, GO, RUSTSEC, PYSEC), and those
+  `note` reports as already fixed on your branch, are not counted. Everything else in a briefing is as in 1.0.0: `counts` and
   `warnings` keep their values, and the changes listed, their order and
   `also_in` do not change.
 - **Request metrics, off by default.** Set `MCP_METRICS_ADDR` (HTTP mode;

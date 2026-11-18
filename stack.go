@@ -804,9 +804,10 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 		Releases: &[]rangeRelease{},
 	}
 	settled := 0
-	// distinct_advisories (1.1.0) counts what is listed; it reads the whole
-	// range first, as a link between two ids can sit on a later release than
-	// the changes it joins (advisories.go). It changes nothing below.
+	// distinct_advisories (1.1.0) counts every security change of the range
+	// that is not settled, before the per-kind caps cut the list; it reads the
+	// whole range first, as a link between two ids can sit on a later release
+	// than the changes it joins (advisories.go). It changes nothing below.
 	ix := newAdvisoryIndex(docs)
 	tally := newAdvisoryTally()
 	firstByAdv := map[string]int{} // advisory key → index in b.Changes
@@ -868,7 +869,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						continue
 					}
 				}
-				tally.add(ix.advisories(c.Advisories), c.Advisories, c.Severity)
+				tally.add(ix.advisories(c.Advisories), c.Severity)
 				if key != "" {
 					branch := key + "|" + branchOf(d.Version)
 					if i, ok := inRelease[key]; ok {

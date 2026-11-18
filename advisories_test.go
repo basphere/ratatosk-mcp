@@ -226,12 +226,27 @@ func TestUnlinkedIDsCountApart(t *testing.T) {
 			relDoc(t, "v1.3.0", secSpec{"x", "high", []string{"CVE-2026-3333"}}),
 			relDoc(t, "v1.4.0", secSpec{"y", "", []string{"CVE-2026-4444"}}),
 		}, distinctAdvisories{Total: 2, High: 1, Ungraded: 1}},
-		// A change citing only values that are not advisory ids counts each value.
-		{"vendor ids", []*v2Release{
+		// A change citing only values that are not advisory ids cites no
+		// advisory id: not counted, as such a value next to a CVE never was
+		// (final review, 2026-11-18: it was counted when it stood alone).
+		{"unrecognised values only", []*v2Release{
 			relDoc(t, "v1.2.0", secSpec{"a", "", []string{"VENDOR-1", "VENDOR-2"}}),
 			relDoc(t, "v1.3.0", secSpec{"a", "", []string{"vendor-2", "vendor-1"}}),
-			relDoc(t, "v1.4.0", secSpec{"a", "low", []string{"VENDOR-1"}}),
-		}, distinctAdvisories{Total: 2, Low: 1, Ungraded: 1}},
+			relDoc(t, "v1.4.0", secSpec{"a", "low", []string{"OSV-2026-1"}}),
+			relDoc(t, "v1.5.0", secSpec{"b", "high", []string{"CVE-2026-7777", "OSV-2026-1"}}),
+		}, distinctAdvisories{Total: 1, High: 1}},
+		// A pairing no other card contradicts is taken at its word: one card
+		// citing two different fixes' ids as one advisory counts them as one.
+		{"an uncontradicted pairing", []*v2Release{
+			relDoc(t, "v1.2.0", secSpec{"a", "high", []string{"CVE-2026-1001", "GHSA-2222-3333-4444"}}),
+		}, distinctAdvisories{Total: 1, High: 1}},
+		// Cited alone without a grade, and graded on a several-advisory card:
+		// the card's grade, not ungraded (final review, 2026-11-18).
+		{"ungraded alone, graded with others", []*v2Release{
+			relDoc(t, "v1.2.0", secSpec{"x", "", []string{"CVE-2026-1111"}}),
+			relDoc(t, "v1.3.0", secSpec{"xy", "critical", []string{"CVE-2026-1111", "CVE-2026-2222"}}),
+			relDoc(t, "v1.4.0", secSpec{"y", "low", []string{"CVE-2026-2222"}}),
+		}, distinctAdvisories{Total: 2, Critical: 1, Low: 1}},
 		// One release, one advisory under two names: counted once.
 		{"siblings", []*v2Release{
 			relDoc(t, "v1.22.0", secSpec{"a", "high", []string{"GHSA-2222-3333-4444"}}, secSpec{"b", "", []string{"CVE-2026-5555", "GHSA-2222-3333-4444"}}),
@@ -304,9 +319,28 @@ func TestDistinctAdvisoriesAreDescribedAsComputed(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, line := range strings.Split(string(raw), "\n") {
-			if strings.HasPrefix(line, "| `distinct_advisories` |") && !strings.Contains(line, "`counts.security`") {
+			if !strings.HasPrefix(line, "| `distinct_advisories` |") {
+				continue
+			}
+			if !strings.Contains(line, "`counts.security`") {
 				t.Errorf("%s: the distinct_advisories row does not point to counts.security for what it leaves out", p)
 			}
+			// The ids that count, named in every language (the scanner's
+			// families, advisories.go).
+			for _, fam := range []string{"CVE", "GHSA", "GO", "RUSTSEC", "PYSEC"} {
+				if !strings.Contains(line, fam) {
+					t.Errorf("%s: the distinct_advisories row does not name %s among the ids that count", p, fam)
+				}
+			}
+		}
+	}
+	// What the English row promises (final review, 2026-11-18): a pairing no
+	// other card contradicts is believed, and the grade falls back when the
+	// changes citing an advisory alone carry none.
+	en, _ := os.ReadFile("docs/tools.en.md")
+	for _, want := range []string{"no other card contradicts is taken at its word", "when none of those carries a grade"} {
+		if !strings.Contains(string(en), want) {
+			t.Errorf("docs/tools.en.md: the distinct_advisories row does not say %q", want)
 		}
 	}
 }

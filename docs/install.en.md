@@ -158,8 +158,10 @@ anywhere:
   normal requests are not logged. Error lines carry no request arguments
   either.
 - The MCP server counts requests by method, tool name, outcome, and one bit
-  for whether the caller is the operator's own (see [Metrics](#metrics)). The
-  counts carry no arguments, addresses or sessions.
+  for whether the caller is the operator's own, and keeps per tool how long
+  calls took, how large the answers were and how many upstream requests they
+  sent, as totals (see [Metrics](#metrics)). The counts carry no arguments,
+  addresses or sessions.
 - The upstream API's request log writes one line only when the caller sends a
   `traceparent`, and even that line holds only a normalized endpoint label
   and the trace_id. Paths and queries are not recorded.

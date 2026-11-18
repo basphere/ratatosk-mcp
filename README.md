@@ -161,8 +161,9 @@ Here is what each layer records:
 - The hosted MCP process logs only its startup line; it does not log normal
   requests.
 - It counts requests by method, tool name, outcome, and one bit for whether
-  the caller is the operator's own. The counts carry no arguments, addresses
-  or sessions.
+  the caller is the operator's own, and keeps per tool how long calls took,
+  how large the answers were and how many upstream requests they sent, as
+  totals. The counts carry no arguments, addresses or sessions.
 - The upstream API's request log writes one line only when the caller sends a
   `traceparent`, and that line carries a normalized endpoint label and the
   trace id. Never a path, query, or body.

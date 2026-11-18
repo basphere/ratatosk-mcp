@@ -200,39 +200,35 @@ type distinctAdvisories struct {
 // An advisory's grade is the highest grade of the changes that cite it alone.
 // A change citing several advisories carries the highest of their grades (the
 // eight-advisory card is critical because four of the eight are), so it says
-// nothing about each one; its grade is used only for an advisory no change
-// cites alone, and then it is the highest grade of those several-advisory
+// nothing about each one; its grade is used only when no change citing the
+// advisory alone carries a grade — none cites it alone, or those that do are
+// ungraded — and then it is the highest grade of those several-advisory
 // changes. Taken for every advisory it cites, Argo CD's range would count
-// nine critical advisories where five are.
+// nine critical advisories where five are. Until the final review
+// (2026-11-18) an advisory cited alone without a grade stayed ungraded even
+// when a several-advisory card graded it; ungraded says no grade was found,
+// and one was.
 type advisoryTally struct {
 	seen        map[string]bool
-	aloneGrade  map[string]int
-	citedAlone  map[string]bool
-	sharedGrade map[string]int
+	aloneGrade  map[string]int // highest grade of the changes citing it alone
+	sharedGrade map[string]int // highest grade of the changes citing it with others
 }
 
 func newAdvisoryTally() *advisoryTally {
-	return &advisoryTally{seen: map[string]bool{}, aloneGrade: map[string]int{}, citedAlone: map[string]bool{}, sharedGrade: map[string]int{}}
+	return &advisoryTally{seen: map[string]bool{}, aloneGrade: map[string]int{}, sharedGrade: map[string]int{}}
 }
 
 // add records one security change. advs are its advisories (from
-// advisoryIndex.advisories); with none recognised, each value it cites counts
-// as an advisory of its own.
-func (t *advisoryTally) add(advs, ids []string, severity *string) {
-	if len(advs) == 0 {
-		for _, id := range ids {
-			if n := normAdvisoryID(id); n != "" {
-				advs = append(advs, "raw:"+n)
-			}
-		}
-		sort.Strings(advs)
-		advs = slices.Compact(advs)
-	}
+// advisoryIndex.advisories). A change that cites no recognised advisory id is
+// a security change with no advisory id, and is not counted: a value such as
+// "OSV-2026-1" or "N/A" is no more an advisory alone than it is next to a CVE,
+// where it was always ignored (until the final review, 2026-11-18, it counted
+// when it stood alone; on the seven live ranges of that day no count moved).
+func (t *advisoryTally) add(advs []string, severity *string) {
 	g := gradeRankOf(strOf(severity))
 	for _, a := range advs {
 		t.seen[a] = true
 		if len(advs) == 1 {
-			t.citedAlone[a] = true
 			t.aloneGrade[a] = max(t.aloneGrade[a], g)
 		} else {
 			t.sharedGrade[a] = max(t.sharedGrade[a], g)
@@ -243,9 +239,9 @@ func (t *advisoryTally) add(advs, ids []string, severity *string) {
 func (t *advisoryTally) counts() distinctAdvisories {
 	var out distinctAdvisories
 	for a := range t.seen {
-		g := t.sharedGrade[a]
-		if t.citedAlone[a] {
-			g = t.aloneGrade[a]
+		g := t.aloneGrade[a]
+		if g == 0 {
+			g = t.sharedGrade[a]
 		}
 		out.Total++
 		switch g {
