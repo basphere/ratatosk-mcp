@@ -19,10 +19,26 @@ type secSpec struct {
 	advs  []string
 }
 
+// secCard is a secSpec with more of the change set as /v2 sends it (affects,
+// workaround, regression_since, also_required, ...), over relDoc's defaults.
+type secCard struct {
+	secSpec
+	more map[string]any
+}
+
 // relDoc builds a release whose counts and warnings are what the website
 // would show for these security changes: security = how many, critical = how
 // many critical.
 func relDoc(t *testing.T, ver string, changes ...secSpec) *v2Release {
+	t.Helper()
+	cards := make([]secCard, len(changes))
+	for i, s := range changes {
+		cards[i] = secCard{secSpec: s}
+	}
+	return relDocCards(t, ver, cards...)
+}
+
+func relDocCards(t *testing.T, ver string, changes ...secCard) *v2Release {
 	t.Helper()
 	var cs []map[string]any
 	critical := 0
@@ -38,12 +54,16 @@ func relDoc(t *testing.T, ver string, changes ...secSpec) *v2Release {
 		if advs == nil {
 			advs = []string{}
 		}
-		cs = append(cs, map[string]any{
+		c := map[string]any{
 			"id": "argo@" + ver + "#" + s.id, "kind": "security", "title": "fix " + s.id, "body": nil,
 			"severity": sev, "advisories": advs, "affects": map[string]any{"text": "", "status": "not_stated"},
 			"also_required": nil, "security_unclear": false, "silent_failure": false, "workaround": nil,
 			"regression_since": nil, "evidence": []any{}, "later": []any{},
-		})
+		}
+		for k, v := range s.more {
+			c[k] = v
+		}
+		cs = append(cs, c)
 	}
 	b, err := json.Marshal(map[string]any{
 		"project": "argo", "version": ver, "released_at": "2026-10-06T00:00:00Z", "url": "https://x/" + ver,
@@ -204,48 +224,216 @@ func TestACardCitingSeveralAdvisoriesJoinsNothing(t *testing.T) {
 	}
 }
 
-// A link between ids chains (CVE ~ GHSA on one release, GHSA ~ GO on another),
-// and it holds whichever release carries the link — the whole range is read
-// before any change is keyed.
-func TestSameFixChainsThroughLinkedIDs(t *testing.T) {
+// Links chain for counting: the ids of one advisory, linked on different
+// releases, count once in distinct_advisories, whichever release carries the
+// link — the whole range is read before any change is keyed. An entry is
+// stricter: a change joins an entry only when it shares an id with every
+// change the entry stands for, so [CVE] and [GO], joined only through a third
+// card, stay two entries (the 1.1.0 rule: one id in common is the same fix).
+func TestLinkedIDsCountOnceButGroupOnlyWhatSharesAnID(t *testing.T) {
 	const cve, ghsa, gov = "CVE-2026-1001", "GHSA-2222-3333-4444", "GO-2026-0001"
-	cases := map[string][]*v2Release{
+	cases := map[string]struct {
+		docs []*v2Release
+		want map[string][]string // entry → also_in
+	}{
 		"links first": {
-			relDoc(t, "v1.1.0", secSpec{"a", "", []string{cve, ghsa}}),
-			relDoc(t, "v1.2.0", secSpec{"a", "high", []string{ghsa, gov}}),
-			relDoc(t, "v1.3.0", secSpec{"a", "", []string{gov}}),
-			relDoc(t, "v1.4.0", secSpec{"a", "", []string{cve}}),
+			[]*v2Release{
+				relDoc(t, "v1.1.0", secSpec{"a", "", []string{cve, ghsa}}),
+				relDoc(t, "v1.2.0", secSpec{"a", "high", []string{ghsa, gov}}),
+				relDoc(t, "v1.3.0", secSpec{"a", "", []string{gov}}),
+				relDoc(t, "v1.4.0", secSpec{"a", "", []string{cve}}),
+			},
+			// v1.3.0's [GO] shares nothing with v1.1.0's [CVE, GHSA]; v1.4.0's
+			// [CVE] nothing with v1.2.0's [GHSA, GO].
+			map[string][]string{"argo@v1.1.0#a": {"v1.2.0"}, "argo@v1.3.0#a": nil, "argo@v1.4.0#a": nil},
 		},
 		"link last": {
-			relDoc(t, "v1.1.0", secSpec{"a", "", []string{cve}}),
-			relDoc(t, "v1.2.0", secSpec{"a", "high", []string{gov}}),
-			relDoc(t, "v1.3.0", secSpec{"a", "", []string{ghsa}}),
-			relDoc(t, "v1.4.0", secSpec{"a", "", []string{"cve-2026-1001 ", gov, ghsa}}),
+			[]*v2Release{
+				relDoc(t, "v1.1.0", secSpec{"a", "", []string{cve}}),
+				relDoc(t, "v1.2.0", secSpec{"a", "high", []string{gov}}),
+				relDoc(t, "v1.3.0", secSpec{"a", "", []string{ghsa}}),
+				relDoc(t, "v1.4.0", secSpec{"a", "", []string{"cve-2026-1001 ", gov, ghsa}}),
+			},
+			map[string][]string{"argo@v1.1.0#a": {"v1.4.0"}, "argo@v1.2.0#a": nil, "argo@v1.3.0#a": nil},
 		},
 	}
-	for name, docs := range cases {
-		b, _ := buildBriefing(docs, nil, nil)
-		if len(b.Changes) != 1 {
-			t.Errorf("%s: %d entries, want one fix", name, len(b.Changes))
-			continue
+	for name, tc := range cases {
+		b, _ := buildBriefing(tc.docs, nil, nil)
+		got := byID(b)
+		if len(got) != len(tc.want) {
+			t.Errorf("%s: entries %v, want %v", name, keysOf(got), tc.want)
 		}
-		e := b.Changes[0]
-		if e.ID != "argo@v1.1.0#a" || !slices.Equal(e.AlsoIn, []string{"v1.2.0", "v1.3.0", "v1.4.0"}) {
-			t.Errorf("%s: entry %s also_in %v", name, e.ID, e.AlsoIn)
-		}
-		if string(e.Severity) != `"high"` {
-			t.Errorf("%s: severity %s, want the backport's high", name, e.Severity)
-		}
-		ids := map[string]bool{}
-		for _, id := range e.Advisories {
-			ids[normAdvisoryID(id)] = true
-		}
-		if len(ids) != 3 || !ids[cve] || !ids[ghsa] || !ids[gov] {
-			t.Errorf("%s: advisories %v, want the three ids once each", name, e.Advisories)
+		for id, also := range tc.want {
+			if e, ok := got[id]; !ok || !slices.Equal(e.AlsoIn, also) {
+				t.Errorf("%s: %s also_in %v (listed %v), want %v", name, id, e.AlsoIn, ok, also)
+			}
 		}
 		if got := b.Summary.DistinctAdvisories; got.Total != 1 || got.High != 1 {
 			t.Errorf("%s: distinct %+v, want one high advisory", name, got)
 		}
+		liftCaps(t)
+		if d := compareWith100(tc.docs, nil, nil); d.losses() > 0 {
+			t.Errorf("%s: lost against 1.0.0: %+v", name, d)
+		}
+	}
+}
+
+// statedAttr is an attribute as /v2 sends it, with status stated.
+func statedAttr(text string) map[string]any { return map[string]any{"text": text, "status": "stated"} }
+
+// A backport that says something the entry it would join does not stays
+// listed, as 1.0.0 listed it. Folded, what it said was gone from the answer:
+// on seven live ranges the first 1.1.0 draft dropped six workarounds (Argo CD
+// v3.4.10 GHSA-m3vr: set jsonnet.enable to "false"), three regression_since
+// values (v3.3.9 GHSA-3v3m: 3.3.0) and two also_required steps (istio 1.30.2:
+// the runtime guard envoy.reloadable_features.quic_validate_headers_only_content_length)
+// — independent review, 2026-11-18. When the two say the same, they join.
+func TestSameFixKeepsWhatEachReleaseSays(t *testing.T) {
+	liftCaps(t)
+	const cve, ghsa = "CVE-2026-5555", "GHSA-2222-3333-4444"
+	pair := func(first, second map[string]any) []*v2Release {
+		return []*v2Release{
+			relDocCards(t, "v1.36.9", secCard{secSpec{"a", "high", []string{cve}}, first}),
+			relDocCards(t, "v1.37.5", secCard{secSpec{"b", "critical", []string{cve, ghsa}}, second}),
+		}
+	}
+	apart := map[string][]*v2Release{
+		"regression_since": pair(nil, map[string]any{"regression_since": statedAttr("3.3.0")}),
+		"workaround": pair(map[string]any{"workaround": statedAttr("Set jsonnet.enable to false.")},
+			map[string]any{"workaround": statedAttr(`Set jsonnet.enable to "false" in argocd-cm; .jsonnet files are then skipped.`)}),
+		"also_required":  pair(nil, map[string]any{"also_required": "envoy.reloadable_features.quic_validate_headers_only_content_length"}),
+		"affects":        pair(map[string]any{"affects": statedAttr("HTTP/3 listeners")}, map[string]any{"affects": statedAttr("HTTP/3 headers-only requests")}),
+		"silent_failure": pair(nil, map[string]any{"silent_failure": true}),
+	}
+	for field, docs := range apart {
+		b, _ := buildBriefing(docs, nil, nil)
+		got := byID(b)
+		a, b2 := got["argo@v1.36.9#a"], got["argo@v1.37.5#b"]
+		if len(got) != 2 || len(a.AlsoIn) != 0 {
+			t.Errorf("%s: v1.37.5 says its own %s and was grouped: entries %v, also_in %v", field, field, keysOf(got), a.AlsoIn)
+		}
+		if field == "regression_since" && (b2.RegressionSince == nil || b2.RegressionSince.Text != "3.3.0") {
+			t.Errorf("regression_since: v1.37.5's 3.3.0 is gone: %+v", b2.RegressionSince)
+		}
+		if d := compareWith100(docs, nil, nil); d.losses() > 0 {
+			t.Errorf("%s: lost against 1.0.0: %+v", field, d)
+		}
+	}
+	// The same words on both: one fix, the ids of both, the higher grade.
+	same := map[string]any{"affects": statedAttr("HTTP/3 listeners"), "workaround": statedAttr("Disable HTTP/3.")}
+	b, _ := buildBriefing(pair(same, same), nil, nil)
+	if len(b.Changes) != 1 || !slices.Equal(b.Changes[0].AlsoIn, []string{"v1.37.5"}) ||
+		!slices.Equal(b.Changes[0].Advisories, []string{cve, ghsa}) || string(b.Changes[0].Severity) != `"critical"` {
+		t.Errorf("two releases saying the same about one fix: want one entry, also_in [v1.37.5], both ids, critical; got %+v", b.Changes)
+	}
+}
+
+// Two changes of one release citing the same ids fold into one entry unless
+// the second carries its own step. A no-downgrade or regression note counted
+// only when the entry had none; one with a different value was dropped. Now
+// the value is compared.
+func TestSiblingWithAnotherRegressionValueStaysListed(t *testing.T) {
+	const cve = "CVE-2026-6666"
+	b, _ := buildBriefing([]*v2Release{relDocCards(t, "v1.39.0",
+		secCard{secSpec{"a", "high", []string{cve}}, map[string]any{"regression_since": statedAttr("1.36.0")}},
+		secCard{secSpec{"b", "high", []string{cve}}, map[string]any{"regression_since": statedAttr("1.37.0")}},
+		secCard{secSpec{"c", "high", []string{cve}}, map[string]any{"no_downgrade": statedAttr("schema migration")}},
+		secCard{secSpec{"d", "high", []string{cve}}, map[string]any{"no_downgrade": statedAttr("schema migration, and the v1 API is gone")}},
+		secCard{secSpec{"e", "critical", []string{cve}}, map[string]any{"regression_since": statedAttr("1.36.0")}},
+	)}, nil, nil)
+	got := byID(b)
+	for _, id := range []string{"a", "b", "c", "d"} {
+		if _, ok := got["argo@v1.39.0#"+id]; !ok {
+			t.Errorf("%s folded away: %v", id, keysOf(got))
+		}
+	}
+	if _, ok := got["argo@v1.39.0#e"]; ok || string(got["argo@v1.39.0#a"].Severity) != `"critical"` {
+		t.Errorf("e says what a says and should fold into it, raising its grade: %v, a %s", keysOf(got), got["argo@v1.39.0#a"].Severity)
+	}
+}
+
+// Envoy v1.39.0 has two cards citing [CVE-2026-48743, GHSA-p7c7-7c47-pwch];
+// six cards elsewhere pair that CVE with GHSA-8phg-2h2q-jgxf (headers-only
+// Content-Length), and GHSA-p7c7 is the HTTP/3 QPACK fix. Chained, the three
+// ids were one advisory: the QPACK fix lost the also_in it had in 1.0.0, and
+// distinct_advisories counted one (independent review, 2026-11-18). The cards
+// disagree, so none of those links is used, whatever order they come in.
+func TestDisputedIDsLinkNothing(t *testing.T) {
+	liftCaps(t)
+	const cve, g8phg, gp7c7 = "CVE-2026-48743", "GHSA-8phg-2h2q-jgxf", "GHSA-p7c7-7c47-pwch"
+	qp, cl := secSpec{"qpack", "high", []string{gp7c7}}, secSpec{"cl", "medium", []string{cve, g8phg}}
+	docs := []*v2Release{
+		relDoc(t, "v1.36.9", qp, cl),
+		relDoc(t, "v1.37.5", qp, cl),
+		relDoc(t, "v1.38.3", qp, cl),
+		relDoc(t, "v1.39.0", qp, secSpec{"wrong1", "medium", []string{cve, gp7c7}}, secSpec{"wrong2", "medium", []string{cve, gp7c7}}, cl),
+	}
+	b, _ := buildBriefing(docs, nil, nil)
+	got := byID(b)
+	for _, id := range []string{"argo@v1.36.9#qpack", "argo@v1.36.9#cl"} {
+		e := got[id]
+		if !slices.Equal(e.AlsoIn, []string{"v1.37.5", "v1.38.3", "v1.39.0"}) {
+			t.Errorf("%s also_in %v, want [v1.37.5 v1.38.3 v1.39.0] as in 1.0.0", id, e.AlsoIn)
+		}
+	}
+	if e := got["argo@v1.36.9#cl"]; slices.Contains(e.Advisories, gp7c7) {
+		t.Errorf("the Content-Length fix took the QPACK GHSA: %v", e.Advisories)
+	}
+	// Each id of the disputed group counts on its own: three where there are
+	// two advisories — never one.
+	if got := b.Summary.DistinctAdvisories; got.Total != 3 || got.High != 1 {
+		t.Errorf("distinct %+v, want total 3 (the QPACK fix high on its own)", got)
+	}
+	if d := compareWith100(docs, nil, nil); d.losses() > 0 {
+		t.Errorf("lost against 1.0.0: %+v", d)
+	}
+	rev := slices.Clone(docs)
+	slices.Reverse(rev)
+	a, z := newAdvisoryIndex(docs), newAdvisoryIndex(rev)
+	for _, id := range []string{cve, g8phg, gp7c7} {
+		n := normAdvisoryID(id)
+		if a.find(n) != n || z.find(n) != n {
+			t.Errorf("%s is linked (%s, reversed %s); a disputed group links nothing", n, a.find(n), z.find(n))
+		}
+	}
+
+	// The worst case with the same ids: a critical fix on one branch, and the
+	// different fix with a narrower scope on another. Linked through the wrong
+	// card, the critical one folded into the narrower entry and was gone.
+	worst := []*v2Release{
+		relDocCards(t, "v1.37.5", secCard{cl, map[string]any{"affects": statedAttr("headers-only HTTP/3 requests")}}),
+		relDocCards(t, "v1.38.3", secCard{secSpec{"qpack", "critical", []string{gp7c7}}, map[string]any{"affects": statedAttr("every HTTP/3 listener")}}),
+		relDoc(t, "v1.39.0", secSpec{"wrong", "medium", []string{cve, gp7c7}}),
+	}
+	b, _ = buildBriefing(worst, nil, nil)
+	if q, ok := byID(b)["argo@v1.38.3#qpack"]; !ok || string(q.Severity) != `"critical"` || attrText(q.Affects) != "every HTTP/3 listener" {
+		t.Errorf("the critical QPACK fix is not an entry of its own: %+v", b.Changes)
+	}
+}
+
+// What 1.0.0 grouped stays grouped. Envoy's CVE-2026-48044 (live, 2026-11-18):
+// [CVE, GHSA-m3p9] cards on every branch, and a second card citing [CVE]
+// alone on v1.37.5 and v1.38.3 with another workaround. 1.0.0 listed the
+// [CVE] card once with also_in [v1.38.3]; keyed by the advisory, the draft
+// listed v1.37.5 and v1.38.3 apart, because each was compared with the
+// [CVE, GHSA] entry and carried a workaround of its own.
+func TestSameFixNeverGroupsLessThan100(t *testing.T) {
+	liftCaps(t)
+	const cve, ghsa = "CVE-2026-48044", "GHSA-m3p9-47wh-88wg"
+	w1 := map[string]any{"workaround": statedAttr("Disable the Zstd decompressor in the Envoy config.")}
+	w2 := map[string]any{"workaround": statedAttr("Disable the Zstd decompressor in Envoy configuration.")}
+	docs := []*v2Release{
+		relDocCards(t, "v1.35.13", secCard{secSpec{"both", "high", []string{cve, ghsa}}, w1}),
+		relDocCards(t, "v1.37.5", secCard{secSpec{"both", "high", []string{cve, ghsa}}, w1}, secCard{secSpec{"cve", "high", []string{cve}}, w2}),
+		relDocCards(t, "v1.38.3", secCard{secSpec{"both", "high", []string{cve, ghsa}}, w2}, secCard{secSpec{"cve", "high", []string{cve}}, w2}),
+	}
+	b, _ := buildBriefing(docs, nil, nil)
+	got := byID(b)
+	if e := got["argo@v1.37.5#cve"]; !slices.Equal(e.AlsoIn, []string{"v1.38.3"}) {
+		t.Errorf("[CVE] card also_in %v, want [v1.38.3] as in 1.0.0 (entries %v)", e.AlsoIn, keysOf(got))
+	}
+	if d := compareWith100(docs, nil, nil); d.losses() > 0 {
+		t.Errorf("lost against 1.0.0: %+v", d)
 	}
 }
 

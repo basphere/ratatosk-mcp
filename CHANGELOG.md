@@ -33,14 +33,28 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ### Changed
 
-- **`also_in` groups the same fix when the releases cite it under different
-  ids.** A fix was matched by its whole id set, so Argo CD's GHSA-3v3m, cited
-  alone on v3.2.11 and with CVE-2026-42880 on v3.3.9, came back as two
-  entries. Changes are now the same fix when they cite the same advisories,
-  and a CVE and the GHSA cited with it count as one. The entry's `advisories`
-  lists every id its releases cite. A change that cites several advisories
-  (one card for a release's eight security fixes) still matches only a change
-  citing the same advisories, so it never merges separate fixes.
+- **`also_in` can group the same fix cited under different ids.** A fix was
+  matched by its whole id set. A release that cites the same advisory under
+  other ids now joins the entry's `also_in` when it shares an id with every
+  change the entry stands for and says nothing the entry does not (the same
+  `affects`, workaround, regression note and steps); the entry's
+  `advisories` then lists the ids of both. A release that says more stays an
+  entry of its own, as in 1.0.0: Argo CD's GHSA-3v3m, cited alone on v3.2.11
+  and with CVE-2026-42880 on v3.3.9, stays two entries because v3.3.9 names a
+  regression since 3.3.0 and words `affects` differently. In practice releases
+  word `affects` in their own way, so this rarely joins entries. Every
+  `also_in` version and every field 1.0.0 returned for a range is still
+  returned. What this guarantees: two changes in one entry always share an
+  id, and ids that the cards in range pair in conflicting ways (Envoy cites
+  CVE-2026-48743 with two different GHSAs) group nothing. A wrong id that no
+  other card contradicts is taken at its word.
+
+### Fixed
+
+- **A second change of one release citing the same ids is kept when its
+  regression or no-downgrade note differs from the first.** Only a missing
+  note kept it listed; a different value was folded into the first change
+  and dropped from the answer.
 
 ## [1.0.0] — 2026-11-16
 
