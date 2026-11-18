@@ -238,13 +238,16 @@ func newServer() *mcp.Server {
 			"latest on the same release line), oldest first: before_upgrade items of every release in range, and the " +
 			"changes that need a decision — security, breaking, deprecations, important_fixes — with affects, " +
 			"required actions, no_downgrade and removed_in; enhancements, dependency_updates and other are counted " +
-			"in summary only. affects decides who a change touches: status stated or inferred means it applies ONLY " +
+			"in summary only. summary.counts and summary.warnings add up every release in range (one fix on several " +
+			"release lines counts once per release); summary.distinct_advisories counts each advisory once. " +
+			"affects decides who a change touches: status stated or inferred means it applies ONLY " +
 			"IF that holds in this setup — check before you report it; not_stated means the release notes name no " +
 			"narrower scope. gaps lists where version numbers skip (releases in between may be unanalyzed); " +
 			"later_for_running is " + laterNote("the running version") + " A security change whose " +
 			"advisories the running version's own branch already fixed at or below it is excluded and counted in " +
-			"note; the same advisories fixed on several branches inside the range collapse into the earliest, with " +
-			"also_in naming the rest. A later release of a branch that cites them again is a follow-up fix and is " +
+			"note; the same fix on several branches inside the range (changes citing the same advisory, a CVE and its " +
+			"GHSA counting as one) collapses into the earliest, with also_in naming the rest. A later release of a " +
+			"branch that cites them again is a follow-up fix and is " +
 			"listed on its own. Line-aware: a repository can publish separate products or channels " +
 			"(containerd api/, Flatcar lts vs stable, openfeature flagd vs core) with NO version order between " +
 			"lines, so only the running version's line is compared — pass the tag as published, prefix included " +

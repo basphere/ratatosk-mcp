@@ -671,10 +671,15 @@ type rangeRelease struct {
 	Processing bool           `json:"processing,omitempty"`
 }
 
+// stackSummary: Counts and Warnings add up every release in range, so a fix
+// shipped on several release lines is counted once per release (Argo CD
+// v2.10.7 → v3.6.1: critical 15). DistinctAdvisories counts each advisory
+// once (critical 5) — added in 1.1.0 beside them, which keep their values.
 type stackSummary struct {
-	Releases int            `json:"releases"`
-	Counts   map[string]int `json:"counts"`
-	Warnings map[string]int `json:"warnings"`
+	Releases           int                `json:"releases"`
+	Counts             map[string]int     `json:"counts"`
+	Warnings           map[string]int     `json:"warnings"`
+	DistinctAdvisories distinctAdvisories `json:"distinct_advisories"`
 }
 
 type briefing struct {
@@ -692,17 +697,7 @@ type briefing struct {
 func gradeRank(raw json.RawMessage) int {
 	var g string
 	_ = json.Unmarshal(raw, &g)
-	switch strings.ToLower(g) {
-	case "critical":
-		return 4
-	case "high":
-		return 3
-	case "medium", "moderate":
-		return 2
-	case "low":
-		return 1
-	}
-	return 0
+	return gradeRankOf(g)
 }
 
 func strOf(p *string) string {
@@ -775,8 +770,11 @@ func branchOf(v string) string {
 	return version.Line(v) + "/" + strconv.Itoa(k[0]) + "." + strconv.Itoa(k[1])
 }
 
-// advisoryKey is the identity of a security fix across branches: the sorted,
-// upper-cased advisory ids. A change citing none has no identity to compare.
+// advisoryKey is a change's whole id set: sorted, upper-cased, as one string.
+// Until 1.1.0 it was the identity of a fix across branches; that is now
+// advisoryIndex.fixKey, which matches fixes by the advisories they share. It
+// still decides "already fixed on the running branch" (every id must be
+// there), and is the identity of a change citing no recognised advisory id.
 func advisoryKey(ids []string) string {
 	if len(ids) == 0 {
 		return ""
@@ -809,7 +807,11 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 		Releases: &[]rangeRelease{},
 	}
 	settled := 0
-	firstByAdv := map[string]int{} // advisory key → index in b.Changes
+	// Read the whole range before keying any change: a link between two ids can
+	// sit on a later release than the changes it joins (see advisories.go).
+	ix := newAdvisoryIndex(docs)
+	tally := newAdvisoryTally()
+	firstByAdv := map[string]int{} // fix key → index in b.Changes
 	// advisory key + branch → an EARLIER release of that branch carried it. The
 	// first release of a branch that carries an advisory already listed is the
 	// backport and folds into also_in. A later release of a branch that carried
@@ -854,10 +856,15 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 			}
 			key := ""
 			if c.Kind == "security" {
-				key = advisoryKey(c.Advisories)
-				if key != "" {
+				key = ix.fixKey(c.Advisories)
+				if raw := advisoryKey(c.Advisories); raw != "" {
+					// Settled only when every id the change cites is already
+					// on the running branch, compared as written — unchanged in
+					// 1.1.0: an alias the running branch does not cite keeps the
+					// change listed. Listing a fix you have is noise; hiding one
+					// you lack would be a miss.
 					covered := true
-					for _, id := range strings.Split(key, ",") {
+					for _, id := range strings.Split(raw, ",") {
 						if !alreadyFixed[id] {
 							covered = false
 							break
@@ -867,6 +874,9 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						settled++
 						continue
 					}
+				}
+				tally.add(ix.advisories(c.Advisories), c.Advisories, c.Severity)
+				if key != "" {
 					branch := key + "|" + branchOf(d.Version)
 					if i, ok := inRelease[key]; ok {
 						// Another change of this same release citing the same
@@ -878,6 +888,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						// folding them dropped that instruction without a trace.
 						if !carriesItsOwn(c, b.Changes[i]) {
 							raiseSeverity(&b.Changes[i], c.Severity)
+							b.Changes[i].Advisories = mergeAdvisoryIDs(b.Changes[i].Advisories, c.Advisories)
 							continue
 						}
 					} else {
@@ -886,9 +897,14 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 							// The same fix landed on another branch inside the range:
 							// one entry at the earliest version, the rest named. The
 							// entry takes the higher grade, so a critical backport is
-							// not hidden under an ungraded first entry.
+							// not hidden under an ungraded first entry, and every id
+							// the backport cites, so an alias cited on one branch only
+							// stays in the answer. Same fix = same advisories, aliases
+							// included (fixKey, 1.1.0): v3.2.11's [GHSA-3v3m] and
+							// v3.3.9's [CVE-2026-42880, GHSA-3v3m] fold here now.
 							b.Changes[i].AlsoIn = append(b.Changes[i].AlsoIn, d.Version)
 							raiseSeverity(&b.Changes[i], c.Severity)
+							b.Changes[i].Advisories = mergeAdvisoryIDs(b.Changes[i].Advisories, c.Advisories)
 							inRelease[key] = i
 							continue
 						}
@@ -966,6 +982,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 		kept = append(kept, c)
 	}
 	b.Changes = kept
+	b.Summary.DistinctAdvisories = tally.counts()
 	return b, settled
 }
 
@@ -1363,7 +1380,10 @@ var stackHint = "briefing (a data classification, not a recommendation — chang
 	"before_upgrade lists the prerequisites, known issues and upgrade guides of EVERY release in range — read them " +
 	"all; they usually sit on the release that starts a new minor. changes lists security, breaking, deprecations " +
 	"and important_fixes, security first; enhancements, dependency_updates and other are counted in summary only " +
-	"(get_release has them). affects says who a change touches: status stated (the release notes say it) or " +
+	"(get_release has them). summary.counts and summary.warnings add up every release in range, so one fix shipped " +
+	"on several release lines is counted once per release; summary.distinct_advisories counts each advisory the " +
+	"security changes cite once, by grade — use it when you say how many advisories an upgrade fixes. " +
+	"affects says who a change touches: status stated (the release notes say it) or " +
 	"inferred (a reading of the notes) — the change applies ONLY IF that holds in the running configuration, so " +
 	"read it before you report the change as applying; not_stated — the notes name no narrower scope, so it " +
 	"applies to every install of this project; security_unclear — two separate checks disagreed on whether the change is a security fix and the sources do not settle it; it stays in the kind first chosen, so verify against the evidence. " +
@@ -1371,7 +1391,8 @@ var stackHint = "briefing (a data classification, not a recommendation — chang
 	"rolling back after the upgrade is not possible; removed_in is when a deprecation turns into a removal. " +
 	"severity is the grade the project's own advisory states; null means no grade was found in what was read " +
 	"(an advisory not yet published included), and the same advisory can carry a grade on another release — rank urgency with it, " +
-	"never decide who is affected with it. also_in names other releases in range carrying the same advisories. " +
+	"never decide who is affected with it. also_in names other releases in range carrying the same fix (the same " +
+	"advisories; a CVE and the GHSA cited with it count as one), and advisories lists the ids all of them cite. " +
 	"changes_omitted counts, per kind, what did not fit (security keeps the most severe; within a grade, and in the " +
 	"other kinds, the changes that say what to do — action_required, also_required, a stated or inferred no_downgrade " +
 	"or removed_in — are kept first) — narrow with target_version " +
