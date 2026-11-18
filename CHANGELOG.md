@@ -14,8 +14,11 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   v3.6.1 says `critical: 15` where five advisories are critical.
   `distinct_advisories` gives `total` and a count per grade (`critical`,
   `high`, `medium`, `low`, `ungraded`), and says 5. `counts` and `warnings`
-  keep their values. Security changes that cite no advisory id, and those
-  `note` reports as already fixed on your branch, are not counted.
+  keep their values. A CVE and the GHSA cited with it are one advisory, except
+  where cards in range pair those ids differently: then each id counts on its
+  own, so an advisory can be counted twice but two are never counted as one.
+  Security changes that cite no advisory id, and those `note` reports as
+  already fixed on your branch, are not counted.
 - **Request metrics, off by default.** Set `MCP_METRICS_ADDR` (HTTP mode;
   chart value `metricsPort`) and the server serves Prometheus text at
   `GET /metrics` on that address, a listener separate from `/mcp`:

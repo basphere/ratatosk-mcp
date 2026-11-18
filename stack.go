@@ -1427,7 +1427,8 @@ var stackHint = "briefing (a data classification, not a recommendation — chang
 	"and important_fixes, security first; enhancements, dependency_updates and other are counted in summary only " +
 	"(get_release has them). summary.counts and summary.warnings add up every release in range, so one fix shipped " +
 	"on several release lines is counted once per release; summary.distinct_advisories counts each advisory the " +
-	"security changes cite once, by grade — use it when you say how many advisories an upgrade fixes. " +
+	"security changes cite once, by grade — use it when you say how many advisories an upgrade fixes, and say that " +
+	"security changes citing no advisory id are not in it (summary.counts.security has them). " +
 	"affects says who a change touches: status stated (the release notes say it) or " +
 	"inferred (a reading of the notes) — the change applies ONLY IF that holds in the running configuration, so " +
 	"read it before you report the change as applying; not_stated — the notes name no narrower scope, so it " +

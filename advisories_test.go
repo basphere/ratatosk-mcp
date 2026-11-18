@@ -8,6 +8,7 @@ package main
 
 import (
 	"encoding/json"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -526,4 +527,37 @@ func keysOf(m map[string]briefChange) []string {
 	}
 	slices.Sort(out)
 	return out
+}
+
+// The docs and the hint say what distinct_advisories leaves out (security
+// changes citing no advisory id) and how it grades an advisory that only
+// several-advisory cards cite (the highest of their grades). Both were
+// missing (independent review, 2026-11-18): an agent quoting the count as
+// "every security fix" over-promised.
+func TestDistinctAdvisoriesAreDescribedAsComputed(t *testing.T) {
+	b, _ := buildBriefing([]*v2Release{relDoc(t, "v1.2.0",
+		secSpec{"xy", "critical", []string{"CVE-2026-1111", "CVE-2026-2222"}},
+		secSpec{"xz", "high", []string{"CVE-2026-1111", "CVE-2026-3333"}},
+		secSpec{"z", "low", []string{"CVE-2026-3333"}},
+		secSpec{"none", "critical", nil},
+	)}, nil, nil)
+	// 1111 and 2222: only several-advisory cards cite them, the highest is
+	// critical. 3333: cited alone as low. The id-less change: not counted.
+	if got, want := b.Summary.DistinctAdvisories, (distinctAdvisories{Total: 3, Critical: 2, Low: 1}); got != want {
+		t.Errorf("distinct %+v, want %+v", got, want)
+	}
+	if !strings.Contains(stackHint, "citing no advisory id are not in it") {
+		t.Error("the hint does not say security changes citing no advisory id are left out of distinct_advisories")
+	}
+	for _, p := range []string{"docs/tools.en.md", "docs/tools.ko.md", "docs/tools.ja.md"} {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(string(raw), "\n") {
+			if strings.HasPrefix(line, "| `distinct_advisories` |") && !strings.Contains(line, "`counts.security`") {
+				t.Errorf("%s: the distinct_advisories row does not point to counts.security for what it leaves out", p)
+			}
+		}
+	}
 }
