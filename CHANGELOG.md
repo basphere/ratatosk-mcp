@@ -25,8 +25,11 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `ratatosk_mcp_response_bytes{tool}` and `ratatosk_mcp_build_info{version}`.
   Every label value comes from a fixed list; arguments, project names,
   addresses and sessions never become labels. Requests the rate limit or the
-  in-flight cap turn away are counted too (`rate_limited`, `busy`). See
-  "Metrics" in the install guide.
+  in-flight cap turn away are counted too (`rate_limited`, `busy`), labelled
+  from at most the first 4 KiB of the body, and from nothing when the request
+  waits for `100 Continue`, so a refusal is still answered at once. With
+  metrics off nothing of a refused request is read. See "Metrics" in the
+  install guide.
 
 ### Changed
 

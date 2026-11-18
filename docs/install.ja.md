@@ -647,7 +647,10 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9
 - `method`：`initialize`・`tools/list`・`tools/call`、それ以外（通知、`ping`
   など）は `other`。
 - `tool`：6 つのツール名のいずれか。呼び出し元がそれ以外の名前を送れば
-  `unknown`、メソッドが `tools/call` でなければ空。
+  `unknown`、メソッドが `tools/call` でなければ空。サーバーが読む前に断った
+  リクエスト（`rate_limited`、`busy`）は本文の最初の 4 KiB から名前を付けます。
+  ツール名がそれより後ろにあれば `unknown`、`100 Continue` を待つリクエストは
+  本文を読みません（`method` は `other`）。
 - リクエストの `outcome`：`ok`、`error`（形式が不正で拒否したリクエスト、
   プロトコルのエラー、または未知のスラッグやアップストリームへのリクエストの
   失敗のように `isError` が付いたツールの答え）、`rate_limited`

@@ -37,7 +37,7 @@ func inflightMiddleware(n int, wait time.Duration, next http.Handler) http.Handl
 		select {
 		case slots <- struct{}{}:
 		case <-t.C:
-			refusedFor(req, "busy") // before the answer: it may read the body (metrics.go)
+			refusedFor(req, "busy") // before the answer; with metrics on it may read up to 4 KiB of the body (metrics.go)
 			w.Header().Set("Retry-After", "5")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)

@@ -638,7 +638,10 @@ Every label value comes from a fixed list:
 - `method`: `initialize`, `tools/list`, `tools/call`, or `other`
   (notifications, `ping`, anything else).
 - `tool`: one of the six tool names; `unknown` for any other name a caller
-  sends; empty when the method is not `tools/call`.
+  sends; empty when the method is not `tools/call`. A request turned away
+  before the server reads it (`rate_limited`, `busy`) is labelled from the
+  first 4 KiB of its body: a tool name past that is `unknown`, and a request
+  that waits for `100 Continue` is not read at all (`method` `other`).
 - `outcome` of a request: `ok`; `error` (a request refused as malformed, a
   protocol error, or a tool answer marked `isError`, such as an unknown slug
   or a failed upstream request); `rate_limited` (`429` from

@@ -531,3 +531,192 @@ func TestMetricsToolListMatchesServer(t *testing.T) {
 		t.Errorf("toolNames %v, server registers %v", toolNames, got)
 	}
 }
+
+// countingBody counts what is read of a request body.
+type countingBody struct {
+	r io.Reader
+	n int
+}
+
+func (c *countingBody) Read(b []byte) (int, error) {
+	n, err := c.r.Read(b)
+	c.n += n
+	return n, err
+}
+
+// refusingLimiter refuses every request after its first.
+func refusingLimiter() *rateLimiter {
+	rl := newRateLimiter(1)
+	rl.allow("192.0.2.1", time.Now())
+	return rl
+}
+
+// zerosCall is a tools/call whose arguments are n bytes of "0," tokens before
+// the tool name: the cheapest body to send and, before 1.1.0's bounds, the
+// dearest to label (independent review, 2026-11-18: 25.7 ms and 3.4 MB of
+// allocations per refusal at 64 KiB).
+func zerosCall(n int) string {
+	return `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":[` + strings.Repeat("0,", n/2) + `0],"name":"check_stack"}}`
+}
+
+// Labelling a refusal reads at most metricsPeekBytes of the body, in one pass
+// with no allocation but the labels; a tool name past the bound is "unknown".
+func TestRefusalLabellingIsBounded(t *testing.T) {
+	m := withMetrics(t)
+	h := mcpHTTPChain(refusingLimiter(), 0, 0, http.NotFoundHandler())
+	body := &countingBody{r: strings.NewReader(zerosCall(64 << 10))}
+	r := httptest.NewRequest(http.MethodPost, "/mcp", body)
+	r.RemoteAddr = "192.0.2.1:1"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("got %d, want 429", rec.Code)
+	}
+	if body.n > 4<<10+512 {
+		t.Errorf("read %d bytes of a refused request's body; the bound is about 4 KiB", body.n)
+	}
+	if got := series(t, m)[req("tools/call", "unknown", "rate_limited", "false")]; got != 1 {
+		t.Errorf("tools/call unknown rate_limited = %v, want 1", got)
+	}
+	if meth, tool := peekLabels([]byte(zerosCall(3 << 10))); meth != "tools/call" || tool != "check_stack" {
+		t.Errorf("peekLabels inside the bound = %q, %q; want tools/call, check_stack", meth, tool)
+	}
+	for name, prefix := range map[string]string{
+		"0, tokens": zerosCall(64 << 10),
+		"nesting":   `{"jsonrpc":"2.0","method":"tools/call","params":{"arguments":` + strings.Repeat(`[{"a":`, 2000),
+		"strings":   `{"method":"tools/call","params":{"arguments":[` + strings.Repeat(`"\"\\",`, 2000),
+	} {
+		b := []byte(prefix)[:metricsPeekBytes]
+		if a := testing.AllocsPerRun(20, func() { peekLabels(b) }); a > 2 {
+			t.Errorf("%s: peekLabels made %.0f allocations on a %d-byte prefix; want the labels only", name, a, len(b))
+		}
+	}
+}
+
+// With metrics off a refusal is the 1.0.0 one: the refusing layer reads not a
+// byte of the body, and answers the same status, headers and body. (The batch
+// check, which sits before the in-flight cap since 1.0.0, peeks the first
+// bytes of a POST; that is the in-flight refusal's 1.0.0 behaviour, so the cap
+// is held to account on its own here.)
+func TestRefusalWithMetricsOffReadsNothing(t *testing.T) {
+	if mx != nil {
+		t.Fatal("metrics are on at the start of a test")
+	}
+	h := mcpHTTPChain(refusingLimiter(), 0, 0, http.NotFoundHandler())
+	body := &countingBody{r: strings.NewReader(zerosCall(64 << 10))}
+	r := httptest.NewRequest(http.MethodPost, "/mcp", body)
+	r.RemoteAddr = "192.0.2.1:1"
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	if body.n != 0 {
+		t.Errorf("read %d bytes of the body with metrics off", body.n)
+	}
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" || rec.Header().Get("Content-Type") != "application/json" ||
+		rec.Body.String() != `{"error":"rate limit exceeded (1 requests/minute per caller)"}` {
+		t.Errorf("refusal %d %v %q differs from 1.0.0's", rec.Code, rec.Header(), rec.Body.String())
+	}
+
+	// The in-flight cap: the slot is held, the next POST waits and is refused.
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	h = inflightMiddleware(1, 20*time.Millisecond, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		started <- struct{}{}
+		<-release
+	}))
+	go h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}")))
+	<-started
+	body = &countingBody{r: strings.NewReader(zerosCall(1 << 10))}
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", body))
+	close(release)
+	if rec.Code != http.StatusServiceUnavailable || body.n != 0 || rec.Header().Get("Retry-After") != "5" || rec.Body.String() != `{"error":"server busy, retry shortly"}` {
+		t.Errorf("busy refusal with metrics off: %d, read %d bytes, %q", rec.Code, body.n, rec.Body.String())
+	}
+}
+
+// A refused request sent with Expect: 100-continue: metrics on or off, the
+// client sends what 1.0.0 had it send. Reading the body to label a refusal
+// made net/http send 100 Continue, so the client sent a body the server then
+// refused, where 1.0.0 answered the rate limit at once.
+func TestRefusalBehindExpectSendsNoMoreThan100(t *testing.T) {
+	send := func(t *testing.T, outcome string) (status, sent int) {
+		h := mcpHTTPChain(refusingLimiter(), 0, 0, http.NotFoundHandler())
+		if outcome == "busy" {
+			release, started, held := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			h = mcpHTTPChain(nil, 1, 20*time.Millisecond, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				close(started)
+				<-release
+			}))
+			go func() {
+				h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}")))
+				close(held)
+			}()
+			<-started
+			defer func() { close(release); <-held }()
+		}
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.RemoteAddr = "192.0.2.1:1"
+			h.ServeHTTP(w, r)
+		}))
+		defer ts.Close()
+		call := toolCall(1, "search", `{}`)
+		body := &countingBody{r: strings.NewReader(call)}
+		r, _ := http.NewRequest(http.MethodPost, ts.URL+"/mcp", body)
+		r.ContentLength = int64(len(call))
+		r.Header.Set("Expect", "100-continue")
+		client := &http.Client{Transport: &http.Transport{ExpectContinueTimeout: 5 * time.Second}}
+		start := time.Now()
+		resp, err := client.Do(r)
+		if err != nil {
+			t.Fatalf("%s: %v", outcome, err)
+		}
+		resp.Body.Close()
+		if time.Since(start) > 2*time.Second {
+			t.Errorf("%s: answered after %v", outcome, time.Since(start))
+		}
+		return resp.StatusCode, body.n
+	}
+	for _, outcome := range []string{"rate_limited", "busy"} {
+		offStatus, offSent := send(t, outcome)
+		m := withMetrics(t)
+		onStatus, onSent := send(t, outcome)
+		if onStatus != offStatus || onSent != offSent {
+			t.Errorf("%s: metrics on %d with %d body bytes sent, off %d with %d", outcome, onStatus, onSent, offStatus, offSent)
+		}
+		if outcome == "rate_limited" && (onStatus != http.StatusTooManyRequests || onSent != 0) {
+			t.Errorf("rate limit behind Expect: %d, %d body bytes sent; want 429 before any body", onStatus, onSent)
+		}
+		if outcome == "rate_limited" && series(t, m)[req("other", "", "rate_limited", "false")] != 1 {
+			t.Errorf("rate limit behind Expect: want it counted once as other (nothing read)")
+		}
+		if got := sumPrefix(series(t, m), "ratatosk_mcp_requests_total{"); got != 1 {
+			t.Errorf("%s: %v requests counted, want 1", outcome, got)
+		}
+		mx = nil
+	}
+}
+
+// What one rate-limited POST costs, metrics off (the 1.0.0 refusal) and on.
+// The body is 64 KiB of "0," tokens before the tool name; before the 1.1.0
+// bounds, labelling it cost 25.7 ms and 3.4 MB per refusal on the review
+// machine (2026-11-18).
+func BenchmarkRefusedRequestLabel(b *testing.B) {
+	body := []byte(zerosCall(64 << 10))
+	for _, on := range []bool{false, true} {
+		b.Run(map[bool]string{false: "metrics_off", true: "metrics_on"}[on], func(b *testing.B) {
+			orig := mx
+			mx = nil
+			if on {
+				mx = newMetrics("bench")
+			}
+			b.Cleanup(func() { mx = orig })
+			h := mcpHTTPChain(refusingLimiter(), 0, 0, http.NotFoundHandler())
+			b.ReportAllocs()
+			for b.Loop() {
+				r := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
+				r.RemoteAddr = "192.0.2.1:1"
+				h.ServeHTTP(httptest.NewRecorder(), r)
+			}
+		})
+	}
+}

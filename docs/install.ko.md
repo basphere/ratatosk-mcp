@@ -429,7 +429,7 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9
 라벨 값은 모두 정해진 목록에서만 나옵니다.
 
 - `method`: `initialize`, `tools/list`, `tools/call`, 그 밖의 메서드(알림, `ping` 등)는 `other`.
-- `tool`: 도구 여섯 개의 이름. 호출자가 그 밖의 이름을 보내면 `unknown`, 메서드가 `tools/call`이 아니면 빈 값.
+- `tool`: 도구 여섯 개의 이름. 호출자가 그 밖의 이름을 보내면 `unknown`, 메서드가 `tools/call`이 아니면 빈 값. 서버가 읽기 전에 거절한 요청(`rate_limited`, `busy`)은 본문의 처음 4 KiB로 이름을 붙입니다. 도구 이름이 그보다 뒤에 있으면 `unknown`이고, `100 Continue`를 기다리는 요청은 본문을 읽지 않습니다(`method`는 `other`).
 - 요청의 `outcome`: `ok`, `error`(형식이 잘못되어 거절된 요청, 프로토콜 오류, 또는 모르는 슬러그나 업스트림 요청 실패처럼 `isError`로 표시된 도구 응답), `rate_limited`(`MCP_RATE_LIMIT_PER_MIN`에 걸린 `429`), `busy`(`MCP_MAX_INFLIGHT` 아래에서 10초 안에 빈자리가 나지 않았거나 호출자가 기다리다 끊은 요청).
 - 업스트림 요청의 `outcome`: `ok`(`200`), `error`(그 밖의 상태 코드. 기록에 없는 버전의 `404` 포함), `timeout`, `transport`(응답 없음: 연결 거부, DNS, 연결 끊김), `canceled`(호출이 먼저 끝남).
 - `self`: 호출자 주소가 `MCP_SELF_CALLERS`(쉼표로 구분, `.`으로 끝나는 항목은 앞부분 일치)에 있으면 `true`. 서버가 업스트림에 `X-Ratatosk-Caller`로 보내는 판정과 같습니다. 설정하지 않으면 모든 호출자가 `false`입니다.

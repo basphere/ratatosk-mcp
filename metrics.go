@@ -385,11 +385,17 @@ func metricsMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 // counting at the HTTP layer
 // ---------------------------------------------------------------------------
 
-// metricsPeekBytes bounds what is read of a request body to label it: the
-// same 64 KiB the batch refusal allows for leading space. method sits in the
-// first bytes of every request seen; a tool name after 64 KiB of arguments is
-// counted as "unknown".
-const metricsPeekBytes = 64 << 10
+// metricsPeekBytes bounds what is read of a request body to label it.
+// Labelling a request the server turns away must cost about what turning it
+// away costs: with 64 KiB read and a json.Decoder walking every token, a body
+// of "0," tokens took 25.7 ms and 3.4 MB of allocations per refused request
+// (independent review, 2026-11-18), and refusals are not bounded by the rate
+// limiter — they are what it produces — while the hosted container has one
+// CPU. method sits in the first bytes of every request seen, params.name close
+// behind it; a label past the bound is "other" (method) or "unknown" (tool).
+// peekLabels reads the prefix in one pass, byte by byte, without recursion,
+// so its work is bounded by these 4 KiB whatever their nesting.
+const metricsPeekBytes = 4 << 10
 
 type tallyKey struct{}
 
@@ -425,10 +431,21 @@ func (p *prefixReader) fill() {
 // refusedFor marks the request as refused before the server saw it, and
 // reads the beginning of its body so the refusal is counted under the method
 // and tool it was for. The rate limiter and the in-flight cap call it before
-// they answer: a handler reads a body before it writes the response.
+// they answer: a handler reads a body before it writes the response. With
+// metrics off it reads nothing — the refusal is the 1.0.0 one.
+//
+// Behind Expect: 100-continue it reads nothing either. The client sends the
+// body only when the server asks for it, and net/http asks on the first read:
+// reading here sent 100 Continue for a body about to be refused, then waited
+// for it, where 1.0.0 answered at once (independent review, 2026-11-18). Such
+// a refusal is counted from what was read, nothing: method "other".
 func refusedFor(req *http.Request, outcome string) {
-	if t, ok := req.Context().Value(tallyKey{}).(*httpTally); ok {
-		t.outcome = outcome
+	t, ok := req.Context().Value(tallyKey{}).(*httpTally)
+	if !ok {
+		return
+	}
+	t.outcome = outcome
+	if req.Header.Get("Expect") == "" {
 		t.body.fill()
 	}
 }
@@ -510,98 +527,159 @@ func metricsHTTPMiddleware(next http.Handler) http.Handler {
 // peekLabels reads the JSON-RPC method and, for tools/call, params.name from
 // the beginning of a request body. The prefix may end mid-value; whatever was
 // read before that counts. Anything not a single JSON object (a batch, a
-// response, garbage) has no method.
+// response, garbage) has no method. One pass over b, no recursion, and no
+// allocation but the two strings it returns, decoded once at the end — it is
+// not a validator: the SDK judges the body, this only names what it was for,
+// and each name ends up as a closed-list label anyway.
 func peekLabels(b []byte) (method, tool string) {
-	dec := json.NewDecoder(bytes.NewReader(b))
-	if tok, err := dec.Token(); err != nil || tok != json.Delim('{') {
-		return "", ""
+	var m, n []byte // the last method and params.name strings seen, quotes included
+	sc := jsonScan{b: b}
+	defer func() { method, tool = unquote(m), unquote(n) }()
+	if !sc.next('{') {
+		return
 	}
-	for dec.More() {
-		k, err := dec.Token()
-		if err != nil {
-			return method, tool
+	for {
+		key, ok := sc.str()
+		if !ok || !sc.next(':') {
+			return
 		}
-		switch k {
-		case "method":
-			if v, err := dec.Token(); err == nil {
-				if s, ok := v.(string); ok {
-					method = s
+		switch {
+		case string(key) == `"method"` && sc.peek() == '"':
+			if m, ok = sc.str(); !ok {
+				m = nil
+				return
+			}
+		case string(key) == `"params"` && sc.peek() == '{':
+			sc.i++
+			if sc.peek() != '}' {
+				for {
+					pk, ok := sc.str()
+					if !ok || !sc.next(':') {
+						return
+					}
+					if string(pk) == `"name"` && sc.peek() == '"' {
+						if n, ok = sc.str(); !ok {
+							n = nil
+							return
+						}
+					} else if !sc.skipValue() {
+						return
+					}
+					if !sc.next(',') {
+						break
+					}
 				}
-			} else {
-				return method, tool
 			}
-		case "params":
-			tok, err := dec.Token()
-			if err != nil {
-				return method, tool
+			if !sc.next('}') {
+				return
 			}
-			if tok != json.Delim('{') {
-				if d, ok := tok.(json.Delim); ok && !skipRest(dec, d) {
-					return method, tool
+		default:
+			if !sc.skipValue() {
+				return
+			}
+		}
+		if !sc.next(',') {
+			return
+		}
+	}
+}
+
+// unquote decodes one JSON string, quotes included; "" for nil or invalid.
+func unquote(q []byte) string {
+	if len(q) < 2 {
+		return ""
+	}
+	if !bytes.ContainsRune(q, '\\') {
+		return string(q[1 : len(q)-1])
+	}
+	var v string
+	if json.Unmarshal(q, &v) != nil {
+		return ""
+	}
+	return v
+}
+
+// jsonScan walks a JSON prefix one byte at a time; i only moves forward.
+type jsonScan struct {
+	b []byte
+	i int
+}
+
+// peek skips white space and returns the next byte, 0 at the end.
+func (s *jsonScan) peek() byte {
+	for s.i < len(s.b) {
+		switch c := s.b[s.i]; c {
+		case ' ', '\t', '\n', '\r':
+			s.i++
+		default:
+			return c
+		}
+	}
+	return 0
+}
+
+// next consumes c if it comes next.
+func (s *jsonScan) next(c byte) bool {
+	if s.peek() != c {
+		return false
+	}
+	s.i++
+	return true
+}
+
+// str reads a string and returns it as written, quotes included; false when
+// none comes next or it is cut short.
+func (s *jsonScan) str() ([]byte, bool) {
+	if !s.next('"') {
+		return nil, false
+	}
+	start := s.i - 1
+	for ; s.i < len(s.b); s.i++ {
+		switch s.b[s.i] {
+		case '\\':
+			s.i++
+		case '"':
+			s.i++
+			return s.b[start:s.i], true
+		}
+	}
+	return nil, false
+}
+
+// skipValue reads past one value of any kind; false when the input ends
+// first. Objects and arrays are skipped by counting brackets outside strings.
+func (s *jsonScan) skipValue() bool {
+	switch s.peek() {
+	case 0:
+		return false
+	case '"':
+		_, ok := s.str()
+		return ok
+	case '{', '[':
+		for depth := 0; s.i < len(s.b); {
+			switch s.b[s.i] {
+			case '{', '[':
+				depth++
+			case '}', ']':
+				if depth--; depth == 0 {
+					s.i++
+					return true
+				}
+			case '"':
+				if _, ok := s.str(); !ok {
+					return false
 				}
 				continue
 			}
-			for dec.More() {
-				pk, err := dec.Token()
-				if err != nil {
-					return method, tool
-				}
-				if pk == "name" {
-					v, err := dec.Token()
-					if err != nil {
-						return method, tool
-					}
-					if s, ok := v.(string); ok {
-						tool = s
-					} else if d, ok := v.(json.Delim); ok && !skipRest(dec, d) {
-						return method, tool
-					}
-					continue
-				}
-				if !skipValue(dec) {
-					return method, tool
-				}
-			}
-			if _, err := dec.Token(); err != nil { // the params object's '}'
-				return method, tool
-			}
-		default:
-			if !skipValue(dec) {
-				return method, tool
-			}
+			s.i++
 		}
-	}
-	return method, tool
-}
-
-// skipValue reads one JSON value; false when the input ended first.
-func skipValue(dec *json.Decoder) bool {
-	tok, err := dec.Token()
-	if err != nil {
 		return false
 	}
-	if d, ok := tok.(json.Delim); ok {
-		return skipRest(dec, d)
-	}
-	return true
-}
-
-// skipRest reads to the end of the object or array that d opened.
-func skipRest(dec *json.Decoder, d json.Delim) bool {
-	if d != '{' && d != '[' {
-		return true
-	}
-	for depth := 1; depth > 0; {
-		tok, err := dec.Token()
-		if err != nil {
-			return false
-		}
-		switch tok {
-		case json.Delim('{'), json.Delim('['):
-			depth++
-		case json.Delim('}'), json.Delim(']'):
-			depth--
+	for ; s.i < len(s.b); s.i++ { // a number, true, false or null
+		switch s.b[s.i] {
+		case ',', '}', ']', ' ', '\t', '\n', '\r':
+			return true
 		}
 	}
-	return true
+	return false
 }
