@@ -245,10 +245,13 @@ func TestMetricsCountBusy(t *testing.T) {
 	if got := s[req("tools/call", "search", "busy", "false")]; got != 2 {
 		t.Errorf("busy for search = %v, want 2", got)
 	}
-	// The slot holder's own handler answered 200 with no MCP server behind it:
-	// it is nobody's to count here, and the HTTP layer must not count it.
-	if got := sumPrefix(s, "ratatosk_mcp_requests_total{"); got != 2 {
-		t.Errorf("%v requests counted, want the two refusals", got)
+	// The slot holder's own handler answered 200 with no MCP server behind it,
+	// so nothing claimed that POST: it is counted once too, as an error.
+	if got := sumPrefix(s, "ratatosk_mcp_requests_total{"); got != 3 {
+		t.Errorf("%v requests counted, want the two refusals and the slot holder", got)
+	}
+	if got := s[req("tools/call", "check_stack", "error", "false")]; got != 1 {
+		t.Errorf("the slot holder's POST: tools/call check_stack error = %v, want 1", got)
 	}
 }
 
@@ -689,8 +692,14 @@ func TestRefusalBehindExpectSendsNoMoreThan100(t *testing.T) {
 		if outcome == "rate_limited" && series(t, m)[req("other", "", "rate_limited", "false")] != 1 {
 			t.Errorf("rate limit behind Expect: want it counted once as other (nothing read)")
 		}
-		if got := sumPrefix(series(t, m), "ratatosk_mcp_requests_total{"); got != 1 {
-			t.Errorf("%s: %v requests counted, want 1", outcome, got)
+		refusals := 0.0
+		for k, v := range series(t, m) {
+			if strings.HasPrefix(k, "ratatosk_mcp_requests_total{") && strings.Contains(k, `outcome="`+outcome+`"`) {
+				refusals += v
+			}
+		}
+		if refusals != 1 {
+			t.Errorf("%s: %v refusals counted, want 1", outcome, refusals)
 		}
 		mx = nil
 	}
@@ -718,5 +727,110 @@ func BenchmarkRefusedRequestLabel(b *testing.B) {
 				h.ServeHTTP(httptest.NewRecorder(), r)
 			}
 		})
+	}
+}
+
+// Every POST is counted once, in stateless and stateful mode: also the ones
+// the SDK answers 200 with a JSON-RPC error without running them (params it
+// could not read), which went uncounted while the HTTP layer took a 200 for a
+// request the MCP layer had counted (final review, 2026-11-18).
+func TestMetricsCountPostsTheSDKNeverRan(t *testing.T) {
+	bodies := []struct{ body, key string }{
+		{toolCall(2, "list_projects", `{}`), req("tools/call", "list_projects", "ok", "false")},
+		{`{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":5}}`, req("tools/call", "unknown", "error", "false")},
+		{`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":null}`, req("tools/call", "unknown", "error", "false")},
+		{`{"jsonrpc":"2.0","id":5,"method":"tools/list","params":"x"}`, req("tools/list", "", "error", "false")},
+	}
+	// One metrics for both modes, read as deltas: the SDK handles a
+	// notification after it answers 202, so swapping the global between modes
+	// would race with it.
+	m := withMetrics(t)
+	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	for _, stateless := range []bool{true, false} {
+		u := mcpServer(t, nil, stateless).URL + "/mcp"
+		var hdr map[string]string
+		if !stateless {
+			code, resp := mcpPost(t, u, initBody, nil)
+			sid, _, _ := strings.Cut(resp, "|")
+			if code != 200 || sid == "" {
+				t.Fatalf("initialize: %d %q", code, resp)
+			}
+			hdr = map[string]string{"Mcp-Session-Id": sid, "Mcp-Protocol-Version": "2025-06-18"}
+			mcpPost(t, u, notified, hdr)
+		}
+		before := sumPrefix(series(t, m), "ratatosk_mcp_requests_total{")
+		for _, b := range bodies {
+			was := series(t, m)
+			code, resp := mcpPost(t, u, b.body, hdr)
+			now := series(t, m)
+			if got := sumPrefix(now, "ratatosk_mcp_requests_total{") - sumPrefix(was, "ratatosk_mcp_requests_total{"); got != 1 {
+				t.Errorf("stateless=%v %s (answered %d %.120s): counted %v times, want once", stateless, b.body, code, resp, got)
+			}
+			if now[b.key]-was[b.key] != 1 {
+				t.Errorf("stateless=%v %s: %s did not move", stateless, b.body, b.key)
+			}
+		}
+		if got := sumPrefix(series(t, m), "ratatosk_mcp_requests_total{") - before; got != float64(len(bodies)) {
+			t.Errorf("stateless=%v: %v counted for %d POSTs", stateless, got, len(bodies))
+		}
+	}
+}
+
+// A POST the SDK answers 202 carried no request: whatever its body names, it
+// is counted as method other. A later "method" key wins in the SDK, so this
+// body is a notification there; labelled from the scanner it added one to a
+// tools/call that never ran (final review, 2026-11-18).
+func TestMetricsCount202AsNoCall(t *testing.T) {
+	m := withMetrics(t) // one for both modes, read as deltas (see above)
+	for _, stateless := range []bool{true, false} {
+		u := mcpServer(t, nil, stateless).URL + "/mcp"
+		var hdr map[string]string
+		if !stateless {
+			code, resp := mcpPost(t, u, initBody, nil)
+			sid, _, _ := strings.Cut(resp, "|")
+			if code != 200 || sid == "" {
+				t.Fatalf("initialize: %d %q", code, resp)
+			}
+			hdr = map[string]string{"Mcp-Session-Id": sid, "Mcp-Protocol-Version": "2025-06-18"}
+		}
+		for _, body := range []string{
+			`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"check_stack"},"method":"notifications/initialized"}`,
+			`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"check_stack"},"\u006dethod":"notifications/initialized"}`,
+		} {
+			was := series(t, m)
+			if code, resp := mcpPost(t, u, body, hdr); code != http.StatusAccepted {
+				t.Fatalf("stateless=%v %s: %d %s, want 202", stateless, body, code, resp)
+			}
+			now := series(t, m)
+			if d := now[req("other", "", "ok", "false")] - was[req("other", "", "ok", "false")]; d != 1 {
+				t.Errorf("stateless=%v %s: other/ok moved by %v, want 1", stateless, body, d)
+			}
+			if d := sumPrefix(now, `ratatosk_mcp_requests_total{method="tools/call"`) - sumPrefix(was, `ratatosk_mcp_requests_total{method="tools/call"`); d != 0 {
+				t.Errorf("stateless=%v %s: a notification moved tools/call by %v", stateless, body, d)
+			}
+		}
+	}
+}
+
+// The scanner reads keys as the SDK's decoder does (checked against go-sdk
+// v1.7.0 on 2026-11-18): escapes decoded, case-sensitive, the last of a
+// repeated key wins. A refused or rejected request is labelled from it.
+func TestPeekLabelsReadKeysAsTheSDK(t *testing.T) {
+	for _, c := range []struct{ body, method, tool string }{
+		{`{"\u006dethod":"tools/list"}`, "tools/list", ""},
+		{`{"method":"tools/call","\u0070arams":{"n\u0061me":"search"}}`, "tools/call", "search"},
+		{`{"method":"tools/call","params":{"name":"check_stack"},"\u006dethod":"notifications/initialized"}`, "notifications/initialized", "check_stack"},
+		{`{"METHOD":"tools/list"}`, "", ""},
+		{`{"method":"tools/call","method":7}`, "", ""},
+		{`{"method":"tools/call","params":{"name":"get_release"},"params":{"arguments":{}}}`, "tools/call", ""},
+		{`{"method":"tools/call","params":{"name":"get_release"},"params":null}`, "tools/call", ""},
+		{`{"method":"tools/call","params":{"name":"search","name":5}}`, "tools/call", ""},
+		{`{"method":"tools/call","params":{"name":"search","\u006eame":"get_release"}}`, "tools/call", "get_release"},
+		{`{"\u00e9method":"tools/list"}`, "", ""},
+		{`{"\u006dethod`, "", ""},
+	} {
+		if m, tool := peekLabels([]byte(c.body)); m != c.method || tool != c.tool {
+			t.Errorf("peekLabels(%s) = %q, %q; want %q, %q", c.body, m, tool, c.method, c.tool)
+		}
 	}
 }

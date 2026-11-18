@@ -20,13 +20,17 @@ package main
 // argument or project name, so the set of series is fixed at startup and
 // cannot grow with traffic.
 //
-// Where a request is counted: a call the MCP server ran is counted by
-// metricsMiddleware, which sees its result (an isError answer is an error). A
-// POST the server never ran — refused by the rate limiter, the in-flight cap,
-// the batch refusal or the SDK's own checks — or one that carried no call (a
-// notification, answered 202) is counted by metricsHTTPMiddleware. The two
-// never count the same POST: a call the server ran is answered 200, and the
-// HTTP layer counts only 202, an error status, or a refusal it was told of.
+// Where a request is counted: every POST to /mcp exactly once. A request the
+// MCP server ran is counted by metricsMiddleware, which sees its result (an
+// isError answer is an error). Every other POST is counted by
+// metricsHTTPMiddleware: refused by the rate limiter, the in-flight cap or the
+// batch refusal, rejected by the SDK (a bad header, or params it could not
+// read: answered 200 with a JSON-RPC error and never run), or carrying no
+// request at all (a notification, answered 202). Which layer counts a POST is
+// settled by a claim on its tally (httpTally.claim), so the two never count
+// the same POST and neither misses one; status codes are not used to guess
+// (final review, 2026-11-18: three malformed bodies answered 200 went
+// uncounted that way).
 
 import (
 	"bytes"
@@ -40,6 +44,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -341,14 +346,21 @@ func metricsServer(m *metrics) *http.Server {
 // ---------------------------------------------------------------------------
 
 // metricsMiddleware counts every request the MCP server runs, with the
-// outcome its result shows, and times and sizes tool calls. Notifications are
-// left to the HTTP layer, which answers them 202 whether or not they are run
-// before the request ends. self is read from the context exactly as the
-// upstream call reads it for X-Ratatosk-Caller.
+// outcome its result shows, and times and sizes tool calls. It claims the POST
+// before it runs the request (mcpLayerCounts), so the HTTP layer leaves it
+// alone. Notifications are left to the HTTP layer, which answers them 202
+// whether or not they are run before the request ends. self is read from the
+// context exactly as the upstream call reads it for X-Ratatosk-Caller.
 func metricsMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		// A notification is tested for before mx is read: the SDK runs one after
+		// it has answered 202, unordered with anything else, and reading the
+		// global there is a read nothing synchronises with.
+		if strings.HasPrefix(method, "notifications/") {
+			return next(ctx, method, req)
+		}
 		m := mx
-		if m == nil || strings.HasPrefix(method, "notifications/") {
+		if m == nil || !mcpLayerCounts(req) {
 			return next(ctx, method, req)
 		}
 		start := time.Now()
@@ -402,7 +414,47 @@ type tallyKey struct{}
 // httpTally is one POST as the HTTP layer sees it.
 type httpTally struct {
 	body    *prefixReader
-	outcome string // set by a refusal: rate_limited | busy
+	outcome string       // set by a refusal: rate_limited | busy
+	claimed atomic.Int32 // who counts this POST: 0 nobody yet, claimedByMCP, claimedByHTTP
+}
+
+const (
+	claimedByMCP  = 1
+	claimedByHTTP = 2
+)
+
+// claim makes by the one layer that counts this POST; false when the other
+// layer already is.
+func (t *httpTally) claim(by int32) bool { return t.claimed.CompareAndSwap(0, by) }
+
+// tallyHeader carries a POST's tally id from the HTTP layer to the MCP layer.
+// The SDK hands every message of a POST that request's own header
+// (RequestExtra.Header), in stateless and stateful mode alike, where the
+// request's context does not reach: a stateful session runs its calls on the
+// session's context. The HTTP layer sets it on every POST, over anything the
+// client sent, and nothing else reads it.
+const tallyHeader = "X-Ratatosk-Metrics-Post"
+
+var (
+	tallies  sync.Map // tally id → *httpTally, while its POST is being served
+	tallySeq atomic.Uint64
+)
+
+// mcpLayerCounts says whether metricsMiddleware is the layer that counts req:
+// a request with no tally id did not come through the HTTP layer (stdio); one
+// whose tally is gone or claimed belongs to a POST the HTTP layer counted
+// already (it ended before this request was run).
+func mcpLayerCounts(req mcp.Request) bool {
+	extra := req.GetExtra()
+	if extra == nil || extra.Header == nil {
+		return true
+	}
+	id := extra.Header.Get(tallyHeader)
+	if id == "" {
+		return true
+	}
+	t, ok := tallies.Load(id)
+	return ok && t.(*httpTally).claim(claimedByMCP)
 }
 
 // prefixReader keeps the first max bytes read through it, whoever reads.
@@ -483,9 +535,9 @@ func (s *statusWriter) Flush() {
 
 func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
 
-// metricsHTTPMiddleware counts the POSTs the MCP server does not: refusals,
-// requests the SDK rejects before running them, and requests with no call.
-// With metrics off it does nothing at all — the body is not touched.
+// metricsHTTPMiddleware counts every POST the MCP server did not claim:
+// refusals, requests the SDK rejected or never ran, and POSTs that carried no
+// request. With metrics off it does nothing at all — the body is not touched.
 func metricsHTTPMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		m := mx
@@ -494,16 +546,34 @@ func metricsHTTPMiddleware(next http.Handler) http.Handler {
 			return
 		}
 		t := &httpTally{body: &prefixReader{r: req.Body, max: metricsPeekBytes}}
+		id := strconv.FormatUint(tallySeq.Add(1), 36)
+		tallies.Store(id, t)
+		defer tallies.Delete(id)
 		req = req.WithContext(context.WithValue(req.Context(), tallyKey{}, t))
+		if req.Header == nil {
+			req.Header = http.Header{}
+		}
+		req.Header.Set(tallyHeader, id)
 		req.Body = struct {
 			io.Reader
 			io.Closer
 		}{t.body, req.Body}
 		sw := &statusWriter{ResponseWriter: w}
 		next.ServeHTTP(sw, req)
+		if !t.claim(claimedByHTTP) {
+			return // a request the server ran: metricsMiddleware counts it
+		}
 		outcome := t.outcome
 		switch {
 		case outcome != "":
+		case sw.status == http.StatusAccepted:
+			// Only notifications and responses: no request was in this POST,
+			// whatever its body names. A body can name tools/call and still be a
+			// notification to the SDK (a later "method" key wins), and counted as
+			// a call it added one to a tool call that never ran (final review,
+			// 2026-11-18).
+			m.countRequest("other", "", "ok", callerClassFrom(req.Context()) == "self")
+			return
 		case sw.status >= 400:
 			outcome = "error"
 			// The SDK can refuse before it reads the body (a missing Accept
@@ -514,10 +584,11 @@ func metricsHTTPMiddleware(next http.Handler) http.Handler {
 			if req.Header.Get("Expect") == "" {
 				t.body.fill()
 			}
-		case sw.status == http.StatusAccepted:
-			outcome = "ok"
 		default:
-			return // a call the server ran: metricsMiddleware counted it
+			// Answered without running a request: params the SDK could not read
+			// come back 200 with a JSON-RPC error, and the receiving middleware
+			// never sees them (tools/call with "params":null or {"name":5}).
+			outcome = "error"
 		}
 		method, tool := peekLabels(t.body.buf)
 		m.countRequest(method, tool, outcome, callerClassFrom(req.Context()) == "self")
@@ -530,7 +601,11 @@ func metricsHTTPMiddleware(next http.Handler) http.Handler {
 // response, garbage) has no method. One pass over b, no recursion, and no
 // allocation but the two strings it returns, decoded once at the end — it is
 // not a validator: the SDK judges the body, this only names what it was for,
-// and each name ends up as a closed-list label anyway.
+// and each name ends up as a closed-list label anyway. Keys are read as the
+// SDK's decoder reads them (segmentio/encoding/json, case-sensitive): escapes
+// decoded ("\u006dethod" is method), and a key given twice is its last value
+// (a later "params" replaces an earlier one whole). Checked against the SDK
+// on 2026-11-18; a 202 is labelled without this scanner anyway.
 func peekLabels(b []byte) (method, tool string) {
 	var m, n []byte // the last method and params.name strings seen, quotes included
 	sc := jsonScan{b: b}
@@ -544,12 +619,20 @@ func peekLabels(b []byte) (method, tool string) {
 			return
 		}
 		switch {
-		case string(key) == `"method"` && sc.peek() == '"':
+		case keyIs(key, "method"):
+			m = nil
+			if sc.peek() != '"' {
+				if !sc.skipValue() {
+					return
+				}
+				break
+			}
 			if m, ok = sc.str(); !ok {
 				m = nil
 				return
 			}
-		case string(key) == `"params"` && sc.peek() == '{':
+		case keyIs(key, "params") && sc.peek() == '{':
+			n = nil
 			sc.i++
 			if sc.peek() != '}' {
 				for {
@@ -557,9 +640,14 @@ func peekLabels(b []byte) (method, tool string) {
 					if !ok || !sc.next(':') {
 						return
 					}
-					if string(pk) == `"name"` && sc.peek() == '"' {
-						if n, ok = sc.str(); !ok {
-							n = nil
+					if keyIs(pk, "name") {
+						n = nil
+						if sc.peek() == '"' {
+							if n, ok = sc.str(); !ok {
+								n = nil
+								return
+							}
+						} else if !sc.skipValue() {
 							return
 						}
 					} else if !sc.skipValue() {
@@ -574,6 +662,9 @@ func peekLabels(b []byte) (method, tool string) {
 				return
 			}
 		default:
+			if keyIs(key, "params") {
+				n = nil // a params that is not an object names no tool
+			}
 			if !sc.skipValue() {
 				return
 			}
@@ -582,6 +673,65 @@ func peekLabels(b []byte) (method, tool string) {
 			return
 		}
 	}
+}
+
+// keyIs says the JSON string raw (quotes included) decodes to want, an ASCII
+// key, without allocating: escapes are decoded, case counts.
+func keyIs(raw []byte, want string) bool {
+	if len(raw) < 2 {
+		return false
+	}
+	b, i := raw[1:len(raw)-1], 0
+	for j := 0; j < len(b); j++ {
+		c := b[j]
+		if c == '\\' {
+			if j++; j >= len(b) {
+				return false
+			}
+			switch b[j] {
+			case '"', '\\', '/':
+				c = b[j]
+			case 'b':
+				c = '\b'
+			case 'f':
+				c = '\f'
+			case 'n':
+				c = '\n'
+			case 'r':
+				c = '\r'
+			case 't':
+				c = '\t'
+			case 'u':
+				if j+4 >= len(b) {
+					return false
+				}
+				r := 0
+				for _, h := range b[j+1 : j+5] {
+					switch {
+					case '0' <= h && h <= '9':
+						r = r<<4 | int(h-'0')
+					case 'a' <= h && h <= 'f':
+						r = r<<4 | int(h-'a'+10)
+					case 'A' <= h && h <= 'F':
+						r = r<<4 | int(h-'A'+10)
+					default:
+						return false
+					}
+				}
+				if r >= 0x80 { // want is ASCII
+					return false
+				}
+				c, j = byte(r), j+4
+			default:
+				return false
+			}
+		}
+		if i >= len(want) || want[i] != c {
+			return false
+		}
+		i++
+	}
+	return i == len(want)
 }
 
 // unquote decodes one JSON string, quotes included; "" for nil or invalid.
