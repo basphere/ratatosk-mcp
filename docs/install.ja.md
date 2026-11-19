@@ -159,10 +159,11 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
 - MCP サーバーのログには起動行とアップストリームのエラー行だけが残り、
   正常なリクエストは記録されません。エラー行にもリクエスト引数は
   含まれません。
-- MCP サーバーはリクエストを、メソッド・ツール名・結果と、呼び出し元が運営者
-  自身かどうかを示す 1 ビットだけで数えます。ツールごとの所要時間・答えの大きさ・
-  アップストリームへのリクエスト数も合計だけを記録します（[メトリクス](#メトリクス)
-  を参照）。引数・アドレス・セッションは数えません。
+- MCP サーバーは、リクエスト数をメソッド、ツール名、結果、および呼び出し元が
+  運営者自身かどうかを示す 1 ビットで分類して集計します。ツールごとの所要時間、
+  応答サイズ、アップストリームへのリクエスト数も集計値として記録します
+  （[メトリクス](#メトリクス)を参照）。引数・アドレス・セッションは集計に
+  含めません。
 - アップストリーム API のリクエストログは、呼び出し側が `traceparent` を
   送った場合にのみ 1 行書かれ、その行にあるのも正規化されたエンドポイント
   ラベルと trace_id だけです。パス・クエリは記録されません。
@@ -488,7 +489,7 @@ kagent ランタイムはこの一覧を守ります。Claude Harness（`spec.cl
 | `MCP_RATE_LIMIT_PER_MIN` | `rateLimitPerMin` | *（オフ）* | 呼び出し元ごとの毎分リクエスト上限（MCP のメッセージはすべて数え、ツール呼び出しは 1 回につき 1 つ）。自分が管理していない呼び出し元を受けるサーバー向けです。呼び出し元アドレスごとに枠を分けるため、誰か 1 人が忙しくても他が枯渇しません。超えると `Retry-After` 付きの `429` を返します。アドレスはウィンドウの間だけのメモリ上のバケットキーであり、記録もアップストリームへの転送もしません。`CF-Connecting-IP` → `X-Forwarded-For` → `X-Real-IP` → ピアアドレスの順に読むため、前段のプロキシがいずれかを設定し、**クライアントが送ってきた値は削除する**必要があります。呼び出し元が操作できる値をキーにしたら制限になりません。単一利用者のインストールではオフのままに |
 | `MCP_MAX_INFLIGHT` | `maxInflight` | *（オフ）* | すべての呼び出し元から届くリクエストの合計について、サーバーが同時に処理する数の上限。上限を超えたリクエストは、処理枠が空くまで最大 10 秒待ち、空かなければ `Retry-After` 付きの `503` を受け取ります。[メモリと同時実行](#メモリと同時実行)を参照 |
 | `MCP_CACHE_MAX_MB` | `cacheMaxMB` | `32` | 応答キャッシュの上限（MiB）。応答は 5 分間キャッシュされます |
-| `MCP_METRICS_ADDR` | `metricsPort` | *（オフ）* | HTTP モードのみ。設定時（例：`:9090`）はそのアドレスの `GET /metrics` でリクエスト数などのメトリクスを提供します。`/mcp` とは別のリスナーです。[メトリクス](#メトリクス)参照 |
+| `MCP_METRICS_ADDR` | `metricsPort` | *（オフ）* | HTTP モードのみ。設定時（例：`:9090`）はそのアドレスの `GET /metrics` でリクエスト数などのメトリクスを提供します。`/mcp` とは別のリスナーです。[メトリクス](#メトリクス)を参照 |
 
 docker で HTTP モードを直接起動する例：
 
@@ -637,10 +638,10 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9
 
 | メトリクス | 型 | ラベル | 何を測るか |
 |---|---|---|---|
-| `ratatosk_mcp_requests_total` | counter | `method`・`tool`・`outcome`・`self` | `/mcp` へのリクエスト数。POST 1 つが 1 リクエスト |
-| `ratatosk_mcp_upstream_requests_total` | counter | `tool`・`outcome` | アップストリームの `/v2` API に送ったリクエスト数。応答キャッシュから返した答えは数えません |
-| `ratatosk_mcp_request_duration_seconds` | histogram | `tool` | サーバーがツール呼び出しのリクエストを受けてから答えるまでの時間 |
-| `ratatosk_mcp_response_bytes` | histogram | `tool` | エージェントが受け取るツールの答えのテキストの大きさ（バイト） |
+| `ratatosk_mcp_requests_total` | counter | `method`・`tool`・`outcome`・`self` | `/mcp` へのリクエスト数。POST リクエスト 1 件を 1 リクエストとして数えます |
+| `ratatosk_mcp_upstream_requests_total` | counter | `tool`・`outcome` | アップストリームの `/v2` API に送ったリクエスト数。応答キャッシュから返された応答はリクエストとして数えません |
+| `ratatosk_mcp_request_duration_seconds` | histogram | `tool` | サーバーがツール呼び出しのリクエストを受信してから応答するまでの時間 |
+| `ratatosk_mcp_response_bytes` | histogram | `tool` | エージェントが受け取るツール応答のテキストサイズ（バイト） |
 | `ratatosk_mcp_build_info` | gauge | `version` | サーバーのバージョン。値は常に 1 |
 
 ラベルの値はすべて決まった一覧から出ます：
@@ -654,9 +655,9 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9
   本文を読みません（`method` は `other`）。
 - リクエストの `outcome`：`ok`、`error`（形式が不正で拒否したリクエスト、
   プロトコルのエラー、または未知のスラッグやアップストリームへのリクエストの
-  失敗のように `isError` が付いたツールの答え）、`rate_limited`
-  （`MCP_RATE_LIMIT_PER_MIN` による `429`）、`busy`（`MCP_MAX_INFLIGHT` の
-  もとで 10 秒以内に処理枠が空かなかった、または呼び出し元が待つのをやめた）。
+  失敗のように `isError` が付いたツールの応答）、`rate_limited`
+  （`MCP_RATE_LIMIT_PER_MIN` による `429`）、`busy`（`MCP_MAX_INFLIGHT` の制限下で
+  10 秒以内に処理枠が空かなかった、または呼び出し元が待機を中止した）。
 - アップストリームへのリクエストの `outcome`：`ok`（`200`）、`error`（それ以外の
   ステータス。記録にないバージョンの `404` を含む）、`timeout`、`transport`
   （応答なし：接続拒否、DNS、接続断）、`canceled`（呼び出しが先に終わった）。
@@ -665,10 +666,10 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9
   `X-Ratatosk-Caller` で送る判定と同じです。未設定なら呼び出し元はすべて
   `false` です。
 
-呼び出し元が送った内容はラベルになりません。引数・プロジェクト名・アドレス・
-User-Agent・セッションはどこにもありません。系列の一覧はサーバーの起動時に
-決まり、すべての系列が 0 から始まるので、再起動の時点から測る区間でも最初の
-呼び出しが抜けません。
+呼び出し元が送信した内容はラベルに使いません。ラベルには、引数・プロジェクト名・
+アドレス・User-Agent・セッションは含まれません。系列の一覧はサーバーの起動時に
+決まり、すべての系列が 0 から始まるので、再起動時点から始まる期間でレートを
+計算しても、最初の呼び出しがカウントされます。
 
 ## トラブルシューティング
 

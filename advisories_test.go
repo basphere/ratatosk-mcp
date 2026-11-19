@@ -338,7 +338,7 @@ func TestDistinctAdvisoriesAreDescribedAsComputed(t *testing.T) {
 	// other card contradicts is believed, and the grade falls back when the
 	// changes citing an advisory alone carry none.
 	en, _ := os.ReadFile("docs/tools.en.md")
-	for _, want := range []string{"no other card contradicts is taken at its word", "when none of those carries a grade"} {
+	for _, want := range []string{"no other change contradicts is taken at its word", "when none of those carries a grade"} {
 		if !strings.Contains(string(en), want) {
 			t.Errorf("docs/tools.en.md: the distinct_advisories row does not say %q", want)
 		}

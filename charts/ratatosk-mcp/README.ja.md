@@ -27,7 +27,7 @@ helm install ratatosk-mcp ./charts/ratatosk-mcp
 | `rateLimitPerMin` | `0` (= 無効) | `MCP_RATE_LIMIT_PER_MIN`: 呼び出し元アドレスごとの毎分リクエスト数（MCP のメッセージはすべて数える）。自分が管理していない呼び出し元を受けるサーバー専用 |
 | `maxInflight` | `0` (= 無効) | `MCP_MAX_INFLIGHT`: サーバーが同時に処理するリクエスト数の上限。上限を超えたリクエストは、処理枠が空くまで最大 10 秒待ち、空かなければ `Retry-After` 付きの `503` を受け取ります。多くの呼び出し元から同時にリクエストが届く可能性がある場合に設定します。メモリ使用量を上限内に抑えるための設定です |
 | `cacheMaxMB` | `0` (= 32) | `MCP_CACHE_MAX_MB`: 応答キャッシュの上限（MiB） |
-| `metricsPort` | `0` (= オフ) | `MCP_METRICS_ADDR`: このコンテナポートの `GET /metrics` でリクエスト数などのメトリクスを提供。Service には追加しないので Pod から収集してください。[メトリクス](../../docs/install.ja.md#メトリクス)参照 |
+| `metricsPort` | `0` (= オフ) | `MCP_METRICS_ADDR`: このコンテナポートの `GET /metrics` でリクエスト数などのメトリクスを提供します。Service には追加しないため、Pod からスクレイプしてください。[メトリクス](../../docs/install.ja.md#メトリクス)を参照 |
 | `service.port` | `8080` | Service / MCP エンドポイントのポート |
 | `service.type` | `ClusterIP` | Service のタイプ |
 | `resources` | requests CPU 10m・16Mi、limits CPU 100m・512Mi | メモリは重い呼び出しを同時に処理できる数を左右し、CPU は処理速度に影響します。[メモリと同時実行](../../docs/install.ja.md#メモリと同時実行)を参照 |
