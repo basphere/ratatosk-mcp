@@ -39,6 +39,15 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   metrics off nothing of a refused request is read. See "Metrics" in the
   install guide.
 
+### Changed
+
+- The chart value `cacheMaxMB` defaults to `32` instead of `0`. `0` meant "leave
+  `MCP_CACHE_MAX_MB` unset", which the server reads as 32 MiB, so the default
+  cache size is the same; the values table now shows the number that applies.
+  `0` still leaves the variable unset.
+- The configuration reference lists `MCP_SELF_CALLERS` (in the server since
+  0.8.0), and the docs say whose calls the `self` label marks.
+
 ## [1.0.0] — 2026-11-16
 
 ### Added

@@ -55,9 +55,10 @@ rateLimitPerMin: 0
 # concurrency" in docs/install.en.md to size it.
 maxInflight: 0
 
-# Response cache budget in MiB (MCP_CACHE_MAX_MB): 0 = the server default,
-# 32. Answers are cached for five minutes; this caps the bytes they hold.
-cacheMaxMB: 0
+# Response cache budget in MiB (MCP_CACHE_MAX_MB). Answers are cached for five
+# minutes; this caps the bytes they hold. 0 leaves the variable unset, which is
+# the same 32: the cache cannot be turned off.
+cacheMaxMB: 32
 
 # Metrics port (MCP_METRICS_ADDR=":<port>"): 0 = off (default). When set, the
 # server serves request counters at GET /metrics on this container port, a

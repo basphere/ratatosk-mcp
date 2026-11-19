@@ -158,10 +158,10 @@ anywhere:
   normal requests are not logged. Error lines carry no request arguments
   either.
 - The MCP server counts requests by method, tool name, outcome, and one bit
-  for whether the caller is the operator's own, and keeps per tool how long
-  calls took, how large the answers were and how many upstream requests they
-  sent, as totals (see [Metrics](#metrics)). The counts carry no arguments,
-  addresses or sessions.
+  for whether the call is Ratatosk's own (its checks and tests) or a user's,
+  and keeps per tool how long calls took, how large the answers were and how
+  many upstream requests they sent, as totals (see [Metrics](#metrics)). The
+  counts carry no arguments, addresses or sessions.
 - The upstream API's request log writes one line only when the caller sends a
   `traceparent`, and even that line holds only a normalized endpoint label
   and the trace_id. Paths and queries are not recorded.
@@ -479,6 +479,7 @@ the [chart README](../charts/ratatosk-mcp/README.md).
 | `MCP_MAX_INFLIGHT` | `maxInflight` | *(off)* | Maximum number of requests the server handles concurrently across all callers. Requests above the cap wait up to 10 s for a slot, then receive `503` with `Retry-After`. See [Memory and concurrency](#memory-and-concurrency) |
 | `MCP_CACHE_MAX_MB` | `cacheMaxMB` | `32` | Response cache budget in MiB. Responses are cached for five minutes |
 | `MCP_METRICS_ADDR` | `metricsPort` | *(off)* | HTTP mode only: when set (e.g. `:9090`), serve request counters at `GET /metrics` on that address, a listener separate from `/mcp`. See [Metrics](#metrics) |
+| `MCP_SELF_CALLERS` | *(none)* | *(unset)* | HTTP mode only: the addresses you call the server from yourself, comma-separated (an entry ending in `.` matches as a prefix). A call from one of them is marked as your own in the `self` label of the request count and in the `X-Ratatosk-Caller` header sent upstream; the address is compared in memory and is neither logged nor sent. Unset, every caller counts as someone else's. Set it only when you run the server for other people and want your own checks kept apart from their use. See [Metrics](#metrics) |
 
 Running HTTP mode directly with Docker:
 
@@ -653,10 +654,11 @@ Every label value comes from a fixed list:
   including a `404` for a version not on record); `timeout`; `transport` (no
   answer: connection refused, DNS, connection reset); `canceled` (the call
   ended first).
-- `self`: `true` when the caller's address is in `MCP_SELF_CALLERS`
-  (comma-separated; an entry ending in `.` matches as a prefix), the same
-  judgement the server sends upstream in `X-Ratatosk-Caller`. Unset, every
-  caller is `false`.
+- `self`: `false` for every caller unless `MCP_SELF_CALLERS` is set. With it
+  set, a caller whose address is in the list (comma-separated; an entry ending
+  in `.` matches as a prefix) is `true`: the same judgement the server sends
+  upstream in `X-Ratatosk-Caller`. It is for whoever runs the server for other
+  people and wants their own checks kept apart from those people's use.
 
 Nothing a caller sends becomes a label: no arguments, project names,
 addresses, user agents or sessions. The set of series is fixed when the server
