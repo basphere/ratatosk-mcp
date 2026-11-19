@@ -92,7 +92,7 @@ ratatosk: https://ratatosk.io/mcp (HTTP) - ✔ Connected
 호스팅 엔드포인트에서는 `check_stack`에 전달한 실행 중인 버전 목록이 서버 메모리를 거쳐 처리되지만, 요청 내용은 어디에도 기록되지 않습니다.
 
 - MCP 서버 로그에는 서버 시작 줄과 업스트림 오류 줄만 남고 정상 요청은 기록되지 않으며, 오류 줄에도 요청 인자 값은 포함되지 않습니다.
-- MCP 서버는 요청 수를 MCP 메서드, 도구 이름, 결과, 그리고 라타토스크가 직접 보낸 호출(자체 점검이나 시험)인지 사용자의 호출인지를 가르는 한 비트로만 셉니다. 도구별로 호출에 걸린 시간, 응답 크기, 업스트림에 보낸 요청 수도 합계로만 남깁니다([지표](#지표) 참고). 인자, 주소, 세션은 세지 않습니다.
+- MCP 서버는 MCP 메서드, 도구 이름, 처리 결과별로 요청 수를 기록합니다. 이때 라타토스크의 시스템 자체 점검이나 시험 호출을 사용자 호출과 구분하기 위해 `MCP_SELF_CALLERS`로 지정한 자체 호출 여부만 나누어 함께 세며, 도구별로는 호출에 걸린 시간과 응답 크기, 업스트림에 보낸 요청 수를 개별 호출이 아닌 합계로만 남깁니다. 인자나 주소, 세션은 기록하지 않습니다. 자세한 내용은 [지표](#지표) 절을 참고합니다.
 - 업스트림 API 요청 로그는 호출자가 `traceparent`를 전달한 경우에만 한 줄을 남기며, 경로와 쿼리 없이 정규화된 엔드포인트 라벨과 `trace_id`만 기록합니다.
 - 서버 앞단의 접근 로그에서는 쿼리 문자열을 제거합니다. 슬러그나 버전이 경로에 들어가는 `/v2/releases/…`·`/v2/upgrade/…` 경로는 앞부분만 남기고 IP는 가립니다. 요청 본문은 기록하지 않습니다. 접근 로그는 서버 안에서 7일 이내에 순환 삭제되며, 사본은 운영자의 중앙 로그 저장소에 전송되어 그곳에서도 7일간 보관됩니다.
 - 도구 호출 내역을 남기는 감사 스트림은 호스팅 환경에서 비활성화되어 있으며 앞으로도 켜지 않습니다.
@@ -329,7 +329,7 @@ kagent 도구 서버(`kagent-tool-server`)에는 `k8s_apply_manifest`, `k8s_dele
 | `MCP_MAX_INFLIGHT` | `maxInflight` | *(꺼짐)* | 모든 호출자를 합쳐 서버가 동시에 처리하는 요청 수의 상한. 상한을 넘은 요청은 최대 10초 동안 빈자리를 기다리고, 그 안에 자리가 나지 않으면 `Retry-After`가 붙은 `503`을 받음([메모리와 동시 처리](#메모리와-동시-처리) 참고) |
 | `MCP_CACHE_MAX_MB` | `cacheMaxMB` | `32` | 응답 캐시 크기 상한(MiB)이며 응답은 5분 동안 캐시됨 |
 | `MCP_METRICS_ADDR` | `metricsPort` | *(꺼짐)* | HTTP 모드에서만 동작. 설정 시(예: `:9090`) 그 주소의 `GET /metrics`에서 요청 수 등 지표를 제공하며, `/mcp`와 다른 별도 리스너를 씀([지표](#지표) 참고) |
-| `MCP_SELF_CALLERS` | *(없음)* | *(미설정)* | HTTP 모드에서만 동작. 서버를 운영하는 쪽이 직접 호출할 때 쓰는 주소를 쉼표로 구분해 지정(`.`으로 끝나는 항목은 앞부분 일치). 그 주소에서 온 호출은 요청 수의 `self` 라벨과 업스트림에 보내는 `X-Ratatosk-Caller` 헤더에서 운영자 쪽 호출로 구분되며, 주소는 메모리에서 대조만 하고 기록하거나 보내지 않음. 설정하지 않으면 모든 호출자를 외부 호출자로 봄. 서버를 다른 사람에게 열어 주면서 자체 점검 호출을 그 사람들의 사용과 구분할 때만 설정([지표](#지표) 참고) |
+| `MCP_SELF_CALLERS` | *(없음)* | *(미설정)* | 시스템 자체 점검이나 시험 호출을 사용자 호출과 구분하기 위해, 서버를 운영하는 쪽이 직접 호출할 때 쓰는 주소를 쉼표로 구분해 적는 목록. HTTP 모드에서만 동작하며 `.`으로 끝나는 항목은 주소의 앞부분과 대조함. 해당 주소에서 온 호출은 요청 수 지표의 `self` 라벨과 업스트림에 보내는 `X-Ratatosk-Caller` 헤더에서 자체 호출로 구분되며, 주소 자체는 메모리에서 대조만 하고 기록하거나 다른 곳으로 보내지 않음. 설정하지 않으면 모든 호출자를 외부 호출자로 보며, 혼자 쓰는 설치에는 필요 없음. 자세한 내용은 [지표](#지표) 참고 |
 
 Docker로 HTTP 모드를 직접 실행하는 예시는 다음과 같습니다.
 
@@ -413,7 +413,7 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=met
 
 ## 지표
 
-지표는 기본적으로 꺼져 있습니다. HTTP 모드에서 `MCP_METRICS_ADDR`(차트 값 `metricsPort`)을 설정하면 그 주소의 `GET /metrics`에서 Prometheus 텍스트 형식으로 지표를 제공합니다. `/mcp`와 다른 별도 리스너이므로 MCP 포트를 프록시로 열어도 지표는 노출되지 않습니다. stdio에서는 이 변수를 무시하고 경고를 남깁니다.
+지표는 기본으로 꺼져 있습니다. HTTP 모드에서 `MCP_METRICS_ADDR` 환경 변수를 설정하거나 Helm 차트의 `metricsPort` 값을 지정하면 켜지며, 해당 주소의 `GET /metrics`에서 Prometheus 텍스트 형식으로 지표를 제공합니다. 지표 리스너는 `/mcp` 리스너와 별개로 동작하므로, 앞에 MCP 포트만 넘겨주는 프록시를 두어도 지표는 외부에 열리지 않습니다. stdio 모드에서는 이 변수를 무시하고 경고를 남깁니다.
 
 ```bash
 helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9090
@@ -421,21 +421,21 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9
 
 | 지표 | 타입 | 라벨 | 설명 |
 |---|---|---|---|
-| `ratatosk_mcp_requests_total` | counter | `method`, `tool`, `outcome`, `self` | `/mcp`로 들어온 요청 수. POST 하나가 요청 하나 |
-| `ratatosk_mcp_upstream_requests_total` | counter | `tool`, `outcome` | 업스트림 `/v2` API로 보낸 요청 수. 응답 캐시에서 꺼낸 답은 세지 않음 |
-| `ratatosk_mcp_request_duration_seconds` | histogram | `tool` | 서버가 도구 호출 요청을 받아 답할 때까지 걸린 시간 |
-| `ratatosk_mcp_response_bytes` | histogram | `tool` | 에이전트가 받는 도구 응답 글의 크기(바이트) |
-| `ratatosk_mcp_build_info` | gauge | `version` | 서버 버전. 값은 항상 1 |
+| `ratatosk_mcp_requests_total` | counter | `method`, `tool`, `outcome`, `self` | `/mcp`로 들어온 요청 수이며, POST 하나를 요청 하나로 셈 |
+| `ratatosk_mcp_upstream_requests_total` | counter | `tool`, `outcome` | 업스트림 `/v2` API로 보낸 요청 수. 응답 캐시에서 꺼내 바로 답한 경우는 요청을 보내지 않으므로 제외함 |
+| `ratatosk_mcp_request_duration_seconds` | histogram | `tool` | 요청을 받은 때부터 응답을 내보낼 때까지 서버 안에서 도구 호출 하나에 걸린 시간 |
+| `ratatosk_mcp_response_bytes` | histogram | `tool` | 에이전트가 그대로 받는 도구 호출의 응답 크기 |
+| `ratatosk_mcp_build_info` | gauge | `version` | 서버 버전을 나타내며 값은 언제나 1임 |
 
-라벨 값은 모두 정해진 목록에서만 나옵니다.
+모든 라벨의 값은 미리 정해진 목록 안에서만 나옵니다.
 
-- `method`: `initialize`, `tools/list`, `tools/call`, 그 밖의 메서드(알림, `ping` 등)는 `other`.
-- `tool`: 도구 여섯 개의 이름. 호출자가 그 밖의 이름을 보내면 `unknown`, 메서드가 `tools/call`이 아니면 빈 값. 서버가 읽기 전에 거절한 요청(`rate_limited`, `busy`)은 본문의 처음 4 KiB로 이름을 붙입니다. 도구 이름이 그보다 뒤에 있으면 `unknown`이고, `100 Continue`를 기다리는 요청은 본문을 읽지 않습니다(`method`는 `other`).
-- 요청의 `outcome`: `ok`, `error`(형식이 잘못되어 거절된 요청, 프로토콜 오류, 또는 모르는 슬러그나 업스트림 요청 실패처럼 `isError`로 표시된 도구 응답), `rate_limited`(`MCP_RATE_LIMIT_PER_MIN`에 걸린 `429`), `busy`(`MCP_MAX_INFLIGHT` 아래에서 10초 안에 빈자리가 나지 않았거나 호출자가 기다리다 끊은 요청).
-- 업스트림 요청의 `outcome`: `ok`(`200`), `error`(그 밖의 상태 코드. 기록에 없는 버전의 `404` 포함), `timeout`, `transport`(응답 없음: 연결 거부, DNS, 연결 끊김), `canceled`(호출이 먼저 끝남).
-- `self`: `MCP_SELF_CALLERS`를 설정하지 않으면 모든 호출자가 `false`입니다. 설정하면 주소가 목록(쉼표로 구분, `.`으로 끝나는 항목은 앞부분 일치)에 있는 호출자가 `true`가 되며, 서버가 업스트림에 `X-Ratatosk-Caller`로 보내는 판정과 같습니다. 서버를 다른 사람에게 열어 주면서 자신의 점검 호출을 그 사람들의 사용과 구분하려는 운영자를 위한 설정입니다.
+- `method`: `initialize`, `tools/list`, `tools/call`, `other` 중 하나입니다. 알림과 `ping`을 비롯한 그 밖의 모든 메서드는 `other`로 분류됩니다.
+- `tool`: 보통은 여섯 개 도구 이름 가운데 하나가 들어가며, 호출자가 그 밖의 이름을 보내면 `unknown`이 됩니다. 메서드가 `tools/call`이 아니면 빈 값이 됩니다. `rate_limited`나 `busy`처럼 서버가 본문을 다 읽기 전에 돌려보낸 요청은 본문의 처음 4 KiB만 확인해 라벨을 붙이므로, 도구 이름이 4 KiB보다 뒤에 있으면 `unknown`으로 기록됩니다. 단, `100 Continue`를 기다리는 요청은 본문을 아예 읽지 않으며 이때 `method`는 `other`가 됩니다.
+- 요청의 `outcome`: 정상 처리되면 `ok`가 됩니다. 요청 형식이 잘못되어 거절되었거나 프로토콜 오류가 발생했거나, 모르는 슬러그 조회나 업스트림 요청 실패 등으로 도구 응답이 `isError`로 표시된 경우에는 `error`가 됩니다. `MCP_RATE_LIMIT_PER_MIN` 제한에 걸려 `429` 응답을 받은 요청은 `rate_limited`로 기록됩니다. `MCP_MAX_INFLIGHT` 상한 때문에 기다렸으나 10초 안에 빈자리가 나지 않았거나 호출자가 기다리다 요청을 그만둔 경우에는 `busy`가 됩니다.
+- 업스트림 요청의 `outcome`: 상태 코드 `200`을 받으면 `ok`가 되며, 기록에 없는 버전을 조회해 `404`를 받은 경우를 비롯해 그 밖의 모든 상태 코드는 `error`가 됩니다. 시간이 초과되면 `timeout`이 되고, 연결 거부나 DNS 오류, 연결 리셋 등으로 응답 자체가 없으면 `transport`가 됩니다. 업스트림 응답보다 도구 호출이 먼저 끝나면 `canceled`로 기록됩니다.
+- `self`: 시스템 자체 점검이나 시험 호출을 사용자 호출과 구분해 세기 위한 라벨입니다. `MCP_SELF_CALLERS`를 설정하지 않으면 모든 호출자가 `false`로 기록됩니다. 서버를 다른 사람들에게 열어 두고 운영하면서 자체 점검 호출을 구분하고 싶을 때 `MCP_SELF_CALLERS`에 주소를 쉼표로 구분해 적어 두면, 그 목록에 있는 주소의 호출자만 `true`가 됩니다. 목록에서 `.`으로 끝나는 항목은 호출자 주소의 앞부분과 대조하며, 이 판정은 서버가 업스트림에 `X-Ratatosk-Caller` 헤더로 보내는 판정과 같습니다.
 
-호출자가 보낸 내용은 라벨이 되지 않습니다. 인자, 프로젝트 이름, 주소, User-Agent, 세션은 어디에도 없습니다. 지표 계열의 목록은 서버가 시작할 때 정해지고 모든 계열이 0에서 시작하므로, 재시작 시점부터 재는 구간에서도 첫 호출이 빠지지 않습니다.
+인자, 프로젝트 이름, 주소, User-Agent, 세션을 비롯해 호출자가 보낸 값은 어느 것도 라벨이 되지 않습니다. 시계열 집합은 서버가 시작할 때 정해지며 모든 시계열이 0에서 시작하므로, 재시작 시점부터의 구간으로 증가율을 계산해도 첫 호출이 빠지지 않습니다.
 
 ## 문제 해결
 

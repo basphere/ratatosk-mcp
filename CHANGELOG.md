@@ -14,9 +14,9 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   v3.6.1 says `critical: 15` where five advisories are critical.
   `distinct_advisories` gives `total` and a count per grade (`critical`,
   `high`, `medium`, `low`, `ungraded`), and says 5. A CVE and the GHSA cited
-  together on a change are one advisory. Where cards in range pair those ids
+  together on a change are one advisory. Where changes in range pair those ids
   differently, each id counts on its own, so an advisory can be counted twice;
-  a pairing no other card contradicts is taken at its word. An advisory's
+  a pairing no other change contradicts is taken at its word. An advisory's
   grade is the highest grade of the changes citing it alone or, when none of
   those carries a grade or none cites it alone, the highest grade of the
   changes citing it with other advisories. Security changes that cite no
