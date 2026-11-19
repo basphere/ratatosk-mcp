@@ -5,6 +5,8 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-11-19
+
 ### Added
 
 - **`summary.distinct_advisories` in `check_stack` and `check_upgrade`: the

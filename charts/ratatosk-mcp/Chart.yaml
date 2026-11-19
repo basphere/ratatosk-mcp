@@ -2,8 +2,8 @@ apiVersion: v2
 name: ratatosk-mcp
 description: MCP server giving in-cluster agents Ratatosk's CNCF release changes
 type: application
-version: 1.0.0
-appVersion: "1.0.0"
+version: 1.1.0
+appVersion: "1.1.0"
 home: https://ratatosk.io
 sources:
   - https://github.com/basphere/ratatosk-mcp
