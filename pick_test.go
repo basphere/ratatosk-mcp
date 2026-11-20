@@ -14,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
 
 func TestStringListTakesTheFormsModelsSend(t *testing.T) {
@@ -62,7 +64,7 @@ func TestKindsArg(t *testing.T) {
 // The schema takes an array and a string for every list argument; a call that
 // passes either reaches the handler.
 func TestListArgumentsPassTheSchema(t *testing.T) {
-	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
 	cs := sdkSession(t)
 	for _, kinds := range []any{[]any{"security", "breaking"}, "security,breaking", `["security"]`} {
 		text, isErr := sdkText(t, cs, "check_stack", map[string]any{
@@ -91,11 +93,11 @@ func TestListArgumentsPassTheSchema(t *testing.T) {
 // before-upgrade items and the ids it does not have. Folded lines go either
 // way; the rest of the document comes as it was, in its order.
 func TestGetReleaseReadsPartOfARelease(t *testing.T) {
-	f := newFakeEtcd()
-	f.projects = `{"projects":[{"slug":"etcd","name":"etcd","latest":{"version":"v3.6.8"}}]}`
-	full := f.docs["v3.6.7"]
-	f.docs["v3.6.7"] = full[:len(full)-1] + `,"folded":{"dependency_updates_without_security":["- bump x"],"already_in_earlier_release":[]}}`
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	f := upstreamtest.NewEtcd()
+	f.Projects = `{"projects":[{"slug":"etcd","name":"etcd","latest":{"version":"v3.6.8"}}]}`
+	full := f.Docs["v3.6.7"]
+	f.Docs["v3.6.7"] = full[:len(full)-1] + `,"folded":{"dependency_updates_without_security":["- bump x"],"already_in_earlier_release":[]}}`
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	get := func(a getReleaseArgs) (map[string]json.RawMessage, string) {
 		t.Helper()
 		res, _, _ := getReleaseTool(context.Background(), nil, a)
@@ -122,7 +124,7 @@ func TestGetReleaseReadsPartOfARelease(t *testing.T) {
 	}
 
 	whole, text := get(getReleaseArgs{Project: "etcd", Version: "v3.6.7"})
-	if _, ok := whole["folded"]; !ok || text != f.docs["v3.6.7"] {
+	if _, ok := whole["folded"]; !ok || text != f.Docs["v3.6.7"] {
 		t.Fatal("without kinds or changes the release passes through as it came")
 	}
 
@@ -172,7 +174,7 @@ func TestGetReleaseReadsPartOfARelease(t *testing.T) {
 // kinds narrows a briefing's lists, never its summary; detail full narrows each
 // release document.
 func TestKindsNarrowABriefing(t *testing.T) {
-	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
 	c := runStack(t, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}, Kinds: stringList{"breaking"}}).Components[0]
 	if len(c.Changes) != 1 || c.Changes[0].Kind != "breaking" || c.Summary.Counts["security"] != 1 {
 		t.Errorf("kinds breaking: %+v summary %+v", c.Changes, c.Summary)

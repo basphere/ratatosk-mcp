@@ -7,128 +7,17 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
-	"sort"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/basphere/ratatosk-mcp/internal/briefing"
 	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/releaseline"
+	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
-
-// ---------------------------------------------------------------------------
-// fake /v2
-// ---------------------------------------------------------------------------
-
-// fakeV2 serves a small etcd history in the /v2 shape and records every
-// request URL, so tests can assert on what left this process.
-type fakeV2 struct {
-	mu       sync.Mutex
-	seen     []string
-	rows     []release.Row
-	docs     map[string]string // version → release document
-	projects string
-}
-
-func (f *fakeV2) handler(t *testing.T) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		f.mu.Lock()
-		f.seen = append(f.seen, r.URL.RequestURI())
-		f.mu.Unlock()
-		switch {
-		case r.URL.Path == "/v2/projects":
-			w.Write([]byte(f.projects))
-		case r.URL.Path == "/v2/releases":
-			var rows []release.Row
-			for _, row := range f.rows {
-				if p := r.URL.Query().Get("project"); p == "" || p == row.Project {
-					rows = append(rows, row)
-				}
-			}
-			if l := r.URL.Query().Get("limit"); l == "1" && len(rows) > 1 {
-				rows = rows[:1]
-			}
-			json.NewEncoder(w).Encode(map[string]any{"releases": rows, "next_before": nil})
-		case strings.HasPrefix(r.URL.Path, "/v2/releases/etcd/"):
-			v := strings.TrimPrefix(r.URL.Path, "/v2/releases/etcd/")
-			d, ok := f.docs[v]
-			if !ok {
-				http.Error(w, `{"error":"no analyzed release etcd `+v+`"}`, http.StatusNotFound)
-				return
-			}
-			w.Write([]byte(d))
-		case r.URL.Path == "/v2/upgrade/etcd":
-			// The server's range, cut the way check_stack cuts it (1.2.0 tests).
-			from, to := r.URL.Query().Get("from"), r.URL.Query().Get("to")
-			inRange, target := releaseline.UpgradeRange(f.rows, from, to)
-			var rels []string
-			for _, x := range inRange {
-				rels = append(rels, f.docs[x.Version])
-			}
-			fmt.Fprintf(w, `{"project":"etcd","from":%q,"to":%q,"releases":[%s],"gaps":[],"later_for_from":[]}`, from, target, strings.Join(rels, ","))
-		default:
-			t.Errorf("unexpected upstream request %s", r.URL.RequestURI())
-			http.NotFound(w, r)
-		}
-	}
-}
-
-func (f *fakeV2) requests() []string {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	out := slices.Clone(f.seen)
-	sort.Strings(out)
-	return out
-}
-
-func doc(ver string, counts string, before string, changes string, later string) string {
-	if counts == "" {
-		counts = `{"security":0,"breaking":0,"deprecations":0,"important_fixes":0,"enhancements":0,"dependency_updates":0,"other":0}`
-	}
-	if before == "" {
-		before = `{"prerequisites":[],"known_issues":[],"upgrade_guide":[]}`
-	}
-	if changes == "" {
-		changes = `[]`
-	}
-	if later == "" {
-		later = `[]`
-	}
-	return fmt.Sprintf(`{"project":"etcd","version":%q,"released_at":"2026-07-01T00:00:00Z","url":"https://x/en/releases/etcd/%s",`+
-		`"counts":%s,"warnings":{"critical":0,"no_downgrade":0},"processing":false,"before_upgrade":%s,"changes":%s,"later":%s}`,
-		ver, ver, counts, before, changes, later)
-}
-
-func newFakeEtcd() *fakeV2 {
-	sec := func(id, adv string) string {
-		return `{"id":"` + id + `","kind":"security","title":"fix ` + adv + `","body":null,"severity":null,"advisories":["` + adv + `"],` +
-			`"affects":{"text":"gRPC listener","status":"stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
-	}
-	f := &fakeV2{
-		projects: `{"projects":[{"slug":"etcd","name":"etcd"},{"slug":"envoy","name":"Envoy","image_aliases":["cilium-envoy"]}]}`,
-		rows: []release.Row{
-			{Project: "etcd", Version: "v3.6.8"}, {Project: "etcd", Version: "v3.6.7"}, {Project: "etcd", Version: "api/v3.6.7"},
-			{Project: "etcd", Version: "v3.5.32"}, {Project: "etcd", Version: "v3.5.31"}, {Project: "etcd", Version: "v3.5.30"},
-		},
-		docs: map[string]string{
-			"v3.5.30": doc("v3.5.30", "", "", `[`+sec("etcd@v3.5.30#b", "GHSA-bbbb")+`]`,
-				`[{"seq":1,"at":"2026-08-01T00:00:00Z","type":"known_issue_fixed","project":"etcd","version":"v3.5.30","fixed_in":"v3.5.31","title":"leak"}]`),
-			"v3.5.31": doc("v3.5.31", "", "", `[`+sec("etcd@v3.5.31#a", "GHSA-aaaa")+`]`, ""),
-			"v3.5.32": doc("v3.5.32", "", "", "", ""),
-			"v3.6.7": doc("v3.6.7", `{"security":1,"breaking":1,"deprecations":0,"important_fixes":0,"enhancements":2,"dependency_updates":0,"other":0}`,
-				`{"prerequisites":[],"known_issues":[],"upgrade_guide":[{"id":"etcd@v3.6.7#g","title":"read the 3.6 upgrade guide","body":null,"evidence":[],"folded":[]}]}`,
-				`[`+sec("etcd@v3.6.7#a", "GHSA-aaaa")+`,`+
-					`{"id":"etcd@v3.6.7#k","kind":"breaking","title":"v2store removed","body":"long","affects":{"text":"","status":"not_stated"},"action_required":"migrate","no_downgrade":{"text":"","status":"stated"},"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"also_touches":[],"evidence":[],"later":[]},`+
-					`{"id":"etcd@v3.6.7#e","kind":"enhancements","title":"new flag","body":null,"affects":{"text":"","status":"not_stated"},"to_use":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, ""),
-			"v3.6.8":     doc("v3.6.8", "", "", `[`+sec("etcd@v3.6.8#b", "GHSA-bbbb")+`]`, ""),
-			"api/v3.6.7": doc("api/v3.6.7", "", "", "", ""),
-		},
-	}
-	return f
-}
 
 type stackOut struct {
 	Components []struct {
@@ -144,7 +33,7 @@ type stackOut struct {
 		Releases []struct {
 			Version string `json:"version"`
 		} `json:"releases"`
-		BeforeUpgrade []upgradeItem `json:"before_upgrade"`
+		BeforeUpgrade []briefing.UpgradeItem `json:"before_upgrade"`
 		Changes       []struct {
 			Version     string          `json:"version"`
 			ID          string          `json:"id"`
@@ -194,10 +83,10 @@ func TestCheckStackRequestsDoNotDependOnVersions(t *testing.T) {
 		{Project: "etcd", Version: "api/v3.6.7"},
 		{Project: "etcd", Version: "v3.6.99"}, // newer than every release on record: refused after the same fetch
 	} {
-		f := newFakeEtcd()
-		swapAPI(t, httptest.NewServer(f.handler(t)))
+		f := upstreamtest.NewEtcd()
+		swapAPI(t, httptest.NewServer(f.Handler(t)))
 		runStack(t, checkStackArgs{Components: []stackComponent{comp}})
-		reqs := f.requests()
+		reqs := f.Requests()
 		for _, u := range reqs {
 			if strings.Contains(u, "from=") || strings.Contains(u, "/v2/upgrade") {
 				t.Fatalf("check_stack called the server-side range: %s", u)
@@ -214,12 +103,12 @@ func TestCheckStackRequestsDoNotDependOnVersions(t *testing.T) {
 
 // A second call inside the cache window costs nothing upstream.
 func TestCheckStackCachesPublicDocuments(t *testing.T) {
-	f := newFakeEtcd()
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	f := upstreamtest.NewEtcd()
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	runStack(t, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}})
-	n := len(f.requests())
+	n := len(f.Requests())
 	runStack(t, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.6.7"}}})
-	if m := len(f.requests()); m != n {
+	if m := len(f.Requests()); m != n {
 		t.Fatalf("second call went upstream again: %d → %d requests", n, m)
 	}
 }
@@ -229,8 +118,8 @@ func TestCheckStackCachesPublicDocuments(t *testing.T) {
 // ---------------------------------------------------------------------------
 
 func TestCheckStackBriefing(t *testing.T) {
-	f := newFakeEtcd()
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	f := upstreamtest.NewEtcd()
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	out := runStack(t, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}})
 	c := out.Components[0]
 
@@ -286,8 +175,8 @@ func TestCheckStackBriefing(t *testing.T) {
 }
 
 func TestCheckStackUntrackedAliasAndDroppedPrefix(t *testing.T) {
-	f := newFakeEtcd()
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	f := upstreamtest.NewEtcd()
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	out := runStack(t, checkStackArgs{Components: []stackComponent{
 		{Project: "not-a-project", Version: "v1.0.0"},
 		{Project: "etcd", Version: "flagd/v3.6.7"},
@@ -307,9 +196,9 @@ func TestCheckStackUntrackedAliasAndDroppedPrefix(t *testing.T) {
 	}
 
 	// An image alias is checked as its project, and says so.
-	g := newFakeEtcd()
-	g.projects = `{"projects":[{"slug":"etcd","name":"etcd","image_aliases":["etcd-server"]}]}`
-	swapAPI(t, httptest.NewServer(g.handler(t)))
+	g := upstreamtest.NewEtcd()
+	g.Projects = `{"projects":[{"slug":"etcd","name":"etcd","image_aliases":["etcd-server"]}]}`
+	swapAPI(t, httptest.NewServer(g.Handler(t)))
 	out = runStack(t, checkStackArgs{Components: []stackComponent{{Project: "etcd-server", Version: "v3.6.7"}}})
 	if c := out.Components[0]; c.Project != "etcd" || !strings.Contains(c.Note, "image alias") || len(out.CouldNotCheck) != 0 {
 		t.Errorf("alias not resolved: %+v", c)
@@ -318,8 +207,8 @@ func TestCheckStackUntrackedAliasAndDroppedPrefix(t *testing.T) {
 
 // Replay of the measured failure: running-as-target read as "no issues".
 func TestCheckStackIgnoresSelfNullifyingTarget(t *testing.T) {
-	f := newFakeEtcd()
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	f := upstreamtest.NewEtcd()
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	out := runStack(t, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.6.7", TargetVersion: "v3.6.7"}}})
 	c := out.Components[0]
 	if len(c.Releases) != 1 || c.Releases[0].Version != "v3.6.8" {
@@ -370,24 +259,6 @@ func TestResolveTarget(t *testing.T) {
 	}
 	if k, note := resolveTarget(cur, "nonsense"); k != nil || note == "" {
 		t.Errorf("unparseable target honored: %v %q", k, note)
-	}
-}
-
-func TestBriefTextBoundsTheTailVisibly(t *testing.T) {
-	short := "cilium-agent now refuses an empty policy"
-	if got := briefText(short); got != short {
-		t.Fatalf("a typical text was altered: %q", got)
-	}
-	long := strings.Repeat("가나다", 200) // 600 runes, multi-byte on purpose
-	got := briefText(long)
-	if !strings.HasSuffix(got, "…") {
-		t.Fatal("truncation is invisible")
-	}
-	if r := []rune(got); len(r) != briefTextChars+1 {
-		t.Fatalf("cut %d runes, want %d + ellipsis", len(r)-1, briefTextChars)
-	}
-	if !strings.HasPrefix(long, strings.TrimSuffix(got, "…")) {
-		t.Fatal("the kept part is not a prefix of the original")
 	}
 }
 
@@ -499,9 +370,9 @@ func TestProjectReleasesRefusesEmptyProject(t *testing.T) {
 // row of the release list (the most recently published): here the list leads
 // with v3.6.8 and the project's latest is v3.6.7.
 func TestGetReleaseWithoutVersionReadsTheLatest(t *testing.T) {
-	f := newFakeEtcd()
-	f.projects = `{"projects":[{"slug":"etcd","name":"etcd","latest":{"version":"v3.6.7","released_on":"2026-07-01"}},{"slug":"envoy","name":"Envoy","latest":null}]}`
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	f := upstreamtest.NewEtcd()
+	f.Projects = `{"projects":[{"slug":"etcd","name":"etcd","latest":{"version":"v3.6.7","released_on":"2026-07-01"}},{"slug":"envoy","name":"Envoy","latest":null}]}`
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	res, _, err := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "etcd", Lang: "ko"})
 	if err != nil || res.IsError {
 		t.Fatalf("get_release: %v %+v", err, res)
@@ -509,7 +380,7 @@ func TestGetReleaseWithoutVersionReadsTheLatest(t *testing.T) {
 	if !strings.Contains(res.Content[0].(*mcp.TextContent).Text, `"version":"v3.6.7"`) {
 		t.Fatalf("not the latest: %s", res.Content[0].(*mcp.TextContent).Text)
 	}
-	if reqs := f.requests(); !slices.Contains(reqs, "/v2/releases/etcd/v3.6.7?lang=ko") {
+	if reqs := f.Requests(); !slices.Contains(reqs, "/v2/releases/etcd/v3.6.7?lang=ko") {
 		t.Fatalf("lang not passed: %v", reqs)
 	}
 	// A tracked project with nothing analyzed is told so; an unknown slug is told
@@ -534,7 +405,7 @@ func TestCheckUpgradeComputesGapsAnOlderServerOmits(t *testing.T) {
 		}
 		seen = r.URL.RequestURI()
 		fmt.Fprintf(w, `{"project":"etcd","from":"v3.5.30","to":"v3.6.7","releases":[%s,%s],"later_for_from":[]}`,
-			doc("v3.5.31", "", "", "", ""), doc("v3.6.7", "", "", "", ""))
+			upstreamtest.Doc("v3.5.31", "", "", "", ""), upstreamtest.Doc("v3.6.7", "", "", "", ""))
 	})))
 	res, _, err := checkUpgradeTool(context.Background(), nil, checkUpgradeArgs{Project: "etcd", From: "v3.5.30"})
 	if err != nil || res.IsError {
@@ -571,108 +442,5 @@ func TestListReleasesValidates(t *testing.T) {
 	}
 	if res, _, _ := listReleasesTool(context.Background(), nil, listReleasesArgs{Since: "last week"}); !res.IsError {
 		t.Fatal("a non-date since was accepted")
-	}
-}
-
-// The envoy range on the preview API (2026-11-03) had 55 security changes ahead
-// of every breaking one; a single cap would have hidden all of them. Caps are
-// per kind, security keeps its most severe, and every cut is counted.
-func TestBriefingCapsPerKind(t *testing.T) {
-	d := &release.Doc{Version: "v1.38.0"}
-	grades := []string{"low", "critical", "medium", "high"}
-	for i := 0; i < 30; i++ {
-		g := grades[i%4]
-		d.Changes = append(d.Changes, release.Change{ID: fmt.Sprint("s", i), Kind: "security", Severity: &g, Advisories: []string{fmt.Sprint("CVE-2026-", 1000+i)}})
-	}
-	for i := 0; i < 3; i++ {
-		d.Changes = append(d.Changes, release.Change{ID: fmt.Sprint("b", i), Kind: "breaking"})
-	}
-	b, _ := buildBriefing([]*release.Doc{d}, nil, nil)
-	var sec, brk int
-	for _, c := range b.Changes {
-		switch c.Kind {
-		case "security":
-			sec++
-			if gradeRank(c.Severity) == 1 {
-				t.Errorf("a low-grade change was kept while others were cut: %s", c.ID)
-			}
-		case "breaking":
-			brk++
-		}
-	}
-	if sec != kindCaps["security"] || brk != 3 {
-		t.Fatalf("kept security %d breaking %d, want %d and 3", sec, brk, kindCaps["security"])
-	}
-	if b.ChangesOmitted["security"] != 30-kindCaps["security"] || b.ChangesOmitted["breaking"] != 0 {
-		t.Fatalf("omitted %v", b.ChangesOmitted)
-	}
-	if gradeRank(b.Changes[0].Severity) != 4 {
-		t.Fatalf("security does not lead with critical: %s", b.Changes[0].Severity)
-	}
-}
-
-// Replay of kubernetes v1.35.10 → v1.36.6 (independent review, 2026-11-15): 78
-// breaking changes, the four with action_required sat late in screen order, and
-// the cap of 20 kept one of them. Entries that say what to do lead their kind;
-// inside each group the old order holds; the omitted count means what it meant.
-func TestBriefingKeepsEntriesThatCarryAStepBeforeTheCap(t *testing.T) {
-	d := &release.Doc{Version: "v1.36.0"}
-	ar := "migrate the flex-volume mount before upgrading"
-	stated := &release.Attr{Text: "1.37", Status: "stated"}
-	notStated := &release.Attr{Text: "", Status: "not_stated"}
-	for i := 0; i < 30; i++ {
-		c := release.Change{ID: fmt.Sprint("b", i), Kind: "breaking", NoDowngrade: notStated}
-		switch i {
-		case 25, 27, 29:
-			c.ActionRequired = &ar
-		case 28:
-			c.NoDowngrade = &release.Attr{Text: "", Status: "inferred"}
-		}
-		d.Changes = append(d.Changes, c)
-	}
-	for i := 0; i < 12; i++ {
-		c := release.Change{ID: fmt.Sprint("d", i), Kind: "deprecations", RemovedIn: notStated}
-		if i == 11 {
-			c.RemovedIn = stated
-		}
-		d.Changes = append(d.Changes, c)
-	}
-	// Security: grade first — a low-grade change with a step beyond upgrading
-	// does not jump a critical one — and a step leads only inside its grade.
-	low, crit, high := "low", "critical", "high"
-	also := "rotate the tokens"
-	d.Changes = append(d.Changes,
-		release.Change{ID: "s-crit", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-1"}},
-		release.Change{ID: "s-low-step", Kind: "security", Severity: &low, Advisories: []string{"CVE-2026-2"}, AlsoRequired: &also},
-		release.Change{ID: "s-high", Kind: "security", Severity: &high, Advisories: []string{"CVE-2026-3"}},
-		release.Change{ID: "s-high-step", Kind: "security", Severity: &high, Advisories: []string{"CVE-2026-4"}, AlsoRequired: &also},
-	)
-	b, _ := buildBriefing([]*release.Doc{d}, nil, nil)
-
-	var brk, dep, sec []string
-	for _, c := range b.Changes {
-		switch c.Kind {
-		case "breaking":
-			brk = append(brk, c.ID)
-		case "deprecations":
-			dep = append(dep, c.ID)
-		case "security":
-			sec = append(sec, c.ID)
-		}
-	}
-	if len(brk) != kindCaps["breaking"] {
-		t.Fatalf("kept %d breaking, want the cap %d", len(brk), kindCaps["breaking"])
-	}
-	if want := []string{"b25", "b27", "b28", "b29", "b0", "b1"}; !slices.Equal(brk[:6], want) {
-		t.Errorf("breaking order %v, want the four that carry a step first, in screen order, then the rest: %v…", brk, want)
-	}
-	if b.ChangesOmitted["breaking"] != 30-kindCaps["breaking"] {
-		t.Errorf("omitted breaking %d, want %d", b.ChangesOmitted["breaking"], 30-kindCaps["breaking"])
-	}
-	if len(dep) != kindCaps["deprecations"] || dep[0] != "d11" || b.ChangesOmitted["deprecations"] != 2 {
-		t.Errorf("deprecations %v omitted %d: the one with a stated removed_in must lead and stay", dep, b.ChangesOmitted["deprecations"])
-	}
-	if want := []string{"s-crit", "s-high-step", "s-high", "s-low-step"}; !slices.Equal(sec, want) {
-		t.Errorf("security order %v, want %v", sec, want)
 	}
 }

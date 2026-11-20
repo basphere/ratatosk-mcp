@@ -1,4 +1,4 @@
-package main
+package briefing
 
 // The 1.x regression harness: on real /v2/upgrade ranges, the briefing is the
 // 1.0.0 briefing plus summary.distinct_advisories (1.1.0) and what 1.2.0 adds
@@ -14,9 +14,9 @@ package main
 // thought of; this runs both versions over what the worker actually wrote.
 //
 // The assertion: for every range, in check_upgrade and check_stack modes,
-// with the production caps and with the caps lifted, buildBriefing's result
+// with the production caps and with the caps lifted, Build's result
 // with summary.distinct_advisories zeroed is reflect.DeepEqual to
-// buildBriefing100's (briefing100_test.go, the 1.0.0 code frozen), and the
+// buildBriefing100's (frozen100_test.go, the 1.0.0 code frozen), and the
 // settled counts are equal: same entries in the same order, same also_in,
 // advisories, changes_omitted, counts, warnings and releases.
 //
@@ -30,7 +30,7 @@ package main
 // run before a release:
 //
 //	curl -s 'https://ratatosk.io/v2/upgrade/envoy?from=v1.33.0' > /tmp/ranges/envoy.json
-//	RANGE_FIXTURES=/tmp/ranges go test -run TestRangesAnswerAs100 -v .
+//	RANGE_FIXTURES=/tmp/ranges go test -run TestRangesAnswerAs100 -v ./internal/briefing
 
 import (
 	"encoding/json"
@@ -113,13 +113,13 @@ func withCaps(n int) (restore func()) {
 	return func() { kindCaps = saved }
 }
 
-// diffFrom100 compares buildBriefing with the frozen 1.0.0 one on one input
+// diffFrom100 compares Build with the frozen 1.0.0 one on one input
 // and says where they differ, "" when they do not (distinct_advisories and the
 // 1.2.0 fields aside). before_upgrade is set aside on both sides: 1.2.0
-// answers it in a new form (upgradeItem), and the fixtures carry none.
+// answers it in a new form (UpgradeItem), and the fixtures carry none.
 func diffFrom100(docs []*release.Doc, fixed map[string]bool, running []int) string {
 	old, oldSettled := buildBriefing100(docs, fixed, running)
-	cur, curSettled := buildBriefing(docs, fixed, running)
+	cur, curSettled := Build(docs, fixed, running)
 	sum := *cur.Summary
 	sum.DistinctAdvisories = advisory.Counts{}
 	cur.Summary = &sum
@@ -174,7 +174,7 @@ func diffFrom100(docs []*release.Doc, fixed map[string]bool, running []int) stri
 	return fmt.Sprintf("briefing:\n  1.0.0 %.600s\n  now   %.600s", a, b)
 }
 
-// assertSameAs100 fails the test unless buildBriefing answers docs as 1.0.0
+// assertSameAs100 fails the test unless Build answers docs as 1.0.0
 // did, distinct_advisories aside, with the production caps and with none.
 func assertSameAs100(t *testing.T, docs []*release.Doc, fixed map[string]bool, running []int) {
 	t.Helper()
@@ -188,7 +188,7 @@ func assertSameAs100(t *testing.T, docs []*release.Doc, fixed map[string]bool, r
 	}
 }
 
-// rangeModes are the two ways a range reaches buildBriefing: check_upgrade
+// rangeModes are the two ways a range reaches Build: check_upgrade
 // (nothing settled) and check_stack with the first release of the range as
 // the running version (its advisories settle backports on other branches).
 func rangeModes(docs []*release.Doc) []struct {
@@ -219,7 +219,7 @@ func rangeModes(docs []*release.Doc) []struct {
 func TestRangesAnswerAs100PlusDistinctAdvisories(t *testing.T) {
 	for _, r := range loadRanges(t) {
 		for _, m := range rangeModes(r.docs) {
-			b, settled := buildBriefing(m.docs, m.fixed, m.running)
+			b, settled := Build(m.docs, m.fixed, m.running)
 			alsoIn := 0
 			for _, c := range b.Changes {
 				alsoIn += len(c.AlsoIn)
@@ -233,7 +233,7 @@ func TestRangesAnswerAs100PlusDistinctAdvisories(t *testing.T) {
 
 // TestCutRangeFixtures rewrites testdata/ranges from whole /v2/upgrade answers:
 //
-//	CUT_RANGE_FIXTURES=/tmp/ranges go test -run TestCutRangeFixtures .
+//	CUT_RANGE_FIXTURES=/tmp/ranges go test -run TestCutRangeFixtures ./internal/briefing
 //
 // It keeps every release with its version, counts and warnings, and of the
 // changes the security changes whose whole id set another security change in
@@ -394,9 +394,9 @@ func TestRangesLeaveNoSecurityChangeUnaccounted(t *testing.T) {
 		for _, m := range rangeModes(r.docs) {
 			t.Run(r.name+" "+m.name, func(t *testing.T) {
 				restore := withCaps(1 << 30)
-				all, settled := buildBriefing(m.docs, m.fixed, m.running)
+				all, settled := Build(m.docs, m.fixed, m.running)
 				restore()
-				capped, _ := buildBriefing(m.docs, m.fixed, m.running)
+				capped, _ := Build(m.docs, m.fixed, m.running)
 
 				listed := map[string]bool{}
 				for _, c := range all.Changes {
@@ -442,7 +442,7 @@ func TestRangesLeaveNoSecurityChangeUnaccounted(t *testing.T) {
 					t.Errorf("settled %d, counted %d", settled, seenSettled)
 				}
 
-				ids := func(b briefing) []string {
+				ids := func(b Briefing) []string {
 					var out []string
 					for _, c := range b.Changes {
 						out = append(out, c.ID)
@@ -460,7 +460,7 @@ func TestRangesLeaveNoSecurityChangeUnaccounted(t *testing.T) {
 				for _, l := range capped.ChangesMore {
 					lines[l.Kind]++
 				}
-				for _, k := range decisionKinds {
+				for _, k := range DecisionKinds {
 					if lines[k] != capped.ChangesOmitted[k] {
 						t.Errorf("%s: %d lines for %d omitted (%d folded)", k, lines[k], capped.ChangesOmitted[k], folded[k])
 					}

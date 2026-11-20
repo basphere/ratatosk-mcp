@@ -16,6 +16,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
 
 func withMetrics(t *testing.T) *metrics {
@@ -113,7 +115,7 @@ func toolCall(id int, name, args string) string {
 // Every outcome, each POST counted once, labels from closed lists only.
 func TestMetricsCountEveryOutcomeOnce(t *testing.T) {
 	m := withMetrics(t)
-	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
 	ts := mcpServer(t, newRateLimiter(9), true)
 	u := ts.URL + "/mcp"
 
@@ -262,7 +264,7 @@ func TestMetricsCountBusy(t *testing.T) {
 func TestMetricsStatefulSessionCountsOnce(t *testing.T) {
 	m := withMetrics(t)
 	t.Setenv("MCP_SELF_CALLERS", "127.0.0.1")
-	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
 	ts := mcpServer(t, nil, false)
 	u := ts.URL + "/mcp"
 	code, resp := mcpPost(t, u, initBody, nil)
@@ -421,8 +423,8 @@ func TestMetricsEndpoint(t *testing.T) {
 
 func TestMetricsUpstreamOutcomes(t *testing.T) {
 	m := withMetrics(t)
-	f := newFakeEtcd()
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	f := upstreamtest.NewEtcd()
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	ctx := context.WithValue(context.Background(), ctxKeyTool, "get_release")
 	if _, err := api.releaseRaw(ctx, "etcd", "v3.6.8", "", false); err != nil {
 		t.Fatal(err)
@@ -746,7 +748,7 @@ func TestMetricsCountPostsTheSDKNeverRan(t *testing.T) {
 	// notification after it answers 202, so swapping the global between modes
 	// would race with it.
 	m := withMetrics(t)
-	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
 	for _, stateless := range []bool{true, false} {
 		u := mcpServer(t, nil, stateless).URL + "/mcp"
 		var hdr map[string]string

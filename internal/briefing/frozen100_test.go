@@ -1,17 +1,25 @@
-package main
+package briefing
 
-// buildBriefing as released in 1.0.0 (ff60e46), kept as the reference the
-// 1.1.0 regression harness (ranges_test.go) compares against.
+// buildBriefing (now Build) as released in 1.0.0 (ff60e46), kept as the
+// reference the 1.1.0 regression harness (ranges_test.go) compares against.
 //
 // Why a frozen copy and not two binaries: the rule for 1.x is that a 1.0.0
 // client never gets a poorer answer, and the harness has to see both answers
 // change by change, which a copy in the same package can do with no build
 // step, no process and no network. Only the four functions whose 1.0.0 body
 // differs from today's are copied; the helpers they call (attrOf, briefText,
-// branchOf, advisoryKey, carriesAStep, releaseline.DescCmp, kindRank, releaseline.SameBranch, strOf)
-// are unchanged since 1.0.0 — if one of them changes, copy its 1.0.0 body
-// here under a 100 name first, or the reference moves with the code under
-// test. Do not "fix" anything in this file: it is a record, not a briefing.
+// branchOf, advisoryKey, carriesAStep, releaseline.DescCmp, kindRank,
+// releaseline.SameBranch, strOf) are unchanged since 1.0.0 — if one of them
+// changes, copy its 1.0.0 body here under a 100 name first, or the reference
+// moves with the code under test. Do not "fix" anything in this file: it is a
+// record, not a briefing. (When the packages were split on 2026-11-21 only
+// names changed here: the types and helpers it calls took their package's
+// names.)
+//
+// When 2.0 ships, delete this file together with testdata/ranges and the
+// harness that reads them (ranges_test.go, and the assertSameAs100 calls in
+// distinct_advisories_test.go): the 1.0.0 promise ends there. The test data
+// table (testdata/README.md at the repository root) lists it.
 
 import (
 	"encoding/json"
@@ -40,7 +48,7 @@ func gradeRank100(raw json.RawMessage) int {
 	return 0
 }
 
-func carriesItsOwn100(c release.Change, kept briefChange) bool {
+func carriesItsOwn100(c release.Change, kept Change) bool {
 	if s := strOf(c.AlsoRequired); s != "" && s != kept.AlsoRequired {
 		return true
 	}
@@ -53,7 +61,7 @@ func carriesItsOwn100(c release.Change, kept briefChange) bool {
 	return attrOf(c.RegressionSince) != nil && kept.RegressionSince == nil
 }
 
-func raiseSeverity100(bc *briefChange, sev *string) {
+func raiseSeverity100(bc *Change, sev *string) {
 	if sev == nil || *sev == "" {
 		return
 	}
@@ -62,10 +70,10 @@ func raiseSeverity100(bc *briefChange, sev *string) {
 	}
 }
 
-func buildBriefing100(docs []*release.Doc, alreadyFixed map[string]bool, runningKey []int) (briefing, int) {
-	b := briefing{
+func buildBriefing100(docs []*release.Doc, alreadyFixed map[string]bool, runningKey []int) (Briefing, int) {
+	b := Briefing{
 		Summary:  &stackSummary{Counts: map[string]int{}, Warnings: map[string]int{"critical": 0, "no_downgrade": 0}},
-		Releases: &[]rangeRelease{},
+		Releases: &[]RangeRelease{},
 	}
 	settled := 0
 	firstByAdv := map[string]int{}
@@ -84,7 +92,7 @@ func buildBriefing100(docs []*release.Doc, alreadyFixed map[string]bool, running
 		for k, n := range d.Warnings {
 			b.Summary.Warnings[k] += n
 		}
-		rr := rangeRelease{Version: d.Version, ReleasedAt: d.ReleasedAt, URL: d.URL, Counts: d.Counts, Processing: d.Processing}
+		rr := RangeRelease{Version: d.Version, ReleasedAt: d.ReleasedAt, URL: d.URL, Counts: d.Counts, Processing: d.Processing}
 		if d.Warnings["critical"] > 0 || d.Warnings["no_downgrade"] > 0 {
 			rr.Warnings = d.Warnings
 		}
@@ -98,7 +106,7 @@ func buildBriefing100(docs []*release.Doc, alreadyFixed map[string]bool, running
 			}
 		}
 		for _, c := range d.Changes {
-			if !slices.Contains(decisionKinds, c.Kind) {
+			if !slices.Contains(DecisionKinds, c.Kind) {
 				continue
 			}
 			key := ""
@@ -134,7 +142,7 @@ func buildBriefing100(docs []*release.Doc, alreadyFixed map[string]bool, running
 					}
 				}
 			}
-			bc := briefChange{
+			bc := Change{
 				Version: d.Version, ID: c.ID, Kind: c.Kind, Title: c.Title, Body: briefText(strOf(c.Body)),
 				Advisories: c.Advisories, Affects: attrOf(c.Affects),
 				ActionRequired: strOf(c.ActionRequired), AlsoRequired: strOf(c.AlsoRequired),

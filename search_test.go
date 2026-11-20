@@ -15,6 +15,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
 
 func TestSearchFinderMatchesWholeAdvisoryIDs(t *testing.T) {
@@ -30,7 +32,7 @@ func TestSearchFinderMatchesWholeAdvisoryIDs(t *testing.T) {
 	}
 }
 
-func searchServer(t *testing.T, matches int) *fakeV2 {
+func searchServer(t *testing.T, matches int) *upstreamtest.Fake {
 	t.Helper()
 	row := func(project, ver, kind, title string) string {
 		m := fmt.Sprintf(`{"kind":%q,"title":%q}`, kind, title)
@@ -46,8 +48,8 @@ func searchServer(t *testing.T, matches int) *fakeV2 {
 	changes = append(changes,
 		`{"id":"etcd@v3.6.7#q","kind":"important_fixes","title":"quoted only","body":null,"evidence":[{"quote":"see backendTLSPolicy docs"}],"later":[]}`,
 		`{"id":"etcd@v3.6.7#n","kind":"other","title":"unrelated","body":null,"evidence":[],"later":[]}`)
-	f := newFakeEtcd()
-	f.docs["v3.6.7"] = doc("v3.6.7", "", `{"prerequisites":[{"id":"etcd@v3.6.7#p","title":"read first","body":null,"evidence":[],"folded":[{"title":"BackendTLSPolicy CRD","body":"install it"}]}],"known_issues":[],"upgrade_guide":[]}`,
+	f := upstreamtest.NewEtcd()
+	f.Docs["v3.6.7"] = upstreamtest.Doc("v3.6.7", "", `{"prerequisites":[{"id":"etcd@v3.6.7#p","title":"read first","body":null,"evidence":[],"folded":[{"title":"BackendTLSPolicy CRD","body":"install it"}]}],"known_issues":[],"upgrade_guide":[]}`,
 		"["+strings.Join(changes, ",")+"]", "")
 	search := `{"query":"BackendTLSPolicy","in_analysis":[` +
 		row("etcd", "v3.6.7", "before_upgrade", "read first") + "," +
@@ -57,9 +59,7 @@ func searchServer(t *testing.T, matches int) *fakeV2 {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/v2/search":
-			f.mu.Lock()
-			f.seen = append(f.seen, r.URL.RequestURI())
-			f.mu.Unlock()
+			f.Record(r.URL.RequestURI())
 			w.Write([]byte(search))
 			return
 		case strings.HasPrefix(r.URL.Path, "/v2/releases/envoy/"):
@@ -67,7 +67,7 @@ func searchServer(t *testing.T, matches int) *fakeV2 {
 			http.Error(w, `{"error":"no analyzed release"}`, http.StatusNotFound)
 			return
 		}
-		f.handler(t)(w, r)
+		f.Handler(t)(w, r)
 	}))
 	swapAPI(t, ts)
 	return f
@@ -112,7 +112,7 @@ func TestSearchFiltersByProjectAndListsEveryMatch(t *testing.T) {
 	if out.InAnalysis[1].Matches != nil {
 		t.Errorf("a release matched by its name has no item to list: %+v", out.InAnalysis[1])
 	}
-	if reqs := strings.Join(f.requests(), " "); strings.Contains(reqs, "envoy") || strings.Contains(reqs, "/v2/releases/etcd/v3.6.8") {
+	if reqs := strings.Join(f.Requests(), " "); strings.Contains(reqs, "envoy") || strings.Contains(reqs, "/v2/releases/etcd/v3.6.8") {
 		t.Errorf("read releases the answer does not carry matches for: %s", reqs)
 	}
 
@@ -148,11 +148,11 @@ func TestSearchCountsMatchesPastTheBound(t *testing.T) {
 // matches reads at most searchMatchReleases documents a call; the releases it
 // did not read are counted at the top of the answer.
 func TestSearchReadsAtMostEightReleases(t *testing.T) {
-	f := newFakeEtcd()
+	f := upstreamtest.NewEtcd()
 	var rows []string
 	for i := 0; i < searchMatchReleases+3; i++ {
 		v := fmt.Sprintf("v9.0.%d", i)
-		f.docs[v] = doc(v, "", "", `[{"id":"etcd@`+v+`#m","kind":"breaking","title":"BackendTLSPolicy","body":null,"evidence":[],"later":[]}]`, "")
+		f.Docs[v] = upstreamtest.Doc(v, "", "", `[{"id":"etcd@`+v+`#m","kind":"breaking","title":"BackendTLSPolicy","body":null,"evidence":[],"later":[]}]`, "")
 		rows = append(rows, fmt.Sprintf(`{"project":"etcd","version":%q,"matched":{"kind":"breaking","title":"BackendTLSPolicy"}}`, v))
 	}
 	answer := `{"query":"BackendTLSPolicy","in_analysis":[` + strings.Join(rows, ",") + `],"in_release_notes":[],"in_linked_documents":[]}`
@@ -161,7 +161,7 @@ func TestSearchReadsAtMostEightReleases(t *testing.T) {
 			w.Write([]byte(answer))
 			return
 		}
-		f.handler(t)(w, r)
+		f.Handler(t)(w, r)
 	})))
 	res, _, _ := searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy"})
 	var out struct {
@@ -181,7 +181,7 @@ func TestSearchReadsAtMostEightReleases(t *testing.T) {
 		t.Errorf("%d releases with matches, matches_not_computed %d", with, out.NotComputed)
 	}
 	docs := 0
-	for _, u := range f.requests() {
+	for _, u := range f.Requests() {
 		if strings.HasPrefix(u, "/v2/releases/") {
 			docs++
 		}

@@ -22,6 +22,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/basphere/ratatosk-mcp/internal/briefing"
 	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
@@ -101,7 +102,7 @@ func toolSchema[T any](lists ...string) *jsonschema.Schema {
 // only the kinds that ask for a decision, so in a briefing the other three are
 // refused too, with where they can be read: accepted, they would come back as
 // an empty list, which reads as "none in range".
-func kindsArg(list stringList, briefing bool) (map[string]bool, error) {
+func kindsArg(list stringList, forBriefing bool) (map[string]bool, error) {
 	if len(list) == 0 {
 		return nil, nil
 	}
@@ -112,7 +113,7 @@ func kindsArg(list stringList, briefing bool) (map[string]bool, error) {
 		if !containsStr(release.Kinds, k) {
 			return nil, fmt.Errorf("kinds: unknown kind %q — kinds are %s", truncate(k, 40), strings.Join(release.Kinds, ", "))
 		}
-		if briefing && !containsStr(decisionKinds, k) {
+		if forBriefing && !containsStr(briefing.DecisionKinds, k) {
 			counted = append(counted, k)
 		}
 		out[k] = true
@@ -120,7 +121,7 @@ func kindsArg(list stringList, briefing bool) (map[string]bool, error) {
 	if len(counted) > 0 {
 		return nil, fmt.Errorf("kinds: a briefing lists %s and counts %s in summary.counts only — "+
 			"for those, pass detail:\"full\" or read the release with get_release(kinds)",
-			strings.Join(decisionKinds, ", "), strings.Join(counted, ", "))
+			strings.Join(briefing.DecisionKinds, ", "), strings.Join(counted, ", "))
 	}
 	return out, nil
 }

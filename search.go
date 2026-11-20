@@ -121,6 +121,14 @@ func (it matchItem) hay() string {
 	return strings.ToLower(strings.Join(parts, "\n"))
 }
 
+// strOf is the text of an optional field, "" when it is absent.
+func strOf(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
 // items lists a document's items in screen order: before-upgrade first, then
 // the changes. A before-upgrade item's kind is "before_upgrade", as matched
 // names it.

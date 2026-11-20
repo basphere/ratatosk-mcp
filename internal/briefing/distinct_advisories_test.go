@@ -1,4 +1,4 @@
-package main
+package briefing
 
 // summary.distinct_advisories (1.1.0). The Argo CD fixture is the 2026-11-18
 // field report's range cut down to its security changes: the ids and grades
@@ -11,6 +11,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -82,7 +83,7 @@ const (
 )
 
 // argoRange is the range in version order, as check_stack and /v2/upgrade
-// hand it to buildBriefing.
+// hand it to Build.
 func argoRange(t *testing.T) []*release.Doc {
 	coordinated := func(fw5cCVE ...string) []secSpec {
 		return []secSpec{
@@ -127,7 +128,7 @@ func argoRange(t *testing.T) []*release.Doc {
 // critical advisories where the sums say 15.
 func TestDistinctAdvisoriesCountEachAdvisoryOnce(t *testing.T) {
 	docs := argoRange(t)
-	b, settled := buildBriefing(docs, nil, nil)
+	b, settled := Build(docs, nil, nil)
 	if settled != 0 {
 		t.Fatalf("settled %d with no running branch", settled)
 	}
@@ -168,7 +169,7 @@ func TestLinkedIDsCountOnce(t *testing.T) {
 			relDoc(t, "v1.4.0", secSpec{"a", "", []string{"cve-2026-1001 ", gov, ghsa}}),
 		},
 	} {
-		b, _ := buildBriefing(docs, nil, nil)
+		b, _ := Build(docs, nil, nil)
 		if got := b.Summary.DistinctAdvisories; got != (advisory.Counts{Total: 1, High: 1}) {
 			t.Errorf("%s: distinct %+v, want one high advisory", name, got)
 		}
@@ -191,7 +192,7 @@ func TestDisputedIDsLinkNothing(t *testing.T) {
 		relDoc(t, "v1.38.3", qp, cl),
 		relDoc(t, "v1.39.0", qp, secSpec{"wrong1", "medium", []string{cve, gp7c7}}, secSpec{"wrong2", "medium", []string{cve, gp7c7}}, cl),
 	}
-	b, _ := buildBriefing(docs, nil, nil)
+	b, _ := Build(docs, nil, nil)
 	if got := b.Summary.DistinctAdvisories; got != (advisory.Counts{Total: 3, High: 1, Medium: 2}) {
 		t.Errorf("distinct %+v, want total 3: the QPACK fix high on its own, the CVE and GHSA-8phg medium apart", got)
 	}
@@ -261,7 +262,7 @@ func TestUnlinkedIDsCountApart(t *testing.T) {
 		}, advisory.Counts{Total: 1, High: 1}},
 	}
 	for _, c := range cases {
-		b, _ := buildBriefing(c.docs, nil, nil)
+		b, _ := Build(c.docs, nil, nil)
 		if got := b.Summary.DistinctAdvisories; got != c.want {
 			t.Errorf("%s: distinct %+v, want %+v", c.name, got, c.want)
 		}
@@ -276,7 +277,7 @@ func TestDistinctAdvisoriesLeaveOutWhatIsAlreadyFixed(t *testing.T) {
 		relDoc(t, "v1.3.0", secSpec{"a", "critical", []string{"CVE-2026-1111"}}, secSpec{"b", "high", []string{"CVE-2026-2222"}}),
 	}
 	fixed, running := map[string]bool{"CVE-2026-1111": true}, []int{1, 2, 5}
-	b, settled := buildBriefing(docs, fixed, running)
+	b, settled := Build(docs, fixed, running)
 	if settled != 1 {
 		t.Fatalf("settled %d, want 1", settled)
 	}
@@ -305,7 +306,7 @@ func TestDistinctAdvisoriesLeaveOutWhatIsAlreadyFixed(t *testing.T) {
 
 	// Nothing critical left out: the key is absent, in the summary and on the row.
 	fixed = map[string]bool{"CVE-2026-2222": true}
-	b, settled = buildBriefing(docs, fixed, running)
+	b, settled = Build(docs, fixed, running)
 	if _, ok := b.Summary.Warnings[criticalExcludedKey]; ok || settled != 1 {
 		t.Errorf("a high change left out: settled %d, warnings %v", settled, b.Summary.Warnings)
 	}
@@ -320,7 +321,8 @@ func TestDistinctAdvisoriesLeaveOutWhatIsAlreadyFixed(t *testing.T) {
 // missing (independent review, 2026-11-18): an agent quoting the count as
 // "every security fix" over-promised.
 func TestDistinctAdvisoriesAreDescribedAsComputed(t *testing.T) {
-	b, _ := buildBriefing([]*release.Doc{relDoc(t, "v1.2.0",
+	t.Chdir(filepath.Join("..", "..")) // the docs are read from the repository root
+	b, _ := Build([]*release.Doc{relDoc(t, "v1.2.0",
 		secSpec{"xy", "critical", []string{"CVE-2026-1111", "CVE-2026-2222"}},
 		secSpec{"xz", "high", []string{"CVE-2026-1111", "CVE-2026-3333"}},
 		secSpec{"z", "low", []string{"CVE-2026-3333"}},
@@ -347,7 +349,7 @@ func TestDistinctAdvisoriesAreDescribedAsComputed(t *testing.T) {
 				t.Errorf("%s: the distinct_advisories row does not point to counts.security for what it leaves out", p)
 			}
 			// The ids that count, named in every language (the scanner's
-			// families, advisories.go).
+			// families, internal/advisory).
 			for _, fam := range []string{"CVE", "GHSA", "GO", "RUSTSEC", "PYSEC"} {
 				if !strings.Contains(line, fam) {
 					t.Errorf("%s: the distinct_advisories row does not name %s among the ids that count", p, fam)
@@ -363,5 +365,34 @@ func TestDistinctAdvisoriesAreDescribedAsComputed(t *testing.T) {
 		if !strings.Contains(string(en), want) {
 			t.Errorf("docs/tools.en.md: the distinct_advisories row does not say %q", want)
 		}
+	}
+}
+
+// distinct_advisories leaves out an id the running branch already fixed, even
+// when a change that stays listed cites it beside others: envoy v1.37.6 →
+// v1.40.2 counted nine critical advisories for one (2026-11-20).
+// (1.2.0; measured answers of 2026-11-19 and 11-20 — docs/design/mcp-answer-shape.md
+// in the ratatosk app repository.)
+func TestDistinctAdvisoriesLeaveOutWhatTheBranchFixed(t *testing.T) {
+	crit := "critical"
+	bundle := release.Change{ID: "e#bundle", Kind: "security", Severity: &crit,
+		Advisories: []string{"CVE-2026-111497", "GHSA-3wvj-j6qm-62mr", "CVE-2026-73512", "CVE-2026-73513"}}
+	own := release.Change{ID: "e#brotli", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-111497", "GHSA-3wvj-j6qm-62mr"}}
+	docs := []*release.Doc{
+		{Version: "v1.37.8", Changes: []release.Change{own}},
+		{Version: "v1.40.0", Changes: []release.Change{bundle}},
+	}
+	fixed := map[string]bool{"CVE-2026-73512": true, "CVE-2026-73513": true}
+	b, settled := Build(docs, fixed, []int{1, 37, 6})
+	if settled != 0 {
+		t.Fatalf("settled %d: the bundle cites ids the branch has not fixed and stays listed", settled)
+	}
+	if got, want := b.Summary.DistinctAdvisories, (advisory.Counts{Total: 1, Critical: 1}); got != want {
+		t.Errorf("distinct advisories %+v, want %+v", got, want)
+	}
+	// With nothing known about the branch, every id counts, as in 1.1.0.
+	b, _ = Build(docs, nil, []int{1, 37, 6})
+	if b.Summary.DistinctAdvisories.Total != 3 {
+		t.Errorf("without a fixed set, total %d, want 3", b.Summary.DistinctAdvisories.Total)
 	}
 }

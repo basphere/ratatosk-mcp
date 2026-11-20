@@ -16,7 +16,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/basphere/ratatosk-mcp/internal/release"
+	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
 
 // sdkSession connects an in-memory client to the real server, so a call passes
@@ -50,7 +50,7 @@ func sdkText(t *testing.T, cs *mcp.ClientSession, tool string, args map[string]a
 // The array form used to be refused by the schema before the handler could
 // read "name" or name the keys it received.
 func TestArrayFormReachesTheHandlerThroughTheSDK(t *testing.T) {
-	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
 	cs := sdkSession(t)
 
 	text, isErr := sdkText(t, cs, "check_stack", map[string]any{
@@ -73,11 +73,11 @@ func TestArrayFormReachesTheHandlerThroughTheSDK(t *testing.T) {
 // citing it again is a follow-up fix and must be listed; the same advisory on
 // another branch is still a backport and stays excluded.
 func TestBriefingKeepsALaterFixOnTheRunningBranch(t *testing.T) {
-	f := newFakeEtcd()
-	f.docs["v3.5.32"] = doc("v3.5.32", "", "",
+	f := upstreamtest.NewEtcd()
+	f.Docs["v3.5.32"] = upstreamtest.Doc("v3.5.32", "", "",
 		`[{"id":"etcd@v3.5.32#b","kind":"security","title":"complete fix for GHSA-bbbb","body":null,"severity":"critical","advisories":["GHSA-bbbb"],`+
 			`"affects":{"text":"gRPC listener","status":"stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, "")
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	c := runStack(t, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}}).Components[0]
 
 	var ids []string
@@ -97,8 +97,8 @@ func TestBriefingKeepsALaterFixOnTheRunningBranch(t *testing.T) {
 }
 
 func TestCheckStackChecksADuplicateComponentOnce(t *testing.T) {
-	f := newFakeEtcd()
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	f := upstreamtest.NewEtcd()
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	same := stackComponent{Project: "etcd", Version: "v3.5.30"}
 	out := runStack(t, checkStackArgs{Components: []stackComponent{same, {Project: " etcd ", Version: "v3.5.30"}, same, {Project: "etcd", Version: "v3.5.31"}}})
 	if len(out.Components) != 2 {
@@ -115,15 +115,15 @@ func TestCheckStackChecksADuplicateComponentOnce(t *testing.T) {
 // detail:"full" is bounded per call, not only per component, and the cut is
 // counted and explained.
 func TestFullDetailStopsAtTheByteBudget(t *testing.T) {
-	f := newFakeEtcd()
+	f := upstreamtest.NewEtcd()
 	pad := strings.Repeat("x", 900<<10)
 	big := func(ver string) string {
-		return doc(ver, "", "", `[{"id":"etcd@`+ver+`#e","kind":"enhancements","title":"t","body":"`+pad+`","affects":{"text":"","status":"not_stated"},"to_use":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, "")
+		return upstreamtest.Doc(ver, "", "", `[{"id":"etcd@`+ver+`#e","kind":"enhancements","title":"t","body":"`+pad+`","affects":{"text":"","status":"not_stated"},"to_use":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, "")
 	}
 	for _, v := range []string{"v3.5.31", "v3.5.32", "v3.6.7", "v3.6.8"} {
-		f.docs[v] = big(v)
+		f.Docs[v] = big(v)
 	}
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	res, _, err := checkStackTool(context.Background(), nil, checkStackArgs{Detail: "full", Components: []stackComponent{
 		{Project: "etcd", Version: "v3.5.30"}, {Project: "etcd", Version: "v3.5.31"},
 	}})
@@ -165,8 +165,8 @@ func TestFullDetailStopsAtTheByteBudget(t *testing.T) {
 // the caller got an empty reply. Now the call ends on its own deadline with an
 // answer that says what was not checked.
 func TestToolCallEndsOnItsDeadlineWithAnAnswer(t *testing.T) {
-	f := newFakeEtcd()
-	inner := f.handler(t)
+	f := upstreamtest.NewEtcd()
+	inner := f.Handler(t)
 	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v2/releases/etcd/") {
 			select {
@@ -196,7 +196,7 @@ func TestToolCallEndsOnItsDeadlineWithAnAnswer(t *testing.T) {
 
 // One failed document fails the component; the others must not be waited for.
 func TestFetchDocsStopsAfterTheFirstError(t *testing.T) {
-	f := newFakeEtcd()
+	f := upstreamtest.NewEtcd()
 	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/v3.5.31") {
 			http.Error(w, `{"error":"boom"}`, http.StatusInternalServerError)
@@ -208,7 +208,7 @@ func TestFetchDocsStopsAfterTheFirstError(t *testing.T) {
 		}
 	})))
 	start := time.Now()
-	_, err := fetchDocs(context.Background(), f.rows, "")
+	_, err := fetchDocs(context.Background(), f.Rows, "")
 	if err == nil {
 		t.Fatal("a 500 on one document must fail the fetch")
 	}
@@ -224,11 +224,11 @@ func TestFetchDocsStopsAfterTheFirstError(t *testing.T) {
 // the fetch returned an empty set and no error, and the component would have
 // been answered as "nothing in range".
 func TestFetchDocsReportsTheCallersDeadline(t *testing.T) {
-	f := newFakeEtcd()
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	f := upstreamtest.NewEtcd()
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
-	docs, err := fetchDocs(ctx, f.rows, "")
+	docs, err := fetchDocs(ctx, f.Rows, "")
 	if err == nil {
 		t.Fatalf("an expired deadline returned %d documents and no error", len(docs))
 	}
@@ -237,53 +237,11 @@ func TestFetchDocsReportsTheCallersDeadline(t *testing.T) {
 	}
 }
 
-// Inside the range: the first release of another branch carrying an advisory is
-// the backport and folds into also_in; a later release of a branch that already
-// carried it is a follow-up and is listed with its own severity.
-func TestBriefingListsAFollowUpFixInsideTheRange(t *testing.T) {
-	sec := func(ver, grade string) string {
-		g := "null"
-		if grade != "" {
-			g = `"` + grade + `"`
-		}
-		return doc(ver, "", "", `[{"id":"etcd@`+ver+`#a","kind":"security","title":"fix","body":null,"severity":`+g+`,"advisories":["GHSA-1111"],`+
-			`"affects":{"text":"","status":"not_stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, "")
-	}
-	var docs []*release.Doc
-	for _, d := range []string{sec("v1.2.1", ""), sec("v1.2.2", "critical"), sec("v1.3.0", ""), sec("v1.3.1", "high")} {
-		r, err := release.Parse([]byte(d))
-		if err != nil {
-			t.Fatal(err)
-		}
-		docs = append(docs, r)
-	}
-	b, settled := buildBriefing(docs, nil, []int{1, 2, 0})
-	got := map[string][]string{}
-	for _, c := range b.Changes {
-		got[c.ID] = c.AlsoIn
-	}
-	if settled != 0 || len(got) != 3 {
-		t.Fatalf("want three entries (first fix, its follow-up, the other branch's follow-up), got %v settled %d", got, settled)
-	}
-	if also := got["etcd@v1.2.1#a"]; len(also) != 1 || also[0] != "v1.3.0" {
-		t.Errorf("the other branch's first release folds into the first fix: also_in %v", also)
-	}
-	for _, id := range []string{"etcd@v1.2.2#a", "etcd@v1.3.1#a"} {
-		if _, ok := got[id]; !ok {
-			t.Errorf("follow-up %s must be listed on its own: %v", id, got)
-		}
-	}
-	// The critical follow-up leads: security is ordered by grade.
-	if b.Changes[0].ID != "etcd@v1.2.2#a" {
-		t.Errorf("the critical follow-up must come first, got %s", b.Changes[0].ID)
-	}
-}
-
 // A key the server does not read is tolerated, and said: "target" meant as
 // target_version must not return the whole path as if the bound had applied.
 // A component without a version is answered per component, not by the schema.
 func TestUnreadKeysAndMissingVersionAreAnswered(t *testing.T) {
-	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
 	cs := sdkSession(t)
 
 	text, isErr := sdkText(t, cs, "check_stack", map[string]any{
@@ -328,42 +286,6 @@ func TestInflightCapCountsOnlyPosts(t *testing.T) {
 	<-done
 }
 
-// Two changes of ONE release citing the same advisories are one entry, on any
-// branch: they are not a fix and its follow-up. A backport's higher grade is
-// carried onto the entry it folds into.
-func TestBriefingTreatsSiblingsInOneReleaseAsOne(t *testing.T) {
-	ch := func(ver, id, grade string) string {
-		g := "null"
-		if grade != "" {
-			g = `"` + grade + `"`
-		}
-		return `{"id":"etcd@` + ver + `#` + id + `","kind":"security","title":"fix","body":null,"severity":` + g + `,"advisories":["GHSA-2222"],` +
-			`"affects":{"text":"","status":"not_stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
-	}
-	var docs []*release.Doc
-	for _, d := range []string{
-		doc("v1.2.1", "", "", `[`+ch("v1.2.1", "a", "")+`,`+ch("v1.2.1", "b", "")+`]`, ""),
-		doc("v1.3.0", "", "", `[`+ch("v1.3.0", "a", "critical")+`,`+ch("v1.3.0", "b", "critical")+`]`, ""),
-	} {
-		r, err := release.Parse([]byte(d))
-		if err != nil {
-			t.Fatal(err)
-		}
-		docs = append(docs, r)
-	}
-	b, _ := buildBriefing(docs, nil, []int{1, 2, 0})
-	if len(b.Changes) != 1 {
-		t.Fatalf("four changes, one advisory, two releases on two branches: want one entry, got %d", len(b.Changes))
-	}
-	c := b.Changes[0]
-	if c.ID != "etcd@v1.2.1#a" || len(c.AlsoIn) != 1 || c.AlsoIn[0] != "v1.3.0" {
-		t.Errorf("entry %s also_in %v, want the first change with the other branch named once", c.ID, c.AlsoIn)
-	}
-	if string(c.Severity) != `"critical"` {
-		t.Errorf("the backport's grade must be carried onto the entry: %s", c.Severity)
-	}
-}
-
 // Keys are matched without regard to case, as the decode does, and what is
 // echoed back is bounded.
 func TestUnreadKeysMatchTheDecodeAndAreBounded(t *testing.T) {
@@ -384,33 +306,6 @@ func TestUnreadKeysMatchTheDecodeAndAreBounded(t *testing.T) {
 	}
 	if len(c.unreadKeys) > 8*45+20 || !strings.Contains(c.unreadKeys, "(+22 more)") {
 		t.Errorf("thirty long keys must come back as eight short ones and a count: %d chars %q", len(c.unreadKeys), c.unreadKeys)
-	}
-}
-
-// A sibling that asks for something of its own is not folded away: it is the
-// envoy v1.35.13 case, where the second change on one advisory carried the
-// required step.
-func TestBriefingKeepsASiblingThatCarriesItsOwnStep(t *testing.T) {
-	plain := `{"id":"etcd@v1.2.1#a","kind":"security","title":"padding oracle fixed","body":null,"severity":"high","advisories":["GHSA-3333"],` +
-		`"affects":{"text":"","status":"not_stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
-	withStep := `{"id":"etcd@v1.2.1#b","kind":"security","title":"opt-in GCM encryption","body":null,"severity":"high","advisories":["GHSA-3333"],` +
-		`"affects":{"text":"","status":"not_stated"},"also_required":"set use_gcm_encryption to true","security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
-	same := strings.Replace(plain, "#a", "#c", 1)
-	r, err := release.Parse([]byte(doc("v1.2.1", "", "", `[`+plain+`,`+withStep+`,`+same+`]`, "")))
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, _ := buildBriefing([]*release.Doc{r}, nil, []int{1, 2, 0})
-	var ids []string
-	for _, c := range b.Changes {
-		ids = append(ids, c.ID)
-	}
-	// The one with its own step leads its kind (carriesAStep, 2026-11-15).
-	if len(ids) != 2 || ids[0] != "etcd@v1.2.1#b" || ids[1] != "etcd@v1.2.1#a" {
-		t.Fatalf("want the one with its own step and the first change, not the plain repeat: %v", ids)
-	}
-	if b.Changes[0].AlsoRequired != "set use_gcm_encryption to true" {
-		t.Errorf("the step must reach the answer: %+v", b.Changes[0])
 	}
 }
 

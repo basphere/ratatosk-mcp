@@ -7,7 +7,7 @@
 // said 15 critical where five advisories are critical, and the agent passed 15
 // on. This counts each advisory once. It changes nothing else in a briefing:
 // which changes are listed, and how they are grouped into also_in, is the
-// 1.0.0 rule (whole id sets, buildBriefing) — a draft that also grouped by
+// 1.0.0 rule (whole id sets, briefing.Build) — a draft that also grouped by
 // shared ids answered less than 1.0.0 on live ranges and was taken out
 // (2026-11-18).
 //

@@ -12,6 +12,9 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/briefing"
+	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
 
 // toolDescriptions lists the descriptions exactly as a client receives them.
@@ -37,7 +40,7 @@ func TestDescriptionsSayWhatLaterEventsMean(t *testing.T) {
 	for _, c := range []struct{ where, text string }{
 		{"check_stack", d["check_stack"]},
 		{"check_upgrade", d["check_upgrade"]},
-		{"hint", stackHint},
+		{"hint", briefing.Hint(nil)},
 	} {
 		for _, want := range []string{"already fixes", "does not mean the release is vulnerable", "recorded on that version, not here"} {
 			// hint keeps the first two; where a defect is recorded is in the
@@ -68,7 +71,7 @@ func TestDescriptionsSayWhatLaterEventsMean(t *testing.T) {
 // null, and the same change reads medium on 2026-11-15.
 func TestDescriptionsSayWhatSeverityNullMeans(t *testing.T) {
 	d := toolDescriptions(t)
-	for _, c := range []struct{ where, text string }{{"get_release", d["get_release"]}, {"hint", stackHint}} {
+	for _, c := range []struct{ where, text string }{{"get_release", d["get_release"]}, {"hint", briefing.Hint(nil)}} {
 		if strings.Contains(c.text, "states none") || !strings.Contains(c.text, "no grade was found in what was read") {
 			t.Errorf("%s must say null is a grade not found: %s", c.where, c.text)
 		}
@@ -80,7 +83,7 @@ func TestDescriptionsSayWhatSeverityNullMeans(t *testing.T) {
 // date" (etcd v3.55.0 → releases [], target_version v3.7.3 on the preview API).
 // It is listed in could_not_check, with no range at all.
 func TestCheckStackRefusesAVersionNewerThanEveryAnalyzedRelease(t *testing.T) {
-	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
 	out := runStack(t, checkStackArgs{Components: []stackComponent{
 		{Project: "etcd", Version: "v3.6.99", TargetVersion: "v3.7.0"},
 		{Project: "etcd", Version: "v3.6.9-rc.1"},
@@ -126,8 +129,8 @@ func TestCheckUpgradePassesTheNewerThanEveryReleaseError(t *testing.T) {
 // Every slug in /v2/projects is lower case. Matched as sent, "Kubernetes" was
 // answered as untracked by check_stack and as an empty list by list_releases.
 func TestSlugsAreMatchedWithoutCaseOrSurroundingSpace(t *testing.T) {
-	f := newFakeEtcd()
-	swapAPI(t, httptest.NewServer(f.handler(t)))
+	f := upstreamtest.NewEtcd()
+	swapAPI(t, httptest.NewServer(f.Handler(t)))
 
 	out := runStack(t, checkStackArgs{Components: []stackComponent{{Project: " Etcd ", Version: "v3.6.7"}, {Project: "ETCD", Version: "v3.6.7"}}})
 	if len(out.CouldNotCheck) != 0 || len(out.Components) != 1 {
@@ -143,7 +146,7 @@ func TestSlugsAreMatchedWithoutCaseOrSurroundingSpace(t *testing.T) {
 	if res, _, _ := listReleasesTool(context.Background(), nil, listReleasesArgs{Project: " Etcd"}); res.IsError || !strings.Contains(res.Content[0].(*mcp.TextContent).Text, `"version":"v3.6.8"`) {
 		t.Errorf("list_releases Etcd: %s", res.Content[0].(*mcp.TextContent).Text)
 	}
-	reqs := strings.Join(f.requests(), " ")
+	reqs := strings.Join(f.Requests(), " ")
 	for _, want := range []string{"/v2/releases/etcd/v3.6.7", "/v2/releases?limit=10&project=etcd"} {
 		if !strings.Contains(reqs, want) {
 			t.Errorf("no request %s in %s", want, reqs)
@@ -151,12 +154,12 @@ func TestSlugsAreMatchedWithoutCaseOrSurroundingSpace(t *testing.T) {
 	}
 
 	// An unknown slug is an error before the release list is asked for.
-	n := len(f.requests())
+	n := len(f.Requests())
 	res, _, _ := listReleasesTool(context.Background(), nil, listReleasesArgs{Project: "argo-cd"})
 	if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !strings.HasPrefix(text, "unknown project argo-cd") || !strings.Contains(text, "list_projects") {
 		t.Errorf("list_releases argo-cd: isError=%v %s", res.IsError, text)
 	}
-	if got := f.requests()[n:]; len(got) != 0 {
+	if got := f.Requests()[n:]; len(got) != 0 {
 		t.Errorf("an unknown slug went upstream: %v", got)
 	}
 
@@ -272,7 +275,7 @@ func TestAnswersThatAreNotAPIAnswersAreErrors(t *testing.T) {
 // "nothing between here and there". The component is still checked up to the
 // newest analyzed release, and the note says the target itself was not.
 func TestCheckStackNotesATargetNewerThanEveryAnalyzedRelease(t *testing.T) {
-	swapAPI(t, httptest.NewServer(newFakeEtcd().handler(t)))
+	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
 	out := runStack(t, checkStackArgs{Components: []stackComponent{
 		{Project: "etcd", Version: "v3.6.8", TargetVersion: "v3.6.9"},
 		{Project: "etcd", Version: "v3.6.8"},
