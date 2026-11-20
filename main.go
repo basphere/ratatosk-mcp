@@ -246,8 +246,9 @@ func newServer() *mcp.Server {
 			"(cilium v1.20.0: 758,000), so read part of it: kinds keeps the changes of those kinds (security, breaking, " +
 			"deprecations, important_fixes is what asks for a decision); changes:[id, …] returns only the changes and " +
 			"before_upgrade items named — the ids a briefing's changes, changes_more and before_upgrade carry — with body " +
-			"and evidence, and lists the ids this release does not have in not_found (without version, the release the " +
-			"ids name is read). Both leave the folded lines out. " + dataNote,
+			"and evidence, and lists the ids this release does not have in not_found. Without version, changes reads the " +
+			"releases the ids name (up to 10) and answers {project, releases:[{version, url, release_notes_url, changes, " +
+			"before_upgrade when an id names one}], not_found}. Both leave the folded lines out; pass one of them, not both. " + dataNote,
 		InputSchema: toolSchema[getReleaseArgs]("kinds", "changes"),
 	}, getReleaseTool)
 
@@ -277,7 +278,8 @@ func newServer() *mcp.Server {
 			"changes is listed one line each in changes_more; the briefing carries no evidence quotes, so read the body " +
 			"and evidence of the entries you report with get_release(project, version, changes:[id, …]). A security " +
 			"change whose advisories from's own branch already fixed at or below from is left out and counted in " +
-			"excluded_on_branch, as check_stack does. gaps lists " +
+			"excluded_on_branch, as check_stack does; if the releases that tell cannot be read, nothing is left out " +
+			"and note says so. An image build suffix on from is read off as in check_stack (version_read_as). gaps lists " +
 			"neighbouring versions whose numbers skip (e.g. v3.5.32 then v3.6.7): releases in between may exist that " +
 			"were not analyzed, so check their release notes yourself. later_for_from is " + laterNote("the from version") +
 			" later_in_range lists the same for every release in range. " + dataNote,
@@ -306,17 +308,21 @@ func newServer() *mcp.Server {
 			"the project's own advisory states, null when no grade was found in what was read. changes holds up to " +
 			"20 security (most severe first), 20 breaking, 10 deprecations and 10 important_fixes with their body " +
 			"(inside a kind, the ones that say what to do first); changes_omitted counts per kind what is not in " +
-			"changes, and changes_more lists each of those in one line. A briefing answer is at most 40,000 " +
-			"characters, hint included: a component over its share of that moves its entries into " +
-			"changes_more, takes affects off the lines, and last drops lines and counts them per kind in " +
-			"changes_unlisted. Layers keep their place in this order, the last kept longest: important fixes, " +
-			"deprecations, other breaking changes, security of medium, low or no grade, breaking changes with " +
-			"action_required or no_downgrade, security of critical or high grade; each layer goes down to ids and titles " +
-			"(entries to lines, then lines without affects) before the layer above gives anything up, and lines are " +
-			"dropped only after that, lowest layer first. hint ends with the calls that list what was dropped (asked alone, a " +
-			"component keeps the id and title of every security, breaking and deprecation change unless those alone " +
-			"are over the budget; then one kind per call lists them). The briefing carries no evidence quotes: read " +
-			"the body and evidence of the entries you report with get_release(project, version, changes:[id, …]). " +
+			"changes (left out on your branch, in excluded_on_branch, and backports folded into an entry's also_in " +
+			"aside), and changes_more lists each of those in one line, with its also_in. A briefing answer is at most " +
+			"40,000 characters, hint included. Over that, first before_upgrade bodies are cut to 400 characters " +
+			"(body_truncated) and releases keep version and released_at; then the change lists give way layer by " +
+			"layer across every component, the last kept longest: important fixes, deprecations, other breaking " +
+			"changes, security of medium, low or no grade, breaking changes with action_required or no_downgrade, " +
+			"security of critical or high grade. Each layer goes down to ids and titles (entries to lines, then lines " +
+			"without affects) before the layer above gives anything up; then lines are dropped, lowest layer first, and " +
+			"counted per kind in changes_unlisted, but each component keeps five lines of its highest layer. With many " +
+			"components, the ones at the back are then cut to project, running_version, target_version and summary, " +
+			"with a note to ask for them alone. hint names the components with changes not listed and how to list " +
+			"them: the component alone, one kind per call, and a narrower range if one kind is still too many. " +
+			"later_in_range carries only problems (regression_fixed, known_issue_fixed). The briefing carries no " +
+			"evidence quotes: read the body and evidence of the entries you report with get_release(project, version, " +
+			"changes:[id, …]). " +
 			"kinds keeps the changes of those kinds. " +
 			"summary.counts and summary.warnings add up every release in range (one fix on several " +
 			"release lines counts once per release); summary.distinct_advisories counts each advisory once. " +
@@ -361,6 +367,8 @@ func newServer() *mcp.Server {
 			"An in_analysis release matched through an item also carries matches: every item of that release that " +
 			"matches q (id, kind, title; up to 20, matches_omitted counts the rest), on the first 8 such releases; " +
 			"matches_not_computed, at the top, counts the ones that carry none — narrow with project to reach them. " +
+			"A release matched through a folded dependency line (matched kind dependency_updates, no title) has no item " +
+			"to list and carries no matches. " +
 			"q is 2–200 characters. Drill in with get_release(project, version, " +
 			"changes:[id, …]) for the matched items' body and evidence. " + dataNote,
 	}, searchTool)
@@ -465,10 +473,10 @@ func listProjectsTool(ctx context.Context, req *mcp.CallToolRequest, args listPr
 
 type getReleaseArgs struct {
 	Project string     `json:"project" jsonschema:"project slug, e.g. envoy"`
-	Version string     `json:"version,omitempty" jsonschema:"release version as published, e.g. v1.38.3; omit for the latest release (or, with changes, for the release the ids name)"`
+	Version string     `json:"version,omitempty" jsonschema:"release version as published, e.g. v1.38.3; omit for the latest release (or, with changes, for the releases the ids name)"`
 	Lang    string     `json:"lang,omitempty" jsonschema:"en (default), ko or ja — language of title, body and attribute text; evidence quotes stay verbatim"`
 	Kinds   stringList `json:"kinds,omitempty" jsonschema:"only changes of these kinds (any of security, breaking, deprecations, important_fixes, enhancements, dependency_updates, other); folded lines are then left out. [security, breaking, deprecations, important_fixes] reads what asks for a decision. Omit for the whole release"`
-	Changes stringList `json:"changes,omitempty" jsonschema:"ids of changes or before_upgrade items (from a briefing's changes, changes_more or before_upgrade), up to 50: only those, with body and evidence; ids the release does not have are listed in not_found. Other before_upgrade items and folded lines are then left out"`
+	Changes stringList `json:"changes,omitempty" jsonschema:"ids of changes or before_upgrade items (from a briefing's changes, changes_more or before_upgrade), up to 50: only those, with body and evidence; ids not found are listed in not_found. Without version, the releases the ids name are read (up to 10). Not together with kinds"`
 }
 
 func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getReleaseArgs) (*mcp.CallToolResult, any, error) {
@@ -489,14 +497,17 @@ func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getRelea
 	if err != nil {
 		return errResult(err), nil, nil
 	}
+	// Both at once used to answer an id of another kind nowhere — neither in
+	// changes nor in not_found (independent review, 2026-11-20).
+	if kindSet != nil && ids != nil {
+		return errResult(fmt.Errorf("pass changes or kinds, not both: changes picks entries by id whatever their kind, kinds picks a whole kind")), nil, nil
+	}
 	ver := args.Version
-	// Ids name their release (project@version#…). Without a version, the latest
-	// would be read and every id answered as not found — when they all name one
-	// release of this project, that release is read.
+	// Ids name their release (project@version#…). Without a version, the
+	// releases they name are read — the latest alone answered every id of
+	// another release as not found (independent review, 2026-11-20).
 	if ver == "" && len(ids) > 0 {
-		if p, v, ok := releaseOfIDs(ids); ok && p == project {
-			ver = v
-		}
+		return pickedReleases(ctx, project, ids, lang)
 	}
 	if ver == "" {
 		// "Latest" is decided in one place, the API: /v2/projects carries each

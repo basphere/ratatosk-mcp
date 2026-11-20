@@ -18,7 +18,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -26,7 +25,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -321,17 +319,17 @@ func briefText(s string) string {
 	return strings.TrimRight(string(r[:briefTextChars]), " ") + "…"
 }
 
-// briefCharBudget is the size one briefing answer (check_stack or
-// check_upgrade, detail "brief") is fitted to, in characters of the answer
-// text. Measured 2026-11-20 in Claude Code: a Korean answer of 37,227
+// briefCharBudget is the most one briefing answer (check_stack or
+// check_upgrade, detail "brief") may be, in characters of the answer text,
+// hint included. Measured 2026-11-20 in Claude Code: a Korean answer of 37,227
 // characters reached the model as it was, one of 64,615 was saved to a file
 // instead (its documented limit for a tool's text answer is 50,000
 // characters). Over it, an agent reads its own answer through a file in
 // pieces, and in the 32 runs of that day some reports were written before the
-// file was read. What gives way to it is the one-line important fixes of
-// changes_more and nothing else (fitBriefings): a security, breaking or
-// deprecation line is never dropped to fit, so a long range can still go over
-// — and then hint says how to narrow it.
+// file was read. fitBriefings (fit.go) keeps every answer within it: the parts
+// that are not change lists shrink first, then the change lists layer by
+// layer, and last, with many components, the components at the back are cut
+// to a summary.
 const briefCharBudget = 40000
 
 // buildTailRe matches the build suffix an image tag carries after the version
@@ -763,13 +761,16 @@ type briefItem struct {
 // in all for 8 different texts. The newest is kept because each release words
 // its card anew and the newest wording is the latest reading.
 type upgradeItem struct {
-	Version string            `json:"version"`
-	Section string            `json:"section"` // prerequisites | known_issues | upgrade_guide
-	ID      string            `json:"id"`
-	Title   string            `json:"title"`
-	Body    *string           `json:"body"`
-	Folded  []json.RawMessage `json:"folded,omitempty"`
-	AlsoIn  []string          `json:"also_in,omitempty"`
+	Version string  `json:"version"`
+	Section string  `json:"section"` // prerequisites | known_issues | upgrade_guide
+	ID      string  `json:"id"`
+	Title   string  `json:"title"`
+	Body    *string `json:"body"`
+	// BodyTruncated says body was cut at upgradeBodyChars to fit the answer
+	// (fitBriefings); get_release(changes:[id]) has the whole text.
+	BodyTruncated bool              `json:"body_truncated,omitempty"`
+	Folded        []json.RawMessage `json:"folded,omitempty"`
+	AlsoIn        []string          `json:"also_in,omitempty"`
 }
 
 // beforeUpgradeOf lists the before_upgrade items of the releases in range
@@ -834,10 +835,15 @@ type moreLine struct {
 	Severity       json.RawMessage `json:"severity,omitempty"`
 	Affects        *lineAttr       `json:"affects,omitempty"`
 	ActionRequired bool            `json:"action_required,omitempty"`
+	// AlsoIn is the entry's also_in, carried onto its line: without it, an
+	// entry moved to a line took with it every backport it stood for —
+	// kubernetes v1.32.11 to its newest lost 10 of 43 security changes
+	// without a trace (independent review, 2026-11-20).
+	AlsoIn []string `json:"also_in,omitempty"`
 }
 
 func lineOf(c briefChange) moreLine {
-	l := moreLine{Version: c.Version, ID: c.ID, Kind: c.Kind, Title: c.Title, Severity: c.Severity, ActionRequired: c.ActionRequired != ""}
+	l := moreLine{Version: c.Version, ID: c.ID, Kind: c.Kind, Title: c.Title, Severity: c.Severity, ActionRequired: c.ActionRequired != "", AlsoIn: c.AlsoIn}
 	if c.Affects != nil {
 		l.Affects = &lineAttr{Text: c.Affects.Text, Status: c.Affects.Status}
 	}
@@ -900,6 +906,20 @@ type rangeRelease struct {
 	Counts     map[string]int `json:"counts"`
 	Warnings   map[string]int `json:"warnings,omitempty"`
 	Processing bool           `json:"processing,omitempty"`
+	// slim keeps only version and released_at, when the answer is over its
+	// budget (fitBriefings).
+	slim bool
+}
+
+func (r rangeRelease) MarshalJSON() ([]byte, error) {
+	if r.slim {
+		return json.Marshal(struct {
+			Version    string `json:"version"`
+			ReleasedAt string `json:"released_at"`
+		}{r.Version, r.ReleasedAt})
+	}
+	type plain rangeRelease
+	return json.Marshal(plain(r))
 }
 
 // stackSummary: Counts and Warnings add up every release in range, so a fix
@@ -936,6 +956,11 @@ type briefing struct {
 	// more is what ChangesMore lists, as whole entries in briefing order:
 	// fitBriefings reads their grade and step to decide what gives way first.
 	more []briefChange
+	// folded counts the security changes folded into an entry of their own
+	// release (listed in changes_more, counted in changes_omitted since the
+	// independent review of 2026-11-20). The 1.0.0 harness takes them off
+	// changes_omitted to compare.
+	folded int
 }
 
 // gradeRank orders a briefing's raw severity: critical first, a change whose
@@ -1212,6 +1237,13 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 	b.Summary.DistinctAdvisories = tally.counts()
 
 	// 1.2.0 — nothing above reads what follows.
+	if len(folded) > 0 {
+		if b.ChangesOmitted == nil {
+			b.ChangesOmitted = map[string]int{}
+		}
+		b.ChangesOmitted["security"] += len(folded)
+		b.folded = len(folded)
+	}
 	more := append(cut, folded...)
 	sort.SliceStable(more, func(i, j int) bool { return briefLess(more[i], more[j]) })
 	b.more = more
@@ -1220,9 +1252,21 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 	}
 	up := beforeUpgradeOf(docs)
 	b.Upgrade = &up
+	// later_in_range carries only problems a release in range has
+	// (regression_fixed, known_issue_fixed): what it is for is "do not stop at
+	// that version". An advisory_after_release on a release in range is an
+	// advisory for a vulnerability that release already fixes, and on cilium
+	// v1.16.18's range it was 25 of the 34 events (spec "마", 2026-11-20).
 	later := []json.RawMessage{}
 	for _, d := range docs {
-		later = append(later, d.Later...)
+		for _, ev := range d.Later {
+			var e struct {
+				Type string `json:"type"`
+			}
+			if json.Unmarshal(ev, &e) == nil && (e.Type == "regression_fixed" || e.Type == "known_issue_fixed") {
+				later = append(later, ev)
+			}
+		}
 	}
 	b.LaterInRange = &later
 	if settled > 0 {
@@ -1350,362 +1394,6 @@ func (b *briefing) keepKinds(k map[string]bool) {
 	}
 }
 
-// fitItem is one decision change of a briefing while the answer is fitted.
-type fitItem struct {
-	c        briefChange
-	wasEntry bool // in changes as built
-	demoted  bool // moved from changes to changes_more
-	bare     bool // a line without affects
-	dropped  bool // in neither list: counted in changes_unlisted
-	// sizes of the change as an entry of changes, as a line, as a line
-	// without affects, comma included
-	sEntry, sLine, sBare int
-}
-
-// giveWayTier is the layer a change keeps its place in when an answer is over
-// the budget: lower gives way first. Kept to the end (the main session's
-// decision, 2026-11-20, after the first fitting answered envoy's 103 security
-// changes, critical advisories among them, with a count while 15 breaking lines
-// stayed):
-//
-//	5  security critical or high
-//	4  breaking that says what to do (action_required, or a stated or inferred no_downgrade)
-//	3  other security (medium, low, no grade found)
-//	2  other breaking
-//	1  deprecations
-//	0  important fixes
-//
-// "Which upgrade first" is answered by the severe advisories first.
-func giveWayTier(c briefChange) int {
-	switch c.Kind {
-	case "important_fixes":
-		return 0
-	case "deprecations":
-		return 1
-	case "breaking":
-		if c.ActionRequired != "" || (c.NoDowngrade != nil && (c.NoDowngrade.Status == "stated" || c.NoDowngrade.Status == "inferred")) {
-			return 4
-		}
-		return 2
-	case "security":
-		if gradeRank(c.Severity) >= 3 {
-			return 5
-		}
-		return 3
-	}
-	return 0
-}
-
-// fitStep is one step a briefing takes to get smaller.
-type fitStep struct {
-	it *fitItem
-	do int // stepDemote, stepBare or stepDrop
-}
-
-const (
-	stepDemote = iota // an entry of changes becomes a line of changes_more
-	stepBare          // a line loses affects
-	stepDrop          // a line goes, counted in changes_unlisted
-)
-
-// fitComp is one briefing being fitted. Its steps, in order (the main
-// session's decision, 2026-11-20): from the lowest layer up, each layer to the
-// end — its entries become lines, then its lines lose affects — so that every
-// id and title is listed before a layer above gives up anything; then, once
-// every layer is down to ids and titles, lines are dropped, lowest layer
-// first. Inside a layer the end of the briefing's own order goes first. The
-// first fitting moved every body down before any affects came off, and
-// containerd alone kept 101 important-fix lines while its 20 security entries
-// lost their bodies. sizes[k] is the length of the change lists after k steps.
-type fitComp struct {
-	b       *briefing
-	omitted map[string]int // changes_omitted as built
-	shown   []*fitItem     // briefing order
-	steps   []fitStep
-	sizes   []int
-	k       int
-	// call names, for hint, the calls that list what this briefing left out.
-	call func(unlisted map[string]int) string
-}
-
-func runesOf(v any) int {
-	b, _ := json.Marshal(v)
-	return utf8.RuneCount(b)
-}
-
-func newFitComp(b *briefing, call func(map[string]int) string) *fitComp {
-	f := &fitComp{b: b, call: call, omitted: maps.Clone(b.ChangesOmitted)}
-	add := func(c briefChange, entry bool) {
-		it := &fitItem{c: c, wasEntry: entry}
-		if entry {
-			it.sEntry = runesOf(c) + 1
-		}
-		l := lineOf(c)
-		it.sLine = runesOf(l) + 1
-		l.Affects = nil
-		it.sBare = runesOf(l) + 1
-		f.shown = append(f.shown, it)
-	}
-	for _, c := range b.Changes {
-		add(c, true)
-	}
-	for _, c := range b.more {
-		add(c, false)
-	}
-	sort.SliceStable(f.shown, func(i, j int) bool { return briefLess(f.shown[i].c, f.shown[j].c) })
-	// Each layer, the end of the briefing's order first.
-	layers := make([][]*fitItem, 6)
-	for i := len(f.shown) - 1; i >= 0; i-- {
-		it := f.shown[i]
-		t := giveWayTier(it.c)
-		layers[t] = append(layers[t], it)
-	}
-	for _, layer := range layers {
-		for _, it := range layer {
-			if it.wasEntry {
-				f.steps = append(f.steps, fitStep{it, stepDemote})
-			}
-		}
-		for _, it := range layer {
-			f.steps = append(f.steps, fitStep{it, stepBare})
-		}
-	}
-	for _, layer := range layers {
-		for _, it := range layer {
-			f.steps = append(f.steps, fitStep{it, stepDrop})
-		}
-	}
-	size := 0
-	for _, it := range f.shown {
-		if it.wasEntry {
-			size += it.sEntry
-		} else {
-			size += it.sLine
-		}
-	}
-	f.sizes = []int{size}
-	for _, st := range f.steps {
-		switch st.do {
-		case stepDemote:
-			size += st.it.sLine - st.it.sEntry
-		case stepBare:
-			size += st.it.sBare - st.it.sLine
-		case stepDrop:
-			size -= st.it.sBare
-		}
-		f.sizes = append(f.sizes, size)
-	}
-	return f
-}
-
-func (f *fitComp) maxK() int { return len(f.sizes) - 1 }
-
-// set puts the briefing in state k: the first k steps taken.
-func (f *fitComp) set(k int) {
-	f.k = k
-	for _, it := range f.shown {
-		it.demoted, it.bare, it.dropped = false, false, false
-	}
-	for _, st := range f.steps[:k] {
-		switch st.do {
-		case stepDemote:
-			st.it.demoted = true
-		case stepBare:
-			st.it.bare = true
-		case stepDrop:
-			st.it.dropped = true
-		}
-	}
-	var changes []briefChange
-	var lines []moreLine
-	omitted := maps.Clone(f.omitted)
-	unlisted := map[string]int{}
-	for _, it := range f.shown {
-		if it.demoted {
-			if omitted == nil {
-				omitted = map[string]int{}
-			}
-			omitted[it.c.Kind]++
-		}
-		switch {
-		case it.wasEntry && !it.demoted:
-			changes = append(changes, it.c)
-		case it.dropped:
-			unlisted[it.c.Kind]++
-		default:
-			l := lineOf(it.c)
-			if it.bare {
-				l.Affects = nil
-			}
-			lines = append(lines, l)
-		}
-	}
-	if len(unlisted) == 0 {
-		unlisted = nil
-	}
-	f.b.Changes, f.b.ChangesMore, f.b.ChangesOmitted, f.b.ChangesUnlisted = changes, lines, omitted, unlisted
-}
-
-// clear empties the briefing's change lists, to measure the rest of the answer.
-func (f *fitComp) clear() {
-	f.b.Changes, f.b.ChangesMore, f.b.ChangesOmitted, f.b.ChangesUnlisted = nil, nil, nil, nil
-}
-
-// fitSlack covers what sizes leave out: the keys of the four lists and the
-// counts in changes_omitted and changes_unlisted.
-const fitSlack = 160
-
-// maxCallsHint bounds the sentences fitBriefings adds to hint. Past it, one
-// sentence names the components instead, so many components cut to the
-// bone cannot fill the answer with advice about themselves.
-const maxCallsHint = 1500
-
-// fitBriefings fits a briefing answer to briefCharBudget, hint included
-// (the spec of 2026-11-20, revised after the first build measured six
-// components at 201,537 characters and containerd v2.2.9 → v2.4.2 at 47,957).
-//
-// The budget is shared evenly over the components; what one does not need goes
-// to the others. A component over its share takes its steps (fitComp) until it
-// fits: layer by layer from the lowest (giveWayTier), entries of changes become
-// lines of changes_more (changes_omitted grows with them) and the lines lose
-// affects; only then are lines dropped, lowest layer first, and counted per
-// kind in changes_unlisted. A component that drops lines gets a sentence at the
-// end of hint naming the calls that list them. Nothing goes without a count,
-// and a component asked alone keeps the id and title of every security,
-// breaking and deprecation change unless those alone are over the budget —
-// then one kind per call lists them.
-//
-// What the steps do not touch (summary, releases, before_upgrade, later events,
-// the hint itself) can on its own be over the budget for a stack of many
-// components; the answer then says so in hint.
-func fitBriefings(comps []*fitComp, hint string, setHint func(string), render func() ([]byte, error)) ([]byte, error) {
-	extra := ""
-	callsHint := func() string {
-		var parts []string
-		var names []string
-		for _, f := range comps {
-			if f.b.ChangesUnlisted != nil {
-				parts = append(parts, f.call(f.b.ChangesUnlisted))
-			}
-		}
-		for _, f := range comps {
-			if f.b.ChangesUnlisted != nil {
-				names = append(names, strings.SplitN(f.call(f.b.ChangesUnlisted), ":", 2)[0])
-			}
-		}
-		if len(parts) == 0 {
-			return ""
-		}
-		s := " " + strings.Join(parts, " ")
-		if utf8.RuneCountInString(s) > maxCallsHint {
-			s = fmt.Sprintf(" %d components have changes not listed here, counted in their changes_unlisted (%s): check them one per call, with kinds naming one kind per call.", len(names), boundedKeys(names))
-		}
-		return s
-	}
-	var text []byte
-	var err error
-	for round := 0; round < 4; round++ {
-		setHint(hint + extra)
-		for _, f := range comps {
-			f.clear()
-		}
-		text, err = render()
-		if err != nil {
-			return nil, err
-		}
-		avail := briefCharBudget - utf8.RuneCount(text)
-		needs := make([]int, len(comps))
-		for i, f := range comps {
-			if f.sizes[0] > 0 {
-				needs[i] = f.sizes[0] + fitSlack
-			}
-		}
-		alloc := evenShares(max(avail, 0), needs)
-		for i, f := range comps {
-			k := 0
-			for k < f.maxK() && f.sizes[k]+fitSlack > alloc[i] {
-				k++
-			}
-			f.set(k)
-		}
-		next := callsHint()
-		if next == extra {
-			break
-		}
-		extra = next
-	}
-	setHint(hint + extra)
-	for {
-		text, err = render()
-		if err != nil || utf8.RuneCount(text) <= briefCharBudget {
-			return text, err
-		}
-		// The estimate fell short: one more step on the component whose lists
-		// are the longest, and measure again.
-		var most *fitComp
-		for _, f := range comps {
-			if f.k < f.maxK() && (most == nil || f.sizes[f.k] > most.sizes[most.k]) {
-				most = f
-			}
-		}
-		if most == nil {
-			setHint(hint + extra + stillOverHint)
-			return render()
-		}
-		most.set(most.k + 1)
-		extra = callsHint()
-		setHint(hint + extra)
-	}
-}
-
-// stillOverHint ends hint when every list is down to its counts and the answer
-// is still over the budget: only fewer components per call make it smaller.
-const stillOverHint = " This answer is still over 40,000 characters with every change list down to its counts: check fewer components per call."
-
-// unlistedSentence is the hint sentence for a briefing that dropped lines:
-// what it left out, per kind, and the calls that list it — one kind per call,
-// for the component alone, since the lines of one kind are what the spec
-// promises to carry whole. When the call was already that (one component, one
-// kind), only a narrower range lists more.
-func unlistedSentence(name string, unlisted map[string]int, asked map[string]bool, alone bool, callFor func(kind string) string, narrow string) string {
-	var counts, ks []string
-	for _, k := range decisionKinds {
-		if n := unlisted[k]; n > 0 {
-			counts = append(counts, fmt.Sprintf("%s %d", k, n))
-			ks = append(ks, k)
-		}
-	}
-	head := fmt.Sprintf("%s: not listed, counted in changes_unlisted: %s;", name, strings.Join(counts, ", "))
-	if alone && len(asked) == 1 && len(ks) == 1 && asked[ks[0]] {
-		return head + " to list them, narrow the range (" + narrow + ")."
-	}
-	s := head + " to list them, call " + callFor(ks[0])
-	for _, k := range ks[1:] {
-		s += fmt.Sprintf(", then [%q]", k)
-	}
-	return s + "."
-}
-
-// evenShares splits avail over needs so that each gets the same share, and a
-// need below its share leaves the rest to the others.
-func evenShares(avail int, needs []int) []int {
-	out := make([]int, len(needs))
-	var idx []int
-	for i, n := range needs {
-		if n > 0 {
-			idx = append(idx, i)
-		}
-	}
-	sort.SliceStable(idx, func(a, b int) bool { return needs[idx[a]] < needs[idx[b]] })
-	left := avail
-	for k, i := range idx {
-		share := left / (len(idx) - k)
-		out[i] = min(needs[i], share)
-		left -= out[i]
-	}
-	return out
-}
-
 // ---------------------------------------------------------------------------
 // check_stack
 // ---------------------------------------------------------------------------
@@ -1726,6 +1414,28 @@ type componentReport struct {
 	LaterForRunning []json.RawMessage `json:"later_for_running,omitempty"`
 	Full            []json.RawMessage `json:"releases_full,omitempty"` // detail:"full" only
 	FullOmitted     int               `json:"releases_full_omitted,omitempty"`
+	// stub is set by fitBriefings when the answer is over its budget with
+	// every list down to its counts (many components): 1 answers project,
+	// running_version, target_version, summary and note; 2 not even summary.
+	stub int
+}
+
+func (r componentReport) MarshalJSON() ([]byte, error) {
+	if r.stub == 0 {
+		type plain componentReport
+		return json.Marshal(plain(r))
+	}
+	out := struct {
+		Project        string        `json:"project"`
+		RunningVersion string        `json:"running_version"`
+		TargetVersion  string        `json:"target_version,omitempty"`
+		Summary        *stackSummary `json:"summary,omitempty"`
+		Note           string        `json:"note"`
+	}{r.Project, r.RunningVersion, r.TargetVersion, r.Summary, joinNotes(r.Note, stubNote)}
+	if r.stub > 1 {
+		out.Summary = nil
+	}
+	return json.Marshal(out)
 }
 
 // untrackedReason answers a component whose project is neither a slug nor an
@@ -1935,20 +1645,16 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 			reports = append(reports, rep)
 			continue
 		}
-		running := comp.Version
-		onLine := rowsOnLine(rows, running)
 		// An image tag can carry a build suffix after the version it was built
-		// from (stripBuildTail). Read as passed, such a tag names a line the
-		// project does not publish; read without the suffix, it is a release
-		// the project does. Only then is the suffix dropped, and the answer says
-		// what was read.
-		if len(onLine) == 0 {
-			if v, ok := stripBuildTail(running); ok && len(rowsOnLine(rows, v)) > 0 {
-				running = v
-				rep.VersionReadAs = v
-				onLine = rowsOnLine(rows, v)
-			}
+		// from (readBuildTail): dropped when the tag as passed is no release on
+		// record and the version without it is, and the answer says what was
+		// read.
+		running := comp.Version
+		if v, ok := readBuildTail(rows, running); ok {
+			running = v
+			rep.VersionReadAs = v
 		}
+		onLine := rowsOnLine(rows, running)
 		// A version whose line does not exist here is almost always a dropped
 		// prefix, not a real gap. Agents read versions off image tags, and an
 		// image tag rarely carries the release-line prefix: knative publishes
@@ -2142,27 +1848,15 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		res, err := jsonResult(out)
 		return res, nil, err
 	}
-	briefed := 0
-	for i := range reports {
-		if reports[i].Summary != nil {
-			briefed++
-		}
-	}
-	alone := briefed == 1
-	var fits []*fitComp
+	var units []*fitUnit
 	for i := range reports {
 		if reports[i].Summary == nil {
 			continue
 		}
-		name := reports[i].Project
-		fits = append(fits, newFitComp(&reports[i].briefing, func(u map[string]int) string {
-			return unlistedSentence(name, u, kindSet, alone,
-				func(kind string) string {
-					return fmt.Sprintf("check_stack with only %s and kinds:[%q]", name, kind)
-				}, "target_version or same_minor")
-		}))
+		rep := &reports[i]
+		units = append(units, unitOf(rep.Project, &rep.briefing, func(level int) { rep.stub = level }))
 	}
-	text, err := fitBriefings(fits, stackHint, func(h string) { out["hint"] = h }, func() ([]byte, error) { return json.Marshal(out) })
+	text, err := fitBriefings(units, stackHint, func(h string) { out["hint"] = h }, func() ([]byte, error) { return json.Marshal(out) }, stackExtra)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2234,23 +1928,30 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	// The project's public release list, read through the cache: it decides
 	// whether from carries an image build suffix, the range end of same_minor,
 	// and which releases settle what from's branch already fixed. from is sent
-	// to /v2/upgrade below in any case. An unknown project has no rows, and
-	// /v2/upgrade answers it with its own error.
-	rows, err := api.projectReleases(ctx, args.Project)
-	if err != nil {
-		return errResult(err), nil, nil
+	// to /v2/upgrade below in any case. detail:"full" settles nothing, so it
+	// reads the list only for a build suffix or same_minor (1.1.0 made one
+	// request; independent review, 2026-11-20). A list that cannot be read
+	// fails the call only when same_minor needs it; otherwise the answer comes
+	// as 1.1.0 gave it, and note says what could not be done.
+	var rows []v2Row
+	var listErr error
+	_, tailLike := stripBuildTail(args.From)
+	if !full || args.SameMinor || tailLike {
+		rows, listErr = api.projectReleases(ctx, args.Project)
 	}
+	if listErr != nil && args.SameMinor {
+		return errResult(fmt.Errorf("could not read the release list to find the newest release of from's minor (same_minor): %w", listErr)), nil, nil
+	}
+	var notes []string
 	// The build suffix of an image tag (stripBuildTail), as check_stack reads
 	// it: /v2/upgrade answered cilium-envoy's v1.37.6-1789133542-<commit> with
-	// a 404 (2026-11-20). Dropped only when the tag as passed names a line the
-	// project does not publish and the version without it does.
+	// a 404 (2026-11-20).
 	from, readAs := args.From, ""
-	if len(rowsOnLine(rows, from)) == 0 {
-		if v, ok := stripBuildTail(from); ok && len(rowsOnLine(rows, v)) > 0 {
-			from, readAs = v, v
-		}
+	if v, ok := readBuildTail(rows, from); ok {
+		from, readAs = v, v
+	} else if tailLike && listErr != nil {
+		notes = append(notes, fmt.Sprintf("could not read the release list, so a build suffix on from was not read off: %v", listErr))
 	}
-	var sameMinorMsg string
 	// When from's line has no release at all, to stays unset and /v2/upgrade
 	// answers with its own error, which lists the tags the project publishes.
 	if args.SameMinor && len(rowsOnLine(rows, from)) > 0 {
@@ -2258,7 +1959,7 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 			to = t
 		} else {
 			to = from // (from, from] is empty: /v2/upgrade answers it with no releases
-			sameMinorMsg = sameMinorNote(from, newestOnLine(rows, from))
+			notes = append(notes, sameMinorNote(from, newestOnLine(rows, from)))
 		}
 	}
 	raw, err := api.upgradeRaw(ctx, args.Project, from, to, lang)
@@ -2266,14 +1967,14 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 		return errResult(err), nil, nil
 	}
 	if full {
-		if kindSet == nil && readAs == "" {
+		if kindSet == nil && readAs == "" && len(notes) == 0 {
 			return rawResult(raw), nil, nil
 		}
 		var f *docFilter
 		if kindSet != nil {
 			f = &docFilter{kinds: kindSet}
 		}
-		b, err := filterUpgradeReleases(raw, f, readAs)
+		b, err := filterUpgradeReleases(raw, f, readAs, joinNotes(notes...))
 		if err != nil {
 			return errResult(fmt.Errorf("/v2/upgrade: %w", err)), nil, nil
 		}
@@ -2324,11 +2025,16 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	// same upgrade differently from check_stack: containerd v2.2.9 → v2.4.2
 	// omitted 42 security changes here and 30 there, with 13 excluded
 	// (2026-11-20). The releases at or below from are public documents, read
-	// through the same cache; from itself already went upstream.
+	// through the same cache; from itself already went upstream. If they cannot
+	// be read, nothing is settled, as in 1.1.0, and note says so.
 	fromKey := version.NormalizeVersion(up.From)
-	fixed, err := fixedOnBranch(ctx, rows, up.From, lang)
+	fixed, err := map[string]bool(nil), listErr
+	if err == nil {
+		fixed, err = fixedOnBranch(ctx, rows, up.From, lang)
+	}
 	if err != nil {
-		return errResult(fmt.Errorf("could not read the releases at or below %s that settle what your branch already fixed: %w", truncate(up.From, 80), err)), nil, nil
+		fixed = nil
+		notes = append(notes, fmt.Sprintf("could not read the releases at or below %s, so security changes your branch already fixed are not left out (as in 1.1.0): %v", truncate(up.From, 80), err))
 	}
 	b, _ := buildBriefing(docs, fixed, fromKey)
 	b.keepKinds(kindSet)
@@ -2336,7 +2042,33 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 		up.LaterForFrom = []json.RawMessage{}
 	}
 	hint := stackHint
+	stub := 0
 	answer := func() map[string]any {
+		out := map[string]any{
+			"project": up.Project,
+			"from":    args.From, // as passed; version_read_as says what was checked
+			"to":      up.To,
+			"summary": b.Summary,
+			"gaps":    gaps,
+			"privacy": "from and to were sent to the server (/v2/upgrade); use check_stack to keep versions on your side",
+			"hint":    hint,
+		}
+		if readAs != "" {
+			out["version_read_as"] = readAs
+		}
+		note := joinNotes(notes...)
+		if stub > 0 {
+			// At the size limit with every list down to its counts: what is
+			// left is the range and its counts (fitBriefings).
+			if stub > 1 {
+				delete(out, "summary")
+			}
+			out["note"] = joinNotes(note, "summary only: this range is too large for one answer — narrow it with to or same_minor")
+			return out
+		}
+		if note != "" {
+			out["note"] = note
+		}
 		// Arrays, never null, as the docs say: an empty range came back as
 		// "changes": null and "before_upgrade": null (independent review,
 		// 2026-11-15), which a client reading the documented shape may not expect.
@@ -2344,20 +2076,11 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 		if changes == nil {
 			changes = []briefChange{}
 		}
-		out := map[string]any{
-			"project":        up.Project,
-			"from":           args.From, // as passed; version_read_as says what was checked
-			"to":             up.To,
-			"summary":        b.Summary,
-			"releases":       b.Releases,
-			"before_upgrade": b.Upgrade,
-			"changes":        changes,
-			"gaps":           gaps,
-			"later_for_from": up.LaterForFrom,
-			"later_in_range": b.LaterInRange,
-			"privacy":        "from and to were sent to the server (/v2/upgrade); use check_stack to keep versions on your side",
-			"hint":           hint,
-		}
+		out["releases"] = b.Releases
+		out["before_upgrade"] = b.Upgrade
+		out["changes"] = changes
+		out["later_for_from"] = up.LaterForFrom
+		out["later_in_range"] = b.LaterInRange
 		if len(b.ChangesOmitted) > 0 {
 			out["changes_omitted"] = b.ChangesOmitted
 		}
@@ -2370,25 +2093,37 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 		if b.ExcludedOnBranch != nil {
 			out["excluded_on_branch"] = b.ExcludedOnBranch
 		}
-		if sameMinorMsg != "" {
-			out["note"] = sameMinorMsg
-		}
-		if readAs != "" {
-			out["version_read_as"] = readAs
-		}
 		return out
 	}
-	comp := newFitComp(&b, func(u map[string]int) string {
-		return unlistedSentence(up.Project, u, kindSet, true,
-			func(kind string) string {
-				return fmt.Sprintf("check_upgrade(project:%q, from:%q, to:%q, kinds:[%q])", up.Project, up.From, up.To, kind)
-			}, "a nearer to, or same_minor")
-	})
-	text, err := fitBriefings([]*fitComp{comp}, stackHint, func(h string) { hint = h }, func() ([]byte, error) { return json.Marshal(answer()) })
+	units := []*fitUnit{unitOf(up.Project, &b, func(level int) { stub = level })}
+	text, err := fitBriefings(units, stackHint, func(h string) { hint = h }, func() ([]byte, error) { return json.Marshal(answer()) }, upgradeExtra)
 	if err != nil {
 		return nil, nil, err
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}, nil, nil
+}
+
+// readBuildTail is the version an image build suffix stands on: v without
+// the suffix (stripBuildTail), when v as passed is not a release on record
+// and the version without the suffix is (spec "마", 2026-11-20). The first
+// rule asked only whether v's release line existed, so v1.37.6-cbec91f —
+// whose line is the main one — was read as a pre-release of v1.37.6 and
+// v1.37.6 itself was listed as upgrade work. A pre-release (v1.21.0-rc.1)
+// never matches stripBuildTail.
+func readBuildTail(rows []v2Row, v string) (string, bool) {
+	if onRecord(rows, v) {
+		return "", false
+	}
+	if s, ok := stripBuildTail(v); ok && onRecord(rows, s) {
+		return s, true
+	}
+	return "", false
+}
+
+// onRecord says v names a release in rows (sameTag: the leading "v" and case
+// aside).
+func onRecord(rows []v2Row, v string) bool {
+	return slices.ContainsFunc(rows, func(r v2Row) bool { return sameTag(r.Version, v) })
 }
 
 // fixedOnBranch reads the advisory ids from's own branch carries at or below
@@ -2432,7 +2167,7 @@ func fixedOnBranch(ctx context.Context, rows []v2Row, from, lang string) (map[st
 // filterUpgradeReleases applies f to every release of a /v2/upgrade answer and
 // passes the rest of the answer on as received; readAs, when set, is added as
 // version_read_as.
-func filterUpgradeReleases(raw []byte, f *docFilter, readAs string) ([]byte, error) {
+func filterUpgradeReleases(raw []byte, f *docFilter, readAs, note string) ([]byte, error) {
 	fields, err := readObject(raw)
 	if err != nil {
 		return nil, err
@@ -2441,8 +2176,12 @@ func filterUpgradeReleases(raw []byte, f *docFilter, readAs string) ([]byte, err
 		v, _ := json.Marshal(readAs)
 		fields = append(fields, objField{Key: "version_read_as", Val: v})
 	}
+	if note != "" {
+		v, _ := json.Marshal(note)
+		fields = append(fields, objField{Key: "note", Val: v})
+	}
 	for i, fl := range fields {
-		if fl.Key != "releases" {
+		if fl.Key != "releases" || f == nil {
 			continue
 		}
 		var rels []json.RawMessage

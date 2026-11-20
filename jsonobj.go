@@ -94,6 +94,8 @@ type docFilter struct {
 	// every one. found records the ids that named something in the document.
 	ids   map[string]bool
 	found map[string]bool
+	// foundUpgrade records the ids that named a before-upgrade item.
+	foundUpgrade map[string]bool
 }
 
 func (f *docFilter) keepChange(id, kind string) bool {
@@ -170,6 +172,9 @@ func filterRelease(raw []byte, f *docFilter) ([]byte, error) {
 					}
 					if json.Unmarshal(e, &it) == nil && f.ids[it.ID] {
 						f.found[it.ID] = true
+						if f.foundUpgrade != nil {
+							f.foundUpgrade[it.ID] = true
+						}
 						kept = append(kept, e)
 					}
 				}

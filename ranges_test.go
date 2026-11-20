@@ -121,7 +121,19 @@ func diffFrom100(docs []*v2Release, fixed map[string]bool, running []int) string
 	sum.DistinctAdvisories = distinctAdvisories{}
 	cur.Summary = &sum
 	old.BeforeUpgrade = nil
-	cur.Upgrade, cur.ChangesMore, cur.ChangesUnlisted, cur.LaterInRange, cur.ExcludedOnBranch, cur.more = nil, nil, nil, nil, nil, nil
+	// changes_omitted counts the security changes folded into an entry of
+	// their own release since the independent review of 2026-11-20 (1.0.0 left
+	// them without a trace); taken off here, the rest must be 1.0.0's.
+	if cur.folded > 0 {
+		cur.ChangesOmitted = maps.Clone(cur.ChangesOmitted)
+		if cur.ChangesOmitted["security"] -= cur.folded; cur.ChangesOmitted["security"] == 0 {
+			delete(cur.ChangesOmitted, "security")
+		}
+		if len(cur.ChangesOmitted) == 0 {
+			cur.ChangesOmitted = nil
+		}
+	}
+	cur.Upgrade, cur.ChangesMore, cur.ChangesUnlisted, cur.LaterInRange, cur.ExcludedOnBranch, cur.more, cur.folded = nil, nil, nil, nil, nil, nil, 0
 	if oldSettled != curSettled {
 		return fmt.Sprintf("settled %d, 1.0.0 %d", curSettled, oldSettled)
 	}
@@ -430,8 +442,8 @@ func TestRangesLeaveNoSecurityChangeUnaccounted(t *testing.T) {
 					lines[l.Kind]++
 				}
 				for _, k := range decisionKinds {
-					if lines[k] != capped.ChangesOmitted[k]+folded[k] {
-						t.Errorf("%s: %d lines for %d omitted and %d folded", k, lines[k], capped.ChangesOmitted[k], folded[k])
+					if lines[k] != capped.ChangesOmitted[k] {
+						t.Errorf("%s: %d lines for %d omitted (%d folded)", k, lines[k], capped.ChangesOmitted[k], folded[k])
 					}
 				}
 			})

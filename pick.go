@@ -14,11 +14,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // stringList is an array argument that also takes the forms models send in
@@ -145,22 +147,116 @@ func changesArg(list stringList) ([]string, error) {
 	return out, nil
 }
 
-// releaseOfIDs reads the release an id names: "cilium@v1.20.0#dd9d9e39" names
-// cilium v1.20.0. ok is false unless every id names the same release.
-func releaseOfIDs(ids []string) (project, version string, ok bool) {
-	for i, id := range ids {
-		head, _, found := strings.Cut(id, "#")
-		if !found {
-			return "", "", false
-		}
-		p, v, found := strings.Cut(head, "@")
-		if !found || p == "" || v == "" {
-			return "", "", false
-		}
-		if i > 0 && (p != project || v != version) {
-			return "", "", false
-		}
-		project, version = p, v
+// releaseOfID reads the release an id names: "cilium@v1.20.0#dd9d9e39" names
+// cilium v1.20.0.
+func releaseOfID(id string) (project, version string, ok bool) {
+	head, _, found := strings.Cut(id, "#")
+	if !found {
+		return "", "", false
 	}
-	return project, version, len(ids) > 0
+	p, v, found := strings.Cut(head, "@")
+	if !found || p == "" || v == "" {
+		return "", "", false
+	}
+	return p, v, true
+}
+
+// maxPickedReleases bounds the releases one get_release call reads for the
+// ids it is given without a version (spec "마"): a release document is up to
+// 870 KB (cilium v1.20.0), and ten is more than a briefing's lines name.
+const maxPickedReleases = 10
+
+// pickedRelease is one release of get_release's answer to changes without a
+// version: the named changes and, when an id names one, before-upgrade items.
+type pickedRelease struct {
+	Version         string          `json:"version"`
+	URL             json.RawMessage `json:"url,omitempty"`
+	ReleaseNotesURL json.RawMessage `json:"release_notes_url,omitempty"`
+	Changes         json.RawMessage `json:"changes"`
+	BeforeUpgrade   json.RawMessage `json:"before_upgrade,omitempty"`
+}
+
+// pickedReleases answers get_release(changes) without a version: every
+// release the ids name, in the order the ids first name it, each cut to the
+// named entries. Ids of another project, ids that are not ids, and ids a
+// release does not have (or a release that is not on record) are listed in
+// not_found.
+func pickedReleases(ctx context.Context, project string, ids []string, lang string) (*mcp.CallToolResult, any, error) {
+	var order []string
+	byRelease := map[string][]string{}
+	notFound := []string{}
+	for _, id := range ids {
+		p, v, ok := releaseOfID(id)
+		if !ok || slugArg(p) != project {
+			notFound = append(notFound, truncate(id, 120))
+			continue
+		}
+		if _, seen := byRelease[v]; !seen {
+			order = append(order, v)
+		}
+		byRelease[v] = append(byRelease[v], id)
+	}
+	if len(order) > maxPickedReleases {
+		return errResult(fmt.Errorf("changes name %d releases; at most %d per call without version — split the ids", len(order), maxPickedReleases)), nil, nil
+	}
+	releases := []pickedRelease{}
+	for _, v := range order {
+		raw, err := api.releaseRaw(ctx, project, v, lang, false)
+		if he, ok := err.(*httpError); ok && he.Status == 404 {
+			for _, id := range byRelease[v] {
+				notFound = append(notFound, truncate(id, 120))
+			}
+			continue
+		}
+		if err != nil {
+			return errResult(err), nil, nil
+		}
+		if !isJSONObject(raw) {
+			return rawResult(raw), nil, nil // the same refusal as one release
+		}
+		f := &docFilter{ids: map[string]bool{}, found: map[string]bool{}, foundUpgrade: map[string]bool{}}
+		for _, id := range byRelease[v] {
+			f.ids[id] = true
+		}
+		b, err := filterRelease(raw, f)
+		if err != nil {
+			return errResult(fmt.Errorf("/v2/releases/{project}/{version}: %w", err)), nil, nil
+		}
+		fields, err := readObject(b)
+		if err != nil {
+			return errResult(err), nil, nil
+		}
+		pr := pickedRelease{Version: v, Changes: json.RawMessage("[]")}
+		var bu json.RawMessage
+		for _, fl := range fields {
+			switch fl.Key {
+			case "version":
+				_ = json.Unmarshal(fl.Val, &pr.Version)
+			case "url":
+				pr.URL = fl.Val
+			case "release_notes_url":
+				pr.ReleaseNotesURL = fl.Val
+			case "changes":
+				pr.Changes = fl.Val
+			case "before_upgrade":
+				bu = fl.Val
+			}
+		}
+		for _, id := range byRelease[v] {
+			if !f.found[id] {
+				notFound = append(notFound, truncate(id, 120))
+			}
+		}
+		if len(f.foundUpgrade) > 0 {
+			pr.BeforeUpgrade = bu
+		}
+		releases = append(releases, pr)
+	}
+	out := struct {
+		Project  string          `json:"project"`
+		Releases []pickedRelease `json:"releases"`
+		NotFound []string        `json:"not_found"`
+	}{project, releases, notFound}
+	res, err := jsonResult(out)
+	return res, nil, err
 }

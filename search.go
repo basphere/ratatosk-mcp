@@ -231,6 +231,13 @@ func searchAnswer(ctx context.Context, raw []byte, project, q, lang string) ([]b
 				if h.Matched == nil || h.Matched.Kind == "release" {
 					continue // matched by project name or version: no item to list
 				}
+				// Matched through a folded dependency line (the server names it
+				// dependency_updates with no title): a line, not an item, so
+				// reading the release lists nothing and spends one of the eight
+				// reads (independent review, 2026-11-20).
+				if h.Matched.Kind == "dependency_updates" && h.Matched.Title == "" {
+					continue
+				}
 				if len(jobs) == searchMatchReleases {
 					notComputed++
 					continue

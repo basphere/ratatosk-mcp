@@ -104,19 +104,19 @@ of `later_for_running`.
 |---|---|---|---|
 | `summary` | component | `object` | Releases in range (`releases`), change counts by kind (`counts`), warnings (`warnings`) and `distinct_advisories`. `counts` and `warnings` add up the releases in range one by one, so a fix shipped on several release lines is counted once per release |
 | `distinct_advisories` | `summary` | `object` | The advisories the security changes in range cite, each counted once: `total`, and by grade `critical`, `high`, `medium`, `low` and `ungraded` (no grade found). A CVE and the GHSA cited together on a change are one advisory. When changes in range pair those ids differently, each id counts on its own, so one advisory can be counted twice; a pairing that no other change contradicts is taken at its word, so one change that pairs the ids of two advisories counts them as one. An advisory's grade is the highest grade of the changes that cite it alone; when none of those carries a grade, or no change cites it alone, it is the highest grade of the changes that cite it together with other advisories. Security changes that cite no advisory id of a recognised kind (CVE, GHSA, GO, RUSTSEC, PYSEC) are not counted here (`counts.security` has them), and neither are those `note` says your branch already fixed. Quote this, not `warnings.critical`, when you say how many advisories an upgrade fixes |
-| `releases` | component | `array` | The versions in (running, target], oldest first, on the running version's release line |
-| `before_upgrade` | component | `array` | Every prerequisite, known issue and upgrade guide in range, each with its version, its whole `body` (`null` when the item has none) and the entries folded under it (`folded`). They usually sit on the release that starts a new minor; read all of them. An item whose text recurs on several releases is listed once, at the newest, with `also_in` naming the others. Always present on a checked component, `[]` when there is none |
+| `releases` | component | `array` | The versions in (running, target], oldest first, on the running version's release line. In an answer over its size, each keeps only `version` and `released_at` |
+| `before_upgrade` | component | `array` | Every prerequisite, known issue and upgrade guide in range, each with its version, its whole `body` (`null` when the item has none; in an answer over its size cut to 400 characters, with `body_truncated: true`) and the entries folded under it (`folded`). They usually sit on the release that starts a new minor; read all of them. An item whose text recurs on several releases is listed once, at the newest, with `also_in` naming the others. Always present on a checked component, `[]` when there is none |
 | `changes` | component | `array` | The kinds that ask for a decision: `security`, `breaking`, `deprecations`, `important_fixes`, up to 20, 20, 10 and 10 with their body. Security goes most severe first; within a grade, and within each of the other kinds, changes that say what to do (`action_required`, `also_required`, a stated or inferred `no_downgrade` or `removed_in`) come first. In a large answer it can hold fewer, or none (see **Size** below). The other three kinds are counted in `summary.counts`; `get_release` has them |
-| `changes_omitted` | component | `object` | Per kind, what did not fit in `changes` (security keeps its most severe; within a grade, and in the other kinds, changes that say what to do are kept first). `changes_more` lists them |
-| `changes_more` | component | `array` | One line per change that is not in `changes`: `version`, `id`, `kind`, `title`, `severity` (security only), `affects` (`text`, `status`; left off in a large answer) and `action_required: true` when the change has one. It includes a security change of one release that cites the same advisories as an entry and was folded into it. Read the body and evidence of a line with `get_release(project, version, changes: [id])` |
-| `changes_unlisted` | component | `object` | Per kind, how many changes are in neither `changes` nor `changes_more` because the answer would have been over its size (`{"breaking": 41, "important_fixes": 120}`). `hint` ends with the calls that list them |
+| `changes_omitted` | component | `object` | Per kind, the changes not in `changes` (security keeps its most severe; within a grade, and in the other kinds, changes that say what to do are kept first), a security change folded into an entry of its own release included. Per kind, `summary.counts` = `changes` + `changes_omitted` + `excluded_on_branch.security` + the backports an `also_in` names. `changes_more` lists them, and `changes_unlisted` counts the ones it could not |
+| `changes_more` | component | `array` | One line per change that is not in `changes`: `version`, `id`, `kind`, `title`, `severity` (security only), `affects` (`text`, `status`; left off in a large answer), `action_required: true` when the change has one, and `also_in` as the entry had it. It includes a security change of one release that cites the same advisories as an entry and was folded into it. Read the body and evidence of a line with `get_release(project, version, changes: [id])` |
+| `changes_unlisted` | component | `object` | Per kind, how many changes are in neither `changes` nor `changes_more` because the answer would have been over its size (`{"breaking": 41, "important_fixes": 120}`). `hint` names the components that have them and how to list them |
 | `affects` | change | `object` | Decides who a change applies to. `stated` or `inferred`: it applies only if that holds in the running configuration, so check before reporting it. `not_stated`: the notes do not narrow it. Unless the title names something specific, treat it as applying to every install |
 | `also_in` | change | `array` | Versions of other releases in range that fix the same advisory on other branches. See the paragraph below the table. On a `before_upgrade` item: the other releases that carry the same text |
 | `note` | component | `string` | What was excluded and why. See the paragraph below the table |
 | `gaps` | component | `array` | Neighbouring versions whose numbers skip (v3.5.32 then v3.6.7): releases in between may exist that were not analyzed. Check their release notes yourself |
 | `releases_not_read` | component | `array` | Versions in range whose documents were not read; the newest 60 releases of a project are read per call |
 | `later_for_running` | component | `array` | What was learned about the running version after it shipped, as recorded on that release: `advisory_after_release` is an advisory published later for a vulnerability it already fixes (not a sign that it is vulnerable); `known_issue_fixed` and `regression_fixed` are problems it has, fixed in `fixed_in`. A defect that started in an earlier version is recorded on that version, not here, so an empty list does not mean no known defect |
-| `later_in_range` | component | `array` | The same events for every release in range: a `regression_fixed` here is a defect that release has, fixed in `fixed_in` (for example a regression in one patch fixed in the next). `[]` when none is recorded |
+| `later_in_range` | component | `array` | The problems recorded on releases in range: `regression_fixed` and `known_issue_fixed`, a defect that release has, fixed in `fixed_in` (for example a regression in one patch fixed in the next). An `advisory_after_release` on a release in range is not here: it is for a vulnerability that release already fixes. `[]` when none is recorded |
 | `excluded_on_branch` | component | `object` | The security changes left out because the running version's branch already fixed their advisories at or below it: `security` (how many) and `advisories` (each id once, with the highest `severity` a left-out change gave it; up to 20, the most severe, with `advisories_omitted` counting the rest). `summary.counts` and `summary.warnings` still include them. Present only when something was left out |
 | `running_version` | component | `string` | The running version as passed in the call |
 | `version_read_as` | component | `string` | The version that was checked, when the one passed carried an image build suffix after the version (`v1.37.6-1789133542-<commit>` is read as `v1.37.6`). Absent otherwise. `check_upgrade` reads `from` the same way |
@@ -127,7 +127,7 @@ of `later_for_running`.
 | `releases_full_omitted` | component | `integer` | How many releases did not fit in `releases_full` |
 | `could_not_check` | top level | `array` | Components that could not be checked, with the reason: an unknown project name (`tracked: false`; if `list_projects` does not list it either, it means no coverage, not safety), an unparseable version, a release line with no releases on record, or a running version newer than every analyzed release on its line |
 | `privacy` | top level | `string` | An English sentence saying what this call sent upstream |
-| `hint` | top level | `string` | A short guide in English to reading the briefing. Present only with `brief`. When changes are counted in `changes_unlisted`, it ends with one sentence per component naming the calls that list them |
+| `hint` | top level | `string` | A short guide in English to reading the briefing, at most 2,000 characters. Present only with `brief`. When changes are counted in `changes_unlisted`, or components are given as a summary only, it ends by naming those components and how to list what was left out |
 
 A briefing truncates the `body`, `workaround.text` and `regression_since.text`
 of a change to 160 characters; truncated text ends with `…`. A `before_upgrade`
@@ -137,24 +137,24 @@ evidence of the entries you report.
 
 **Size**: a briefing answer is at most 40,000 characters, `hint` included,
 about what an agent client shows as text before it hands the answer over as a
-file (Claude Code does that past 50,000). Several components share that evenly,
-and what one does not need goes to the others. A component over its share
-gives way layer by layer, from the layer kept least to the one kept longest:
-important fixes, deprecations, other breaking changes, security changes of
-medium, low or no grade, breaking changes with `action_required` or
-`no_downgrade`, and security changes of critical or high grade. A layer's
-entries in `changes` become lines in `changes_more` (`changes_omitted` grows
-with them) and its lines lose `affects` before the layer above gives up
-anything. Only when every layer is down to ids and titles are lines dropped,
-lowest layer first, and counted per kind in `changes_unlisted`. Nothing is
-dropped without a count, and `hint` names the calls that list what was dropped:
-the component alone, one kind per call.
-Asked alone, a component keeps the id and title of every security, breaking
-and deprecation change unless those alone are over the budget (envoy across
-twenty-five releases is); then one kind per call lists them. The parts the
-steps do not touch (`summary`, `releases`, `before_upgrade`, the later events)
-can be over the budget on their own for many components; `hint` then says to
-check fewer per call.
+file (Claude Code does that past 50,000). An answer over that shrinks in this
+order. First, `before_upgrade` bodies are cut to 400 characters
+(`body_truncated: true`), then each entry of `releases` keeps `version` and
+`released_at`. Then the change lists give way layer by layer, across every
+component, from the layer kept least to the one kept longest: important fixes,
+deprecations, other breaking changes, security changes of medium, low or no
+grade, breaking changes with `action_required` or `no_downgrade`, and security
+changes of critical or high grade. A layer's entries in `changes` become lines
+in `changes_more` (`changes_omitted` grows with them) and its lines lose
+`affects`, in every component, before the next layer gives up anything. Only
+when every layer is down to ids and titles are lines dropped, lowest layer
+first, and counted per kind in `changes_unlisted`; each component keeps five
+lines of its highest layer. Last, with many components, the components at the
+back are given as `project`, `running_version`, `target_version` and
+`summary`, with a `note` to check them alone. Nothing is dropped without a
+count, and `hint` names the components concerned and how to list what was
+left out: the component alone, one kind per call, and a narrower range if one
+kind is still too many.
 
 **`also_in`**: a project can backport one security fix to several branches, so
 the same advisory can be fixed more than once in range. The change appears
@@ -168,7 +168,8 @@ same branch fixed it again; `excluded_on_branch` names them), a target version a
 a running version older than every release on record, a running version newer
 than every analyzed release on its line (the component is then listed in
 `could_not_check`), `same_minor` with no newer release on the running minor,
-and a `version_source` that reads as a guess.
+a `version_source` that reads as a guess, and a component given as a summary
+only because the answer reached its size limit.
 
 ## check_stack
 
@@ -338,8 +339,10 @@ when you are planning an upgrade you do not run yet. Like `check_stack`, it
 leaves out a security change whose advisories `from`'s own branch already fixed
 at or below `from`, and counts it in `excluded_on_branch`: to tell, it reads the
 project's release list and the releases of `from`'s branch at or below `from`.
-With `same_minor` and nothing newer on the minor, the range is empty and a top
-level `note` says so. An image build suffix on `from` is read off as in
+If those cannot be read, nothing is left out, as in 1.1.0, and a top level
+`note` says so. With `detail: "full"`, the list is read only for a build suffix
+or `same_minor`. With `same_minor` and nothing newer on the minor, the range is
+empty and `note` says so, in both details. An image build suffix on `from` is read off as in
 `check_stack` (`version_read_as`); `from` in the answer stays as you passed it.
 
 ### Parameters
@@ -474,10 +477,12 @@ changes of those kinds: `["security", "breaking", "deprecations",
 "important_fixes"]` is what asks for a decision. `changes` takes up to 50 ids,
 the ones a briefing's `changes`, `changes_more` and `before_upgrade` carry, and
 returns only those changes and before-upgrade items, with body and evidence;
-ids the release does not have are listed in `not_found`, and without `version`
-the release the ids name is read. Both leave the `folded` lines out; with
-`changes`, the other before-upgrade items are left out too. Given together, they
-return the named changes of those kinds.
+ids the release does not have are listed in `not_found`. Without `version`,
+`changes` reads the releases the ids name, up to 10, and answers
+`{project, releases: [{version, url, release_notes_url, changes,
+before_upgrade}], not_found}`, with `before_upgrade` only when an id names a
+before-upgrade item. Both leave the `folded` lines out; with `changes`, the
+other before-upgrade items are left out too. Pass one of them, not both.
 
 ### Parameters
 
@@ -487,7 +492,7 @@ return the named changes of those kinds.
 | `version` | `string` | no | the latest release | As published, with or without the leading `v`. With `changes` and no `version`, the release the ids name |
 | `lang` | `string` | no | `en` | `en`, `ko` or `ja`. Evidence quotes stay verbatim |
 | `kinds` | `array` | no | every kind | Only changes of these kinds; `folded` is then left out |
-| `changes` | `array` | no | every change | Up to 50 change or before-upgrade item ids: only those, with `not_found` listing the ids the release does not have |
+| `changes` | `array` | no | every change | Up to 50 change or before-upgrade item ids: only those, with `not_found` listing the ids not found. Without `version`, the releases the ids name (up to 10). Not together with `kinds` |
 
 ### Example call
 
@@ -705,7 +710,7 @@ id such as `GHSA-3wh4` finds the full one. A complete id (`CVE-2026-1234`,
 | `in_analysis` | `array` | Releases where a change or before-upgrade item matched, or the project name or version (`matched.kind: "release"`) |
 | `in_release_notes` | `array` | Releases where the release notes matched |
 | `in_linked_documents` | `array` | Releases where a document the notes link matched |
-| `matches` | `array` | On an `in_analysis` release matched through an item: every item of that release that matches `q` (`id`, `kind`, `title`; `kind` is `before_upgrade` for a before-upgrade item), up to 20. `matched` names only the first. Given for the first 8 such releases of the answer |
+| `matches` | `array` | On an `in_analysis` release matched through an item: every item of that release that matches `q` (`id`, `kind`, `title`; `kind` is `before_upgrade` for a before-upgrade item), up to 20. `matched` names only the first. Given for the first 8 such releases of the answer; a release matched through a folded dependency line (`matched` with kind `dependency_updates` and no title) has no item to list and carries none |
 | `matches_omitted` | `integer` | How many more items of that release match, past 20 |
 | `matches_not_computed` | `integer` | At the top of the answer: how many `in_analysis` releases matched through an item carry no `matches`, because one call reads at most 8 releases or a release could not be read. Narrow with `project` to reach them |
 
@@ -846,7 +851,7 @@ If an argument is invalid or an upstream API call fails, the tool returns
 | A required parameter is missing | all | `project is required`, `project and from are required`, `components is required` | Supply the missing parameter and retry |
 | An element of `components` has no `project` | `check_stack` | `component 1 has no project (keys received: …)` | Add `project` to the component object and retry |
 | More than 100 components | `check_stack` | `too many components: 120 (max 100)` | Split them over several calls |
-| A value that is not accepted | all | `lang must be "en", "ko" or "ja"`, `detail must be "brief" or "full"`, `kind must be one of …`, `kinds: unknown kind`, `kinds: a briefing lists …`, `changes: 51 ids, at most 50`, `sets both same_minor and target_version`, `same_minor and to are both set`, `since must be a date, YYYY-MM-DD`, `q must be 2–200 characters` | Retry with a value the error allows |
+| A value that is not accepted | all | `lang must be "en", "ko" or "ja"`, `detail must be "brief" or "full"`, `kind must be one of …`, `kinds: unknown kind`, `kinds: a briefing lists …`, `changes: 51 ids, at most 50`, `pass changes or kinds, not both`, `changes name 11 releases`, `sets both same_minor and target_version`, `same_minor and to are both set`, `since must be a date, YYYY-MM-DD`, `q must be 2–200 characters` | Retry with a value the error allows |
 | A `from` newer than every analyzed release on its line, or on a line with none | `check_upgrade` | `HTTP 404`, `is newer than every analyzed release`, `no analyzed release of … in the release line` | Re-read the running version; pass it with its release-line prefix, as the tags in the error show |
 | More than 60 releases in range | `check_upgrade` | `HTTP 400`, `101 releases between v0.0.1 and v1.0.76`, `(max 60)` | Set `to` to an earlier version and check the range in smaller steps |
 | Rate limit reached | all | `HTTP 429` | Wait, then retry. For several projects, make one `check_stack` call |

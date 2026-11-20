@@ -76,9 +76,13 @@ func TestListArgumentsPassTheSchema(t *testing.T) {
 		if isErr || !strings.Contains(text, `"to":"v3.5.32"`) {
 			t.Errorf("check_upgrade kinds %v: error=%v %.300s", kinds, isErr, text)
 		}
-		text, isErr = sdkText(t, cs, "get_release", map[string]any{"project": "etcd", "version": "v3.6.7", "kinds": kinds, "changes": kinds})
-		if isErr || !strings.Contains(text, `"not_found"`) {
+		text, isErr = sdkText(t, cs, "get_release", map[string]any{"project": "etcd", "version": "v3.6.7", "kinds": kinds})
+		if isErr || !strings.Contains(text, `"etcd@v3.6.7#a"`) {
 			t.Errorf("get_release kinds %v: error=%v %.300s", kinds, isErr, text)
+		}
+		text, isErr = sdkText(t, cs, "get_release", map[string]any{"project": "etcd", "version": "v3.6.7", "changes": kinds})
+		if isErr || !strings.Contains(text, `"not_found"`) {
+			t.Errorf("get_release changes %v: error=%v %.300s", kinds, isErr, text)
 		}
 	}
 }
@@ -133,10 +137,10 @@ func TestGetReleaseReadsPartOfARelease(t *testing.T) {
 		t.Errorf("the rest of the document is passed on, in its order: %.200s", text)
 	}
 
-	// No version: the ids name the release.
-	m, _ = get(getReleaseArgs{Project: "etcd", Changes: stringList{"etcd@v3.6.7#a", "etcd@v3.6.7#g", "etcd@v3.6.7#zzz", "etcd@v3.6.7#a"}})
+	// With version: the named changes and before-upgrade items of that release.
+	m, _ = get(getReleaseArgs{Project: "etcd", Version: "v3.6.7", Changes: stringList{"etcd@v3.6.7#a", "etcd@v3.6.7#g", "etcd@v3.6.7#zzz", "etcd@v3.6.7#a"}})
 	if string(m["version"]) != `"v3.6.7"` {
-		t.Errorf("version %s, want the one the ids name", m["version"])
+		t.Errorf("version %s", m["version"])
 	}
 	if got := ids(m["changes"]); !slices.Equal(got, []string{"etcd@v3.6.7#a"}) {
 		t.Errorf("changes %v", got)
@@ -149,11 +153,8 @@ func TestGetReleaseReadsPartOfARelease(t *testing.T) {
 	if string(m["not_found"]) != `["etcd@v3.6.7#zzz"]` {
 		t.Errorf("not_found %s", m["not_found"])
 	}
-	// Both: the named changes of those kinds.
-	m, _ = get(getReleaseArgs{Project: "etcd", Version: "v3.6.7", Kinds: stringList{"breaking"}, Changes: stringList{"etcd@v3.6.7#a", "etcd@v3.6.7#k"}})
-	if got := ids(m["changes"]); !slices.Equal(got, []string{"etcd@v3.6.7#k"}) || string(m["not_found"]) != `[]` {
-		t.Errorf("kinds and changes: %v, not_found %s", got, m["not_found"])
-	}
+	// Both at once is refused (TestGetReleaseReadsTheReleasesTheIDsName);
+	// without version, the releases the ids name are read (same test).
 
 	res, _, _ := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "etcd", Version: "v3.6.7", Kinds: stringList{"nope"}})
 	if !res.IsError {
