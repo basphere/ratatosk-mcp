@@ -21,6 +21,7 @@ import (
 
 	"github.com/basphere/ratatosk-mcp/internal/advisory"
 	"github.com/basphere/ratatosk-mcp/internal/release"
+	"github.com/basphere/ratatosk-mcp/internal/releaseline"
 )
 
 func ptr(s string) *string { return &s }
@@ -500,13 +501,13 @@ func TestImageBuildSuffixIsReadWithoutItAndSaid(t *testing.T) {
 		"lts-4081.3.9-abc1234":  "lts-4081.3.9",
 		"flagd/v0.16.1-9f8e7d6": "flagd/v0.16.1",
 	} {
-		if got, ok := stripBuildTail(in); !ok || got != want {
-			t.Errorf("stripBuildTail(%q) = %q %v, want %q", in, got, ok, want)
+		if got, ok := releaseline.StripBuildTail(in); !ok || got != want {
+			t.Errorf("releaseline.StripBuildTail(%q) = %q %v, want %q", in, got, ok, want)
 		}
 	}
 	for _, in := range []string{"v1.24.3-rc1", "v1.2.3-beta.2", "v1.2.3-20240101", "v1.2.3-deadbee", "v1.2.3", "knative-v1.12.0", "lts-4081.3.9"} {
-		if got, ok := stripBuildTail(in); ok {
-			t.Errorf("stripBuildTail(%q) = %q: not a build suffix", in, got)
+		if got, ok := releaseline.StripBuildTail(in); ok {
+			t.Errorf("releaseline.StripBuildTail(%q) = %q: not a build suffix", in, got)
 		}
 	}
 

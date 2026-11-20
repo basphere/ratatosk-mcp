@@ -15,6 +15,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/basphere/ratatosk-mcp/internal/release"
+	"github.com/basphere/ratatosk-mcp/internal/releaseline"
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
@@ -62,7 +63,7 @@ func (f *fakeV2) handler(t *testing.T) http.HandlerFunc {
 		case r.URL.Path == "/v2/upgrade/etcd":
 			// The server's range, cut the way check_stack cuts it (1.2.0 tests).
 			from, to := r.URL.Query().Get("from"), r.URL.Query().Get("to")
-			inRange, target := upgradeRange(f.rows, from, to)
+			inRange, target := releaseline.UpgradeRange(f.rows, from, to)
 			var rels []string
 			for _, x := range inRange {
 				rels = append(rels, f.docs[x.Version])
@@ -152,7 +153,7 @@ type stackOut struct {
 			AlsoIn      []string        `json:"also_in"`
 			NoDowngrade *release.Attr   `json:"no_downgrade"`
 		} `json:"changes"`
-		Gaps            []versionGap      `json:"gaps"`
+		Gaps            []releaseline.Gap `json:"gaps"`
 		LaterForRunning []json.RawMessage `json:"later_for_running"`
 	} `json:"components"`
 	CouldNotCheck []uncheckable `json:"could_not_check"`
@@ -273,7 +274,7 @@ func TestCheckStackBriefing(t *testing.T) {
 	if len(c.BeforeUpgrade) != 1 || c.BeforeUpgrade[0].Version != "v3.6.7" || c.BeforeUpgrade[0].Section != "upgrade_guide" {
 		t.Errorf("before_upgrade %+v", c.BeforeUpgrade)
 	}
-	if want := []versionGap{{After: "v3.5.32", Before: "v3.6.7"}}; !slices.Equal(c.Gaps, want) {
+	if want := []releaseline.Gap{{After: "v3.5.32", Before: "v3.6.7"}}; !slices.Equal(c.Gaps, want) {
 		t.Errorf("gaps %v, want %v", c.Gaps, want)
 	}
 	if len(c.LaterForRunning) != 1 || !strings.Contains(string(c.LaterForRunning[0]), "known_issue_fixed") {
@@ -326,106 +327,6 @@ func TestCheckStackIgnoresSelfNullifyingTarget(t *testing.T) {
 	}
 	if !strings.Contains(c.Note, "empty by construction") {
 		t.Errorf("note %q must explain the ignored target", c.Note)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// version helpers
-// ---------------------------------------------------------------------------
-
-// Same cases as the web's versionGaps test (apps/web/src/lib/v2-shape.test.ts):
-// the server's /v2/upgrade and check_stack must flag the same places.
-func TestVersionGaps(t *testing.T) {
-	cases := []struct {
-		points []string
-		want   []versionGap
-	}{
-		{[]string{"v3.5.30", "v3.5.31", "v3.5.32", "v3.6.7", "v3.6.8"}, []versionGap{{"v3.5.32", "v3.6.7"}}},
-		{[]string{"1.9.4", "2.0.0", "2.0.2"}, []versionGap{{"2.0.0", "2.0.2"}}},
-		{[]string{"v1.4.0", "v1.6.0"}, []versionGap{{"v1.4.0", "v1.6.0"}}},
-		{[]string{"0.9.52.0", "0.9.53.0", "v1.2.3-rc.1", "v1.2.3"}, []versionGap{{"0.9.53.0", "v1.2.3-rc.1"}}},
-		{[]string{"v2.1.0", "v2.1.1"}, nil},
-	}
-	for _, c := range cases {
-		if got := versionGaps(c.points); !slices.Equal(got, c.want) {
-			t.Errorf("versionGaps(%v) = %v, want %v", c.points, got, c.want)
-		}
-	}
-}
-
-func TestUpgradeRange(t *testing.T) {
-	rows := []release.Row{{Version: "v1.24.4"}, {Version: "v1.24.3"}, {Version: "v1.24.3-rc1"}, {Version: "v1.24.2"}, {Version: "api/v1.30.0"}, {Version: "redirect"}}
-	got := func(running, target string) ([]string, string) {
-		r, tgt := upgradeRange(rows, running, target)
-		var v []string
-		for _, x := range r {
-			v = append(v, x.Version)
-		}
-		return v, tgt
-	}
-	if v, tgt := got("v1.24.2", ""); !slices.Equal(v, []string{"v1.24.3-rc1", "v1.24.3", "v1.24.4"}) || tgt != "v1.24.4" {
-		t.Errorf("full path %v → %s", v, tgt)
-	}
-	if v, _ := got("v1.24.3-rc1", "v1.24.3"); !slices.Equal(v, []string{"v1.24.3"}) {
-		t.Errorf("the finished release ranks above its own pre-release: %v", v)
-	}
-	if v, _ := got("1.24.2", "v1.24.3"); !slices.Equal(v, []string{"v1.24.3-rc1", "v1.24.3"}) {
-		t.Errorf("to is inclusive, a missing v is fine: %v", v)
-	}
-	if v, _ := got("api/v1.29.0", ""); !slices.Equal(v, []string{"api/v1.30.0"}) {
-		t.Errorf("only the running line: %v", v)
-	}
-}
-
-// Projects that tag without a "v" (falco, istio, keycloak, strimzi): a caller
-// who writes the "v" must get the same range as one who does not. Before
-// 2026-11-11 the running release itself came back as upgrade work, and a target
-// spelled with "v" returned no releases and no note.
-func TestUpgradeRangeIgnoresTheCallersVStyle(t *testing.T) {
-	bare := []release.Row{{Version: "0.45.2"}, {Version: "0.45.1"}, {Version: "0.45.1-rc1"}, {Version: "0.45.0"}}
-	withV := []release.Row{{Version: "v0.45.2"}, {Version: "v0.45.1"}, {Version: "v0.45.1-rc1"}, {Version: "v0.45.0"}}
-	names := func(rows []release.Row, running, target string) []string {
-		r, _ := upgradeRange(rows, running, target)
-		var v []string
-		for _, x := range r {
-			v = append(v, strings.TrimPrefix(x.Version, "v"))
-		}
-		return v
-	}
-	for _, rows := range [][]release.Row{bare, withV} {
-		for _, c := range []struct {
-			running, target string
-			want            []string
-		}{
-			{"0.45.1", "", []string{"0.45.2"}},
-			{"v0.45.1", "", []string{"0.45.2"}},
-			{"0.45.0", "0.45.1", []string{"0.45.1-rc1", "0.45.1"}},
-			{"0.45.0", "v0.45.1", []string{"0.45.1-rc1", "0.45.1"}},
-			{"v0.45.0", "0.45.1", []string{"0.45.1-rc1", "0.45.1"}},
-			{"v0.45.1-rc1", "", []string{"0.45.1", "0.45.2"}},
-			{"0.45.1-rc1", "v0.45.1", []string{"0.45.1"}},
-			{"v0.45.2", "", nil},
-			// Not on record: a pre-release nobody analyzed still sorts below its release.
-			{"v0.45.2-rc9", "", []string{"0.45.2"}},
-			{"0.45.2-rc9", "", []string{"0.45.2"}},
-		} {
-			if got := names(rows, c.running, c.target); !slices.Equal(got, c.want) {
-				t.Errorf("tags like %q, running %q target %q: got %v, want %v", rows[0].Version, c.running, c.target, got, c.want)
-			}
-		}
-	}
-}
-
-func TestSameTag(t *testing.T) {
-	if !sameTag("1.30.2", "v1.30.2") || sameTag("v1.30.2", "api/v1.30.2") || sameTag("v1.24.3", "v1.24.3-rc1") {
-		t.Error("sameTag")
-	}
-}
-
-func TestSameBranch(t *testing.T) {
-	k := version.NormalizeVersion
-	if !sameBranch(k("v2.2.4"), k("v2.2.5")) || sameBranch(k("v2.2.4"), k("v2.3.1")) || sameBranch(k("v2"), k("v2")) {
-		t.Error("sameBranch")
 	}
 }
 
@@ -643,11 +544,11 @@ func TestCheckUpgradeComputesGapsAnOlderServerOmits(t *testing.T) {
 		t.Errorf("request %s", seen)
 	}
 	var out struct {
-		Gaps    []versionGap `json:"gaps"`
-		Privacy string       `json:"privacy"`
+		Gaps    []releaseline.Gap `json:"gaps"`
+		Privacy string            `json:"privacy"`
 	}
 	json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &out)
-	if !slices.Equal(out.Gaps, []versionGap{{"v3.5.31", "v3.6.7"}}) {
+	if !slices.Equal(out.Gaps, []releaseline.Gap{{After: "v3.5.31", Before: "v3.6.7"}}) {
 		t.Errorf("gaps %v", out.Gaps)
 	}
 	if !strings.Contains(out.Privacy, "sent to the server") {

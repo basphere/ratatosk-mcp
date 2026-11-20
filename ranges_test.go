@@ -46,6 +46,7 @@ import (
 
 	"github.com/basphere/ratatosk-mcp/internal/advisory"
 	"github.com/basphere/ratatosk-mcp/internal/release"
+	"github.com/basphere/ratatosk-mcp/internal/releaseline"
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
@@ -410,7 +411,7 @@ func TestRangesLeaveNoSecurityChangeUnaccounted(t *testing.T) {
 				for _, d := range m.docs {
 					onRunning := false
 					if k := version.NormalizeVersion(d.Version); k != nil && m.running != nil {
-						onRunning = sameBranch(k, m.running)
+						onRunning = releaseline.SameBranch(k, m.running)
 					}
 					for _, c := range d.Changes {
 						if c.Kind != "security" || listed[c.ID] {

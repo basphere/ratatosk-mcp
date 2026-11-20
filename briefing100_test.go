@@ -8,7 +8,7 @@ package main
 // change by change, which a copy in the same package can do with no build
 // step, no process and no network. Only the four functions whose 1.0.0 body
 // differs from today's are copied; the helpers they call (attrOf, briefText,
-// branchOf, advisoryKey, carriesAStep, descCmp, kindRank, sameBranch, strOf)
+// branchOf, advisoryKey, carriesAStep, releaseline.DescCmp, kindRank, releaseline.SameBranch, strOf)
 // are unchanged since 1.0.0 — if one of them changes, copy its 1.0.0 body
 // here under a 100 name first, or the reference moves with the code under
 // test. Do not "fix" anything in this file: it is a record, not a briefing.
@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/basphere/ratatosk-mcp/internal/release"
+	"github.com/basphere/ratatosk-mcp/internal/releaseline"
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
@@ -74,7 +75,7 @@ func buildBriefing100(docs []*release.Doc, alreadyFixed map[string]bool, running
 		var touched []string
 		onRunningBranch := false
 		if k := version.NormalizeVersion(d.Version); k != nil && runningKey != nil {
-			onRunningBranch = sameBranch(k, runningKey)
+			onRunningBranch = releaseline.SameBranch(k, runningKey)
 		}
 		b.Summary.Releases++
 		for k, n := range d.Counts {
@@ -177,7 +178,7 @@ func buildBriefing100(docs []*release.Doc, alreadyFixed map[string]bool, running
 		if si, sj := carriesAStep(ci), carriesAStep(cj); si != sj {
 			return si
 		}
-		return descCmp(ci.Version, cj.Version) > 0
+		return releaseline.DescCmp(ci.Version, cj.Version) > 0
 	})
 	kept := b.Changes[:0]
 	shown := map[string]int{}

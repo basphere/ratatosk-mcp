@@ -32,6 +32,7 @@ import (
 
 	"github.com/basphere/ratatosk-mcp/internal/advisory"
 	"github.com/basphere/ratatosk-mcp/internal/release"
+	"github.com/basphere/ratatosk-mcp/internal/releaseline"
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
@@ -322,245 +323,9 @@ func briefText(s string) string {
 	return strings.TrimRight(string(r[:briefTextChars]), " ") + "…"
 }
 
-// buildTailRe matches the build suffix an image tag carries after the version
-// it was built from: "-<unix time>-<commit>" (cilium-envoy:
-// v1.37.6-1789133542-cbec91f666af0bf742da986d43832932dbb26b82) or "-<commit>".
-// Read whole, such a tag splits as release line "v1.37.6" and failed with
-// "no releases on record for line v1.37.6 … the release-line prefix was
-// probably dropped" — the wrong advice, since a suffix was added (outside
-// agent report, reproduced 2026-11-19). The commit must hold a letter and a
-// digit, so a pre-release ("-rc1", "-beta.2") or a word never matches.
-var buildTailRe = regexp.MustCompile(`^(.*?[0-9])-(?:[0-9]{9,}-)?([0-9a-f]{7,40})$`)
-
-// stripBuildTail returns v without an image build suffix, and whether there
-// was one. A release-line prefix (flagd/, lts-) is never touched: only the end
-// of the tag is read. The caller uses it only when the tag as given names a
-// line the project does not publish and the stripped one does.
-func stripBuildTail(v string) (string, bool) {
-	m := buildTailRe.FindStringSubmatch(strings.TrimSpace(v))
-	if m == nil {
-		return v, false
-	}
-	hash := m[2]
-	if !strings.ContainsAny(hash, "abcdef") || !strings.ContainsAny(hash, "0123456789") {
-		return v, false
-	}
-	return m[1], true
-}
-
 // ---------------------------------------------------------------------------
 // versions
 // ---------------------------------------------------------------------------
-
-// descCmp orders two tags of the SAME release line the way the website does
-// (apps/web/src/lib/version.ts compareVersionsDesc): higher key first, and on an
-// equal key the raw tag ascending, so a finished release ranks above its own
-// pre-releases (1.24.3 above 1.24.3-rc1). Negative = a is higher.
-func descCmp(a, b string) int {
-	if c := version.Compare(version.NormalizeVersion(a), version.NormalizeVersion(b)); c != 0 {
-		return -c
-	}
-	ra, rb := strings.TrimSpace(a), strings.TrimSpace(b)
-	switch {
-	case ra == rb:
-		return 0
-	case ra < rb:
-		return -1
-	}
-	return 1
-}
-
-// sameTag says two spellings name the same release: equal after the line
-// prefix, ignoring a leading "v" and case ("1.30.2" and "v1.30.2").
-func sameTag(a, b string) bool {
-	if !version.SameLine(a, b) {
-		return false
-	}
-	_, ra := version.SplitLine(a)
-	_, rb := version.SplitLine(b)
-	strip := func(s string) string {
-		s = strings.TrimSpace(s)
-		if len(s) >= 2 && (s[0] == 'v' || s[0] == 'V') && s[1] >= '0' && s[1] <= '9' {
-			s = s[1:]
-		}
-		return strings.ToLower(s)
-	}
-	return strip(ra) == strip(rb)
-}
-
-type versionGap struct {
-	After  string `json:"after"`
-	Before string `json:"before"`
-}
-
-// versionGaps names neighbouring versions whose numbers skip, so releases in
-// between may exist that were never analyzed. Port of versionGaps in the web's
-// lib/v2-shape.ts — the server's /v2/upgrade answers with the same rule.
-// 2026-11-03: etcd v3.5.30 → latest went v3.5.32 then v3.6.7; v3.6.0–v3.6.6
-// predate coverage, and without the gap an agent reads "nothing to do" across
-// the minor jump that carries the breaking changes. Rule: the first differing
-// component jumped by more than one, or by one with a later component above
-// zero (3.5.32 → 3.6.7, 3.5.31 → 3.5.33). Versions that were never published
-// match too — hence "may exist".
-func versionGaps(points []string) []versionGap {
-	var out []versionGap
-	for k := 1; k < len(points); k++ {
-		a := version.NormalizeVersion(points[k-1])
-		b := version.NormalizeVersion(points[k])
-		if a == nil || b == nil {
-			continue
-		}
-		n := max(len(a), len(b))
-		at := func(v []int, i int) int {
-			if i < len(v) {
-				return v[i]
-			}
-			return 0
-		}
-		i := 0
-		for i < n && at(a, i) == at(b, i) {
-			i++
-		}
-		if i == n || at(b, i) < at(a, i) {
-			continue
-		}
-		gap := at(b, i) > at(a, i)+1
-		for j := i + 1; j < n && !gap; j++ {
-			if at(b, j) > 0 {
-				gap = true
-			}
-		}
-		if gap {
-			out = append(out, versionGap{After: points[k-1], Before: points[k]})
-		}
-	}
-	return out
-}
-
-// sameBranch reports whether two version keys sit on the same release branch,
-// which for every project on record means sharing major and minor. A key too
-// short to name a branch answers false — the conservative direction, since the
-// only thing this decides is whether to hide something.
-func sameBranch(a, b []int) bool {
-	return len(a) >= 2 && len(b) >= 2 && a[0] == b[0] && a[1] == b[1]
-}
-
-// tagOfRows spells v the way the project's tags on that line do: the row that
-// names the same release if there is one, otherwise v with its leading "v"
-// added or dropped to match the line (a version not on record, such as a
-// pre-release nobody analyzed). With no row to copy from, v comes back as is.
-func tagOfRows(line []release.Row, v string) string {
-	for _, r := range line {
-		if r.Version == v {
-			return v
-		}
-	}
-	for _, r := range line {
-		if sameTag(r.Version, v) {
-			return r.Version
-		}
-	}
-	if len(line) == 0 {
-		return v
-	}
-	hasV := func(s string) bool {
-		return len(s) >= 2 && (s[0] == 'v' || s[0] == 'V') && s[1] >= '0' && s[1] <= '9'
-	}
-	digit := func(s string) bool { return s != "" && s[0] >= '0' && s[0] <= '9' }
-	t := strings.TrimSpace(v)
-	_, rest := version.SplitLine(t)
-	_, like := version.SplitLine(line[0].Version)
-	prefix := t[:len(t)-len(rest)]
-	switch {
-	case hasV(like) && digit(rest):
-		return prefix + like[:1] + rest
-	case digit(like) && hasV(rest):
-		return prefix + rest[1:]
-	}
-	return v
-}
-
-// upgradeRange cuts (running, target] out of a project's rows on the running
-// version's line, oldest first — the same selection /v2/upgrade makes. target
-// "" means the highest version on that line.
-func upgradeRange(rows []release.Row, running, target string) (inRange []release.Row, resolvedTarget string) {
-	var line []release.Row
-	for _, r := range rows {
-		if version.SameLine(r.Version, running) && version.NormalizeVersion(r.Version) != nil {
-			line = append(line, r)
-		}
-	}
-	// Compare in the project's own spelling. descCmp breaks an equal numeric key
-	// by the raw tag, so "v0.45.1" from the caller and the project's "0.45.1"
-	// ranked as two versions: the running release came back as upgrade work, and
-	// a target written with the other "v" style cut the range to nothing with no
-	// note (falco, istio, keycloak, strimzi — reproduced 2026-11-11). /v2/upgrade
-	// does the same mapping (tagOf).
-	runningTag := tagOfRows(line, running)
-	resolvedTarget = target
-	targetTag := ""
-	if target != "" {
-		targetTag = tagOfRows(line, target)
-	} else {
-		for _, r := range line {
-			if targetTag == "" || descCmp(r.Version, targetTag) < 0 {
-				targetTag = r.Version
-			}
-		}
-		if targetTag == "" {
-			targetTag = runningTag
-		}
-		resolvedTarget = targetTag
-	}
-	for _, r := range line {
-		if sameTag(r.Version, runningTag) || descCmp(r.Version, runningTag) >= 0 {
-			continue
-		}
-		if sameTag(r.Version, targetTag) || descCmp(r.Version, targetTag) >= 0 {
-			inRange = append(inRange, r)
-		}
-	}
-	sort.SliceStable(inRange, func(i, j int) bool { return descCmp(inRange[i].Version, inRange[j].Version) > 0 })
-	return inRange, resolvedTarget
-}
-
-// sameMinorTarget is same_minor's range end: the newest release on the running
-// version's line and branch (major.minor) above it, as the project spells it.
-// "" when no release above the running version is on record there.
-func sameMinorTarget(rows []release.Row, running string) string {
-	key := version.NormalizeVersion(running)
-	var line []release.Row
-	for _, r := range rows {
-		if version.SameLine(r.Version, running) && version.NormalizeVersion(r.Version) != nil {
-			line = append(line, r)
-		}
-	}
-	runningTag := tagOfRows(line, running)
-	best := ""
-	for _, r := range line {
-		if !sameBranch(version.NormalizeVersion(r.Version), key) || sameTag(r.Version, runningTag) || descCmp(r.Version, runningTag) >= 0 {
-			continue
-		}
-		if best == "" || descCmp(r.Version, best) < 0 {
-			best = r.Version
-		}
-	}
-	return best
-}
-
-// newestOnLine is the highest version on running's line, as spelled on record.
-func newestOnLine(rows []release.Row, running string) string {
-	best := ""
-	for _, r := range rows {
-		if !version.SameLine(r.Version, running) || version.NormalizeVersion(r.Version) == nil {
-			continue
-		}
-		if best == "" || descCmp(r.Version, best) < 0 {
-			best = r.Version
-		}
-	}
-	return best
-}
 
 // sameMinorNote says that same_minor found nothing to upgrade to.
 func sameMinorNote(running, newest string) string {
@@ -661,21 +426,6 @@ func resolveTarget(currentKey []int, targetRaw string) ([]int, string) {
 			"To preview one upgrade hop, keep version = what is running now and set target_version to the destination.", targetRaw)
 	}
 	return targetKey, ""
-}
-
-// linesPresent lists the release lines a project publishes, in a stable order.
-func linesPresent(rows []release.Row) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, r := range rows {
-		l := version.Line(r.Version)
-		if !seen[l] {
-			seen[l] = true
-			out = append(out, l)
-		}
-	}
-	sort.Strings(out)
-	return out
 }
 
 // lineList renders the available lines for a human: "lines \"core\", \"flagd\"".
@@ -1108,7 +858,7 @@ func buildBriefing(docs []*release.Doc, alreadyFixed map[string]bool, runningKey
 		var touched []string          // advisory key + branch pairs to mark once the release is read
 		onRunningBranch := false
 		if k := version.NormalizeVersion(d.Version); k != nil && runningKey != nil {
-			onRunningBranch = sameBranch(k, runningKey)
+			onRunningBranch = releaseline.SameBranch(k, runningKey)
 		}
 		b.Summary.Releases++
 		for k, n := range d.Counts {
@@ -1369,7 +1119,7 @@ func briefLess(ci, cj briefChange) bool {
 	if si, sj := carriesAStep(ci), carriesAStep(cj); si != sj {
 		return si
 	}
-	return descCmp(ci.Version, cj.Version) > 0
+	return releaseline.DescCmp(ci.Version, cj.Version) > 0
 }
 
 // gradeName is the grade gradeRankOf ranks as g.
@@ -1445,14 +1195,14 @@ type componentReport struct {
 	Project        string `json:"project"`
 	RunningVersion string `json:"running_version"`
 	// VersionReadAs (1.2.0) is the version checked when it is not the one
-	// passed: an image build suffix was dropped (stripBuildTail).
+	// passed: an image build suffix was dropped (releaseline.StripBuildTail).
 	VersionReadAs string `json:"version_read_as,omitempty"`
 	VersionSource string `json:"version_source,omitempty"`
 	TargetVersion string `json:"target_version,omitempty"`
 	Tracked       *bool  `json:"tracked,omitempty"`
 	Note          string `json:"note,omitempty"`
 	briefing
-	Gaps            []versionGap      `json:"gaps,omitempty"`
+	Gaps            []releaseline.Gap `json:"gaps,omitempty"`
 	NotRead         []string          `json:"releases_not_read,omitempty"`
 	LaterForRunning []json.RawMessage `json:"later_for_running,omitempty"`
 	Full            []json.RawMessage `json:"releases_full,omitempty"` // detail:"full" only
@@ -1667,22 +1417,22 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 			continue
 		}
 		// An image tag can carry a build suffix after the version it was built
-		// from (readBuildTail): dropped when the tag as passed is no release on
+		// from (releaseline.ReadBuildTail): dropped when the tag as passed is no release on
 		// record and the version without it is, and the answer says what was
 		// read.
 		running := comp.Version
-		if v, ok := readBuildTail(rows, running); ok {
+		if v, ok := releaseline.ReadBuildTail(rows, running); ok {
 			running = v
 			rep.VersionReadAs = v
 		}
-		onLine := rowsOnLine(rows, running)
+		onLine := releaseline.RowsOnLine(rows, running)
 		// A version whose line does not exist here is almost always a dropped
 		// prefix, not a real gap. Agents read versions off image tags, and an
 		// image tag rarely carries the release-line prefix: knative publishes
 		// "knative-v1.12.0" while its images say "v1.12.0" (hub question,
 		// 2026-08-10). Silence would look like "nothing to do".
 		if len(onLine) == 0 {
-			lines := linesPresent(rows)
+			lines := releaseline.LinesPresent(rows)
 			line := version.Line(running)
 			if version.NormalizeVersion(line) != nil {
 				// What was read as the line is itself a version: something was
@@ -1721,15 +1471,15 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		var inRange []release.Row
 		var resolved string
 		if comp.SameMinor {
-			if t := sameMinorTarget(rows, running); t != "" {
+			if t := releaseline.SameMinorTarget(rows, running); t != "" {
 				target = t
-				inRange, resolved = upgradeRange(rows, running, t)
+				inRange, resolved = releaseline.UpgradeRange(rows, running, t)
 			} else {
-				resolved = tagOfRows(onLine, running)
-				notes = append(notes, sameMinorNote(running, newestOnLine(rows, running)))
+				resolved = releaseline.TagOf(onLine, running)
+				notes = append(notes, sameMinorNote(running, releaseline.NewestOnLine(rows, running)))
 			}
 		} else {
-			inRange, resolved = upgradeRange(rows, running, target)
+			inRange, resolved = releaseline.UpgradeRange(rows, running, target)
 		}
 		rep.TargetVersion = resolved
 
@@ -1775,7 +1525,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		alreadyFixed := map[string]bool{}
 		for _, d := range docs {
 			k := version.NormalizeVersion(d.Version)
-			if k == nil || !version.SameLine(d.Version, running) || !sameBranch(k, currentKey) || version.Compare(k, currentKey) > 0 {
+			if k == nil || !version.SameLine(d.Version, running) || !releaseline.SameBranch(k, currentKey) || version.Compare(k, currentKey) > 0 {
 				continue
 			}
 			for _, c := range d.Changes {
@@ -1804,13 +1554,13 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		for _, r := range inRange {
 			points = append(points, r.Version)
 		}
-		if target != "" && (len(inRange) == 0 || !sameTag(inRange[len(inRange)-1].Version, target)) {
+		if target != "" && (len(inRange) == 0 || !releaseline.SameTag(inRange[len(inRange)-1].Version, target)) {
 			points = append(points, target)
 		}
-		rep.Gaps = versionGaps(points)
+		rep.Gaps = releaseline.Gaps(points)
 
 		for _, d := range docs {
-			if sameTag(d.Version, running) {
+			if releaseline.SameTag(d.Version, running) {
 				rep.LaterForRunning = d.Later
 				break
 			}
@@ -1872,17 +1622,6 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 	out["hint"] = briefHint(kindSet)
 	res, err := jsonResult(out)
 	return res, nil, err
-}
-
-// rowsOnLine is the rows on v's release line that carry a version number.
-func rowsOnLine(rows []release.Row, v string) []release.Row {
-	var out []release.Row
-	for _, r := range rows {
-		if version.SameLine(r.Version, v) && version.NormalizeVersion(r.Version) != nil {
-			out = append(out, r)
-		}
-	}
-	return out
 }
 
 // What hint says about important fixes depends on the call: counted only by
@@ -1970,7 +1709,7 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	// as 1.1.0 gave it, and note says what could not be done.
 	var rows []release.Row
 	var listErr error
-	_, tailLike := stripBuildTail(args.From)
+	_, tailLike := releaseline.StripBuildTail(args.From)
 	if !full || args.SameMinor || tailLike {
 		rows, listErr = api.projectReleases(ctx, args.Project)
 	}
@@ -1978,23 +1717,23 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 		return errResult(fmt.Errorf("could not read the release list to find the newest release of from's minor (same_minor): %w", listErr)), nil, nil
 	}
 	var notes []string
-	// The build suffix of an image tag (stripBuildTail), as check_stack reads
+	// The build suffix of an image tag (releaseline.StripBuildTail), as check_stack reads
 	// it: /v2/upgrade answered cilium-envoy's v1.37.6-1789133542-<commit> with
 	// a 404 (2026-11-20).
 	from, readAs := args.From, ""
-	if v, ok := readBuildTail(rows, from); ok {
+	if v, ok := releaseline.ReadBuildTail(rows, from); ok {
 		from, readAs = v, v
 	} else if tailLike && listErr != nil {
 		notes = append(notes, fmt.Sprintf("could not read the release list, so a build suffix on from was not read off: %v", listErr))
 	}
 	// When from's line has no release at all, to stays unset and /v2/upgrade
 	// answers with its own error, which lists the tags the project publishes.
-	if args.SameMinor && len(rowsOnLine(rows, from)) > 0 {
-		if t := sameMinorTarget(rows, from); t != "" {
+	if args.SameMinor && len(releaseline.RowsOnLine(rows, from)) > 0 {
+		if t := releaseline.SameMinorTarget(rows, from); t != "" {
 			to = t
 		} else {
 			to = from // (from, from] is empty: /v2/upgrade answers it with no releases
-			notes = append(notes, sameMinorNote(from, newestOnLine(rows, from)))
+			notes = append(notes, sameMinorNote(from, releaseline.NewestOnLine(rows, from)))
 		}
 	}
 	raw, err := api.upgradeRaw(ctx, args.Project, from, to, lang)
@@ -2016,12 +1755,12 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 		return rawResult(b), nil, nil
 	}
 	var up struct {
-		Project      string            `json:"project"`
-		From         string            `json:"from"`
-		To           string            `json:"to"`
-		Releases     []json.RawMessage `json:"releases"`
-		Gaps         *[]versionGap     `json:"gaps"`
-		LaterForFrom []json.RawMessage `json:"later_for_from"`
+		Project      string             `json:"project"`
+		From         string             `json:"from"`
+		To           string             `json:"to"`
+		Releases     []json.RawMessage  `json:"releases"`
+		Gaps         *[]releaseline.Gap `json:"gaps"`
+		LaterForFrom []json.RawMessage  `json:"later_for_from"`
 	}
 	if err := json.Unmarshal(raw, &up); err != nil {
 		return errResult(fmt.Errorf("/v2/upgrade: %w", err)), nil, nil
@@ -2042,7 +1781,7 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	}
 	// The server computes gaps; an older server did not send them, so the same
 	// rule runs here rather than answering without them.
-	gaps := []versionGap{}
+	gaps := []releaseline.Gap{}
 	if up.Gaps != nil {
 		gaps = *up.Gaps
 	} else {
@@ -2050,10 +1789,10 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 		for _, d := range docs {
 			points = append(points, d.Version)
 		}
-		if to != "" && (len(docs) == 0 || !sameTag(docs[len(docs)-1].Version, to)) {
+		if to != "" && (len(docs) == 0 || !releaseline.SameTag(docs[len(docs)-1].Version, to)) {
 			points = append(points, to)
 		}
-		gaps = versionGaps(points)
+		gaps = releaseline.Gaps(points)
 	}
 	// What from's own branch already fixed, as check_stack reads it. Until
 	// 1.2.0 this path read only the range, settled nothing, and answered the
@@ -2121,29 +1860,6 @@ func joinNotes(parts ...string) string {
 	return strings.Join(slices.DeleteFunc(parts, func(p string) bool { return p == "" }), "; ")
 }
 
-// readBuildTail is the version an image build suffix stands on: v without
-// the suffix (stripBuildTail), when v as passed is not a release on record
-// and the version without the suffix is (spec "마", 2026-11-20). The first
-// rule asked only whether v's release line existed, so v1.37.6-cbec91f —
-// whose line is the main one — was read as a pre-release of v1.37.6 and
-// v1.37.6 itself was listed as upgrade work. A pre-release (v1.21.0-rc.1)
-// never matches stripBuildTail.
-func readBuildTail(rows []release.Row, v string) (string, bool) {
-	if onRecord(rows, v) {
-		return "", false
-	}
-	if s, ok := stripBuildTail(v); ok && onRecord(rows, s) {
-		return s, true
-	}
-	return "", false
-}
-
-// onRecord says v names a release in rows (sameTag: the leading "v" and case
-// aside).
-func onRecord(rows []release.Row, v string) bool {
-	return slices.ContainsFunc(rows, func(r release.Row) bool { return sameTag(r.Version, v) })
-}
-
 // fixedOnBranch reads the advisory ids from's own branch carries at or below
 // from — the alreadyFixed set check_stack builds from its fetch set. The rows
 // come newest first, so the newest fetchSetSize releases of the branch are
@@ -2156,7 +1872,7 @@ func fixedOnBranch(ctx context.Context, rows []release.Row, from, lang string) (
 	var branch []release.Row
 	for _, r := range rows {
 		k := version.NormalizeVersion(r.Version)
-		if k == nil || !version.SameLine(r.Version, from) || !sameBranch(k, fromKey) || version.Compare(k, fromKey) > 0 {
+		if k == nil || !version.SameLine(r.Version, from) || !releaseline.SameBranch(k, fromKey) || version.Compare(k, fromKey) > 0 {
 			continue
 		}
 		branch = append(branch, r)
