@@ -24,6 +24,7 @@ import (
 
 	"github.com/basphere/ratatosk-mcp/internal/briefing"
 	"github.com/basphere/ratatosk-mcp/internal/release"
+	"github.com/basphere/ratatosk-mcp/internal/upstream"
 )
 
 // stringList is an array argument that also takes the forms models send in
@@ -204,8 +205,8 @@ func pickedReleases(ctx context.Context, project string, ids []string, lang stri
 	}
 	releases := []pickedRelease{}
 	for _, v := range order {
-		raw, err := api.releaseRaw(ctx, project, v, lang, false)
-		if he, ok := err.(*httpError); ok && he.Status == 404 {
+		raw, err := api.ReleaseRaw(ctx, project, v, lang, false)
+		if he, ok := err.(*upstream.HTTPError); ok && he.Status == 404 {
 			for _, id := range byRelease[v] {
 				notFound = append(notFound, truncate(id, 120))
 			}

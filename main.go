@@ -29,13 +29,14 @@ import (
 	"github.com/basphere/ratatosk-mcp/internal/logging"
 	"github.com/basphere/ratatosk-mcp/internal/metrics"
 	"github.com/basphere/ratatosk-mcp/internal/release"
+	"github.com/basphere/ratatosk-mcp/internal/upstream"
 )
 
 // buildVersion is stamped by the release workflow via
 // -ldflags "-X main.buildVersion=<tag>"; local builds report "dev".
 var buildVersion = "dev"
 
-var api *apiClient
+var api *upstream.Client
 
 // mx is the process's metrics; nil = off (the default). It stays a variable
 // here only until the server and the HTTP chain are built with it.
@@ -70,7 +71,6 @@ func main() {
 	if base == "" {
 		base = "https://ratatosk.io"
 	}
-	api = newAPIClient(base)
 
 	metricsAddr := os.Getenv("MCP_METRICS_ADDR")
 
@@ -101,7 +101,8 @@ func main() {
 			}()
 			metricsField = metricsAddr + "/metrics"
 		}
-		// Built after the metrics, which it counts into.
+		// Built after the metrics, which they count into.
+		api = upstream.New(base, buildVersion, cacheBytesFromEnv(os.Getenv("MCP_CACHE_MAX_MB")), mx)
 		server := newServer()
 		// MCP_HTTP_STATELESS=1 serves every POST on a temporary session: no
 		// Mcp-Session-Id round-trip, GET/DELETE answer 405 — and, per go-sdk
@@ -174,6 +175,7 @@ func main() {
 		// a port per process would collide as soon as a second client starts one.
 		slog.Warn("MCP_METRICS_ADDR is ignored on stdio: metrics are served in HTTP mode only")
 	}
+	api = upstream.New(base, buildVersion, cacheBytesFromEnv(os.Getenv("MCP_CACHE_MAX_MB")), mx)
 	server := newServer()
 	slog.Info("listening", "transport", "stdio", "upstream", base, "version", buildVersion)
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
@@ -181,6 +183,17 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("stdio session ended")
+}
+
+// cacheBytesFromEnv reads MCP_CACHE_MAX_MB (until internal/config) — the response cache's byte budget.
+// Absent or unparseable means 32 MiB: half of the smallest container the Helm
+// chart and the hosted compose have shipped with, so the cache alone can never
+// take a process down.
+func cacheBytesFromEnv(raw string) int {
+	if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+		return n << 20
+	}
+	return 32 << 20
 }
 
 // setupLogging reads MCP_LOG (default info). It moves to internal/config with
@@ -446,6 +459,13 @@ func slugArg(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
+func truncate(s string, n int) string {
+	if len(s) > n {
+		return s[:n] + "…"
+	}
+	return s
+}
+
 // unknownProject is the answer for a slug the roster does not have. It leads
 // with checking the slug: the caller may have the project's name in another
 // form, and only list_projects can say which. The caller's text is bounded
@@ -482,7 +502,7 @@ type listProjectsArgs struct{}
 
 func listProjectsTool(ctx context.Context, req *mcp.CallToolRequest, args listProjectsArgs) (*mcp.CallToolResult, any, error) {
 	ctx = logging.RequestContext(ctx, "list_projects", req)
-	raw, err := api.projectsRaw(ctx, false)
+	raw, err := api.ProjectsRaw(ctx, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
@@ -538,7 +558,7 @@ func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getRelea
 		// so a patch on an older branch that shipped later was answered as the
 		// latest: kubernetes v1.36.6 while v1.37.2 was on record, 12 of 78
 		// projects on 2026-11-11.
-		roster, err := api.projects(ctx)
+		roster, err := api.Projects(ctx)
 		if err != nil {
 			return errResult(fmt.Errorf("could not read the project list: %w", err)), nil, nil
 		}
@@ -560,7 +580,7 @@ func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getRelea
 			return errResult(fmt.Errorf("project %s is tracked by ratatosk but has no analyzed release yet — there is no release to show", project)), nil, nil
 		}
 	}
-	raw, err := api.releaseRaw(ctx, project, ver, lang, false)
+	raw, err := api.ReleaseRaw(ctx, project, ver, lang, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
@@ -630,11 +650,11 @@ func listReleasesTool(ctx context.Context, req *mcp.CallToolRequest, args listRe
 	// roster is cached, so this costs one upstream request per five minutes.
 	project := slugArg(args.Project)
 	if project != "" {
-		roster, err := api.projects(ctx)
+		roster, err := api.Projects(ctx)
 		if err != nil {
 			return errResult(fmt.Errorf("could not read the project list: %w", err)), nil, nil
 		}
-		if !slices.ContainsFunc(roster, func(p v2Project) bool { return p.Slug == project }) {
+		if !slices.ContainsFunc(roster, func(p upstream.Project) bool { return p.Slug == project }) {
 			return errResult(unknownProject(project)), nil, nil
 		}
 	}
@@ -647,7 +667,7 @@ func listReleasesTool(ctx context.Context, req *mcp.CallToolRequest, args listRe
 	if limit > 50 {
 		limit = 50
 	}
-	raw, err := api.releasesRaw(ctx, releasesQuery{Project: project, Kind: args.Kind, Since: args.Since, Before: args.Before, Limit: limit, Lang: lang}, false)
+	raw, err := api.ReleasesRaw(ctx, upstream.ReleasesQuery{Project: project, Kind: args.Kind, Since: args.Since, Before: args.Before, Limit: limit, Lang: lang}, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
@@ -687,15 +707,15 @@ func searchTool(ctx context.Context, req *mcp.CallToolRequest, args searchArgs) 
 	// spelled differently reads as "nothing matched".
 	project := slugArg(args.Project)
 	if project != "" {
-		roster, err := api.projects(ctx)
+		roster, err := api.Projects(ctx)
 		if err != nil {
 			return errResult(fmt.Errorf("could not read the project list: %w", err)), nil, nil
 		}
-		if !slices.ContainsFunc(roster, func(p v2Project) bool { return p.Slug == project }) {
+		if !slices.ContainsFunc(roster, func(p upstream.Project) bool { return p.Slug == project }) {
 			return errResult(unknownProject(project)), nil, nil
 		}
 	}
-	raw, err := api.searchRaw(ctx, q, lang)
+	raw, err := api.SearchRaw(ctx, q, lang)
 	if err != nil {
 		return errResult(err), nil, nil
 	}

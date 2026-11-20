@@ -33,6 +33,7 @@ import (
 	"github.com/basphere/ratatosk-mcp/internal/logging"
 	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/releaseline"
+	"github.com/basphere/ratatosk-mcp/internal/upstream"
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
@@ -512,11 +513,11 @@ func fetchDocs(ctx context.Context, rows []release.Row, lang string) (map[string
 		go func(r release.Row) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			b, err := api.releaseRaw(ctx, r.Project, r.Version, lang, true)
+			b, err := api.ReleaseRaw(ctx, r.Project, r.Version, lang, true)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
-				if he, ok := err.(*httpError); ok && he.Status == 404 {
+				if he, ok := err.(*upstream.HTTPError); ok && he.Status == 404 {
 					return
 				}
 				if firstErr == nil {
@@ -586,7 +587,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		}
 	}
 
-	roster, err := api.projects(ctx)
+	roster, err := api.Projects(ctx)
 	if err != nil {
 		return errResult(fmt.Errorf("could not read the project list: %w", err)), nil, nil
 	}
@@ -648,7 +649,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 			skip("running version could not be parsed")
 			continue
 		}
-		rows, err := api.projectReleases(ctx, slug)
+		rows, err := api.ProjectReleases(ctx, slug)
 		if err != nil {
 			skip(fetchReason(ctx, err))
 			continue
@@ -894,7 +895,7 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	}
 	// "." and ".." are refused before any request, as upgradeRaw refuses them
 	// (pathSegment): the release list below would otherwise ask for them first.
-	if _, err := pathSegment("project", args.Project); err != nil {
+	if _, err := upstream.PathSegment("project", args.Project); err != nil {
 		return errResult(err), nil, nil
 	}
 	to := args.To
@@ -913,7 +914,7 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	var listErr error
 	_, tailLike := releaseline.StripBuildTail(args.From)
 	if !full || args.SameMinor || tailLike {
-		rows, listErr = api.projectReleases(ctx, args.Project)
+		rows, listErr = api.ProjectReleases(ctx, args.Project)
 	}
 	if listErr != nil && args.SameMinor {
 		return errResult(fmt.Errorf("could not read the release list to find the newest release of from's minor (same_minor): %w", listErr)), nil, nil
@@ -938,7 +939,7 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 			notes = append(notes, sameMinorNote(from, releaseline.NewestOnLine(rows, from)))
 		}
 	}
-	raw, err := api.upgradeRaw(ctx, args.Project, from, to, lang)
+	raw, err := api.UpgradeRaw(ctx, args.Project, from, to, lang)
 	if err != nil {
 		return errResult(err), nil, nil
 	}

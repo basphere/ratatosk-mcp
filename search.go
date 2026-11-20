@@ -152,7 +152,7 @@ func (d matchDoc) items() []matchItem {
 func releaseMatches(ctx context.Context, project, ver, lang string, find func(string) bool, matched *searchMatch) ([]searchMatch, error) {
 	read := func(l string) (matchDoc, error) {
 		var d matchDoc
-		b, err := api.releaseRaw(ctx, project, ver, l, true)
+		b, err := api.ReleaseRaw(ctx, project, ver, l, true)
 		if err != nil {
 			return d, err
 		}

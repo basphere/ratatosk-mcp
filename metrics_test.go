@@ -17,7 +17,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/basphere/ratatosk-mcp/internal/logging"
 	"github.com/basphere/ratatosk-mcp/internal/metrics"
 	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
@@ -328,61 +327,6 @@ func TestMetricsOffByDefaultAndNotOnTheMCPListener(t *testing.T) {
 			}
 		}
 		ts.Close()
-	}
-}
-
-func TestMetricsUpstreamOutcomes(t *testing.T) {
-	m := withMetrics(t)
-	f := upstreamtest.NewEtcd()
-	swapAPI(t, httptest.NewServer(f.Handler(t)))
-	ctx := logging.RequestContext(context.Background(), "get_release", nil)
-	if _, err := api.releaseRaw(ctx, "etcd", "v3.6.8", "", false); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := api.releaseRaw(ctx, "etcd", "v0.0.1", "", false); err == nil {
-		t.Fatal("a version not on record must be an error")
-	}
-	// A cache hit is not a request.
-	if _, err := api.projectsRaw(logging.RequestContext(context.Background(), "list_projects", nil), true); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := api.projectsRaw(logging.RequestContext(context.Background(), "list_projects", nil), true); err != nil {
-		t.Fatal(err)
-	}
-	// Nothing listening: transport. A slow answer past the client timeout: timeout.
-	dead := httptest.NewServer(http.NotFoundHandler())
-	dead.Close()
-	api = newAPIClient(dead.URL)
-	_, _ = api.searchRaw(logging.RequestContext(context.Background(), "search", nil), "x", "")
-	slow := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		select {
-		case <-r.Context().Done():
-		case <-time.After(2 * time.Second):
-		}
-	}))
-	defer slow.Close()
-	api = newAPIClient(slow.URL)
-	api.http.Timeout = 50 * time.Millisecond
-	_, _ = api.searchRaw(logging.RequestContext(context.Background(), "search", nil), "x", "")
-	cctx, cancel := context.WithCancel(logging.RequestContext(context.Background(), "check_stack", nil))
-	cancel()
-	_, _ = api.projectsRaw(cctx, false)
-
-	s := series(t, m)
-	for k, want := range map[string]float64{
-		`ratatosk_mcp_upstream_requests_total{outcome="ok",tool="get_release"}`:       1,
-		`ratatosk_mcp_upstream_requests_total{outcome="error",tool="get_release"}`:    1,
-		`ratatosk_mcp_upstream_requests_total{outcome="ok",tool="list_projects"}`:     1,
-		`ratatosk_mcp_upstream_requests_total{outcome="transport",tool="search"}`:     1,
-		`ratatosk_mcp_upstream_requests_total{outcome="timeout",tool="search"}`:       1,
-		`ratatosk_mcp_upstream_requests_total{outcome="canceled",tool="check_stack"}`: 1,
-	} {
-		if s[k] != want {
-			t.Errorf("%s = %v, want %v", k, s[k], want)
-		}
-	}
-	if got := sumPrefix(s, "ratatosk_mcp_upstream_requests_total{"); got != 6 {
-		t.Errorf("%v upstream requests counted, want 6", got)
 	}
 }
 

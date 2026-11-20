@@ -13,12 +13,14 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/basphere/ratatosk-mcp/internal/logging"
+	"github.com/basphere/ratatosk-mcp/internal/upstream"
 )
 
 // captureLogs redirects the default logger (at DEBUG, the most talkative
@@ -35,7 +37,7 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 func swapAPI(t *testing.T, ts *httptest.Server) {
 	t.Helper()
 	orig := api
-	api = newAPIClient(ts.URL)
+	api = upstream.New(ts.URL, buildVersion, cacheBytesFromEnv(os.Getenv("MCP_CACHE_MAX_MB")), mx)
 	t.Cleanup(func() { api = orig; ts.Close() })
 }
 

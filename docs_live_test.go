@@ -21,6 +21,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/upstream"
 )
 
 var (
@@ -69,7 +71,7 @@ func TestDocsExamplesAgainstLive(t *testing.T) {
 	if base == "" {
 		t.Skip("set DOCS_LIVE_URL to replay the documented examples")
 	}
-	api = newAPIClient(base)
+	api = upstream.New(base, buildVersion, cacheBytesFromEnv(os.Getenv("MCP_CACHE_MAX_MB")), mx)
 	ctx := context.Background()
 	ct, st := mcp.NewInMemoryTransports()
 	if _, err := newServer().Connect(ctx, st, nil); err != nil {

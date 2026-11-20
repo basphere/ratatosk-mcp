@@ -351,17 +351,6 @@ func TestCheckStackRefusesComponentWithoutProject(t *testing.T) {
 	}
 }
 
-// The backstop where the fan-out happens: an empty slug must never page.
-func TestProjectReleasesRefusesEmptyProject(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		t.Errorf("upstream was called (%s) with an empty project", r.URL.RequestURI())
-	}))
-	defer ts.Close()
-	if _, err := newAPIClient(ts.URL).projectReleases(context.Background(), ""); err == nil {
-		t.Fatal("an empty project paged every project")
-	}
-}
-
 // ---------------------------------------------------------------------------
 // the other tools
 // ---------------------------------------------------------------------------
