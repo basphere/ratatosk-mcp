@@ -37,7 +37,8 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   (`advisories: [{id, severity}]`, each id once, the most severe first).
   `summary.warnings` still counts them,
   which is why containerd's briefing said `critical: 1` beside
-  `distinct_advisories.critical: 0`; `note` keeps its sentence.
+  `distinct_advisories.critical: 0`; in `check_stack`, `note` keeps its
+  sentence (`check_upgrade` says it in `excluded_on_branch` only).
   **`warnings.critical_excluded_on_branch`**, in `summary` and on a release
   of `releases`, says how many of `warnings.critical` are such changes:
   containerd v2.2.9 to v2.4.2 answers `critical: 1,
@@ -117,14 +118,21 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   forwarding to other apps blocked" cites the GHSA of the token-bypass fix
   that named v1.19.1 in its `also_in`, and was in no list (present in 1.1.0
   too).
-- `hint` is 1,696 characters instead of 3,226 and keeps what reading the
-  answer needs; what each field means moved to the tool descriptions. It and
+- `hint` is 1,775 characters (1,784 when `kinds` names `important_fixes`)
+  instead of 3,226 and keeps what reading the answer needs; what each field
+  means moved to the tool descriptions. It and
   the descriptions say that what is not in `changes` has its line in
   `changes_more`, and that a briefing has no evidence quotes, so the body and
   evidence of what you report come from `get_release(changes: [...])`. They
   no longer send the agent to read whole releases for what was omitted.
   When `kinds` names `important_fixes`, `hint` says they are all listed
   instead of saying how to list them.
+- **A tool call that fails inside the server is answered as a tool error
+  (`isError`), and the server keeps serving.** A panic in one call stopped
+  the whole server with every call in flight (a release document without
+  `warnings` caused one). The answer says the fault is the server's and that
+  the same call will likely fail again; the log line names only the tool and
+  the type of the failure.
 
 ### Fixed
 
@@ -141,7 +149,10 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `check_stack` does.** It used to list every security change in range, so
   the same upgrade got two answers: containerd v2.2.9 to v2.4.2 omitted 42
   security changes in `check_upgrade` and 30 in `check_stack`, which left out
-  13. Now both leave out the same 13 and count them in `excluded_on_branch`;
+  13. Now both leave out the same 13 and count them in `excluded_on_branch`
+  (`check_stack` learns what the branch fixed from the project's newest 60
+  releases: when the branch's releases at or below the running version reach
+  past those, it leaves out less than `check_upgrade` and says so in `note`);
   `summary.distinct_advisories` no longer counts them in `check_upgrade`
   either. To tell, `check_upgrade` reads the project's release list and the
   releases of `from`'s branch at or below `from` (up to 60), through the same
@@ -180,6 +191,25 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   U+FFFD (`�`), or in the `version_source` note as escape codes such as
   `\xea\xb0`. The cut now ends before that character, so up to three bytes
   fewer are kept; ASCII text is cut where it was.
+- **`check_stack` sends the same requests whatever version a component
+  runs.** A version that could not be parsed was refused before the
+  project's release list was read, and one on a release line with no
+  releases before the releases were read, so the number of requests (1, 2,
+  or the list and the newest releases) told the API which of those a
+  component ran. The list and the releases are now read first, within the
+  call's budget, which they now count against too; the answer is as it was.
+  Present in 1.1.0 too.
+- **`check_stack` says when the running version's branch reaches past the
+  releases it reads.** It learns what the branch already fixed from the
+  project's newest 60 releases. A release of the branch at or below the
+  running version that is older than those may have fixed what a change in
+  range cites, and the change stayed listed without a word (in 1.1.0 too),
+  where `check_upgrade`, which reads the branch itself, leaves it out. The
+  component's `note` now says how many such releases were not read and that
+  the security changes they fixed are not left out.
+- The `Retry-After` of a request over the rate limit is rounded up: with 59.9
+  seconds left in the window it said 59, and a client that waited that long
+  was refused again. Present in 1.1.0 too.
 
 ## [1.1.0] — 2026-11-19
 
