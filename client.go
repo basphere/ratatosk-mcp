@@ -22,6 +22,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/basphere/ratatosk-mcp/internal/logging"
+	"github.com/basphere/ratatosk-mcp/internal/metrics"
 	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
@@ -149,41 +151,41 @@ func (c *apiClient) getRaw(ctx context.Context, endpoint, path string, q url.Val
 		return nil, fmt.Errorf("could not build upstream request for %s", endpoint)
 	}
 	req.Header.Set("User-Agent", "ratatosk-mcp/"+buildVersion)
-	if tp := traceparentFrom(ctx); tp != "" {
+	if tp := logging.TraceparentFrom(ctx); tp != "" {
 		req.Header.Set("traceparent", tp)
 	}
 	// One bit, no address: lets a hosted deployment's upstream separate real
 	// users from the operator's own calls, which are otherwise indistinguishable
 	// over an internal network (see callerClassMiddleware).
-	if cc := callerClassFrom(ctx); cc != "" {
+	if cc := logging.CallerClassFrom(ctx); cc != "" {
 		req.Header.Set("X-Ratatosk-Caller", cc)
 	}
 	start := time.Now()
 	resp, err := c.http.Do(req)
 	if err != nil {
-		mx.countUpstream(toolFrom(ctx), upstreamOutcome(err))
-		slog.ErrorContext(ctx, "upstream fetch failed", "upstream", endpoint, "kind", errKind(err))
+		mx.CountUpstream(logging.ToolFrom(ctx), metrics.UpstreamOutcome(err))
+		slog.ErrorContext(ctx, "upstream fetch failed", "upstream", endpoint, "kind", logging.ErrKind(err))
 		// Transport errors carry the full request URL and the resolved address
 		// ("dial tcp 172.x.x.x:3000: ..."). That string is returned to the
 		// caller verbatim by errResult, so on the hosted endpoint an anonymous
 		// internet caller could read our internal topology off a failed
 		// request. The detail stays in the log line above; the caller gets the
 		// class, which is all an agent can act on anyway.
-		return nil, fmt.Errorf("upstream request failed (%s)", errKind(err))
+		return nil, fmt.Errorf("upstream request failed (%s)", logging.ErrKind(err))
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		mx.countUpstream(toolFrom(ctx), upstreamOutcome(err))
-		slog.ErrorContext(ctx, "upstream body read failed", "upstream", endpoint, "kind", errKind(err))
-		return nil, fmt.Errorf("upstream response read failed (%s)", errKind(err))
+		mx.CountUpstream(logging.ToolFrom(ctx), metrics.UpstreamOutcome(err))
+		slog.ErrorContext(ctx, "upstream body read failed", "upstream", endpoint, "kind", logging.ErrKind(err))
+		return nil, fmt.Errorf("upstream response read failed (%s)", logging.ErrKind(err))
 	}
 	// ok is a 200; error is any other answer (a 404 for a version not on
 	// record included). Requests that got no answer are counted above.
 	if resp.StatusCode == http.StatusOK {
-		mx.countUpstream(toolFrom(ctx), "ok")
+		mx.CountUpstream(logging.ToolFrom(ctx), "ok")
 	} else {
-		mx.countUpstream(toolFrom(ctx), "error")
+		mx.CountUpstream(logging.ToolFrom(ctx), "error")
 	}
 	switch {
 	case resp.StatusCode == http.StatusOK:

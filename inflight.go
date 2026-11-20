@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	"github.com/basphere/ratatosk-mcp/internal/metrics"
 )
 
 // inflightMiddleware caps how many requests the HTTP transport works on at once.
@@ -37,7 +39,7 @@ func inflightMiddleware(n int, wait time.Duration, next http.Handler) http.Handl
 		select {
 		case slots <- struct{}{}:
 		case <-t.C:
-			refusedFor(req, "busy") // before the answer; with metrics on it may read up to 4 KiB of the body (metrics.go)
+			metrics.RefusedFor(req, "busy") // before the answer; with metrics on it may read up to 4 KiB of the body (metrics.go)
 			w.Header().Set("Retry-After", "5")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -46,7 +48,7 @@ func inflightMiddleware(n int, wait time.Duration, next http.Handler) http.Handl
 		case <-req.Context().Done():
 			// The caller stopped waiting for a slot: still a request the cap
 			// turned away, and counted as such.
-			refusedFor(req, "busy")
+			metrics.RefusedFor(req, "busy")
 			return
 		}
 		defer func() { <-slots }()

@@ -30,6 +30,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/basphere/ratatosk-mcp/internal/briefing"
+	"github.com/basphere/ratatosk-mcp/internal/logging"
 	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/releaseline"
 	"github.com/basphere/ratatosk-mcp/internal/version"
@@ -543,7 +544,7 @@ func fetchDocs(ctx context.Context, rows []release.Row, lang string) (map[string
 }
 
 func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkStackArgs) (*mcp.CallToolResult, any, error) {
-	ctx = requestContext(ctx, "check_stack", req)
+	ctx = logging.RequestContext(ctx, "check_stack", req)
 	if len(args.Components) == 0 {
 		return errResult(fmt.Errorf("components is required — %s", componentsShapeHint)), nil, nil
 	}
@@ -874,7 +875,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 // ---------------------------------------------------------------------------
 
 func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkUpgradeArgs) (*mcp.CallToolResult, any, error) {
-	ctx = requestContext(ctx, "check_upgrade", req)
+	ctx = logging.RequestContext(ctx, "check_upgrade", req)
 	args.Project = slugArg(args.Project)
 	if args.Project == "" || args.From == "" {
 		return errResult(fmt.Errorf("project and from are required (from = the version you run now)")), nil, nil

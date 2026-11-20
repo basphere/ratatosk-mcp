@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/logging"
 )
 
 // auditMode is resolved once at startup: "" (off), "metadata", or "full".
@@ -129,7 +131,7 @@ func auditMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 			transport = "http"
 		}
 		traceID := ""
-		if tp, ok := p.Meta["traceparent"].(string); ok && traceparentRe.MatchString(tp) {
+		if tp, ok := p.Meta["traceparent"].(string); ok && logging.ValidTraceparent(tp) {
 			traceID = tp[3:35]
 		}
 		rec := auditRecord(auditMode, p.Name, p.Arguments, outcome, client, transport, traceID)

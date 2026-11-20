@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/basphere/ratatosk-mcp/internal/logging"
 )
 
 func TestRateLimiterAllowsUpToLimitThenBlocks(t *testing.T) {
@@ -164,7 +166,7 @@ func TestCallerClassMiddleware(t *testing.T) {
 			t.Setenv("MCP_SELF_CALLERS", tc.selfCallers)
 			var got string
 			h := callerClassMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-				got = callerClassFrom(r.Context())
+				got = logging.CallerClassFrom(r.Context())
 			}))
 			r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
 			r.Header.Set("Cf-Connecting-Ip", tc.callerIP)

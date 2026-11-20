@@ -1,10 +1,14 @@
-package main
-
-// Operational logging (P1) and trace propagation phase 0 (P2) of
-// docs/logging-design.md. The invariant lives here as much as in the call
-// sites: no request arguments in any log line or field, in any mode, at any
-// level — error text is reconstructed (endpoint pattern, status class, error
-// kind), never copied, because upstream URLs embed running versions.
+// Package logging is operational logging (P1) and trace propagation phase 0
+// (P2) of docs/logging-design.md. The invariant lives here as much as in the
+// call sites: no request arguments in any log line or field, in any mode, at
+// any level — error text is reconstructed (endpoint pattern, status class,
+// error kind), never copied, because upstream URLs embed running versions.
+//
+// It also owns what a request carries through the process: the tool name, the
+// caller's trace context and the caller class. The context keys are private;
+// the accessors below are the only way in, so no other package can put a
+// caller-chosen value where a log field or an upstream header reads it.
+package logging
 
 import (
 	"context"
@@ -14,7 +18,6 @@ import (
 	"net"
 	"os"
 	"regexp"
-	"strings"
 	"syscall"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -32,32 +35,50 @@ const (
 // W3C trace context: version(2)-trace_id(32)-parent_id(16)-flags(2), lowercase hex.
 var traceparentRe = regexp.MustCompile(`^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$`)
 
-// requestContext tags the context with the tool name and, when the caller sent
+// ValidTraceparent says tp is a well-formed W3C traceparent; its trace id is
+// then tp[3:35]. Malformed values are dropped, not forwarded.
+func ValidTraceparent(tp string) bool { return traceparentRe.MatchString(tp) }
+
+// RequestContext tags the context with the tool name and, when the caller sent
 // W3C trace context in _meta (the MCP 2026-07-28 convention), the traceparent —
 // the join key across the agent layer, this server's log lines, and the
 // upstream /v2 call. Malformed values are dropped, not forwarded.
-func requestContext(ctx context.Context, tool string, req *mcp.CallToolRequest) context.Context {
+func RequestContext(ctx context.Context, tool string, req *mcp.CallToolRequest) context.Context {
 	ctx = context.WithValue(ctx, ctxKeyTool, tool)
 	if req == nil || req.Params == nil {
 		return ctx
 	}
-	if tp, ok := req.Params.Meta["traceparent"].(string); ok && traceparentRe.MatchString(tp) {
+	if tp, ok := req.Params.Meta["traceparent"].(string); ok && ValidTraceparent(tp) {
 		ctx = context.WithValue(ctx, ctxKeyTraceparent, tp)
 		ctx = context.WithValue(ctx, ctxKeyTraceID, tp[3:35])
 	}
 	return ctx
 }
 
-func traceparentFrom(ctx context.Context) string {
+// TraceparentFrom is the caller's traceparent, when it sent a valid one.
+func TraceparentFrom(ctx context.Context) string {
 	tp, _ := ctx.Value(ctxKeyTraceparent).(string)
 	return tp
 }
 
-// callerClassFrom returns "external" or "self" when the HTTP layer classified
+// CallerClassFrom returns "external" or "self" when the HTTP layer classified
 // the caller, else "". It is a single bit — never the address that produced it.
-func callerClassFrom(ctx context.Context) string {
+func CallerClassFrom(ctx context.Context) string {
 	c, _ := ctx.Value(ctxKeyCallerClass).(string)
 	return c
+}
+
+// WithCallerClass records the HTTP layer's judgement of the caller: "self" or
+// "external", never the address.
+func WithCallerClass(ctx context.Context, class string) context.Context {
+	return context.WithValue(ctx, ctxKeyCallerClass, class)
+}
+
+// ToolFrom is the tool a request context was tagged with, "" outside a tool
+// call.
+func ToolFrom(ctx context.Context) string {
+	t, _ := ctx.Value(ctxKeyTool).(string)
+	return t
 }
 
 // ctxHandler stamps tool and trace_id from the request context onto every
@@ -82,34 +103,25 @@ func (h ctxHandler) WithGroup(name string) slog.Handler {
 	return ctxHandler{h.Handler.WithGroup(name)}
 }
 
-// newLogger builds the house-schema JSON logger (time, level, msg,
+// NewLogger builds the house-schema JSON logger (time, level, msg,
 // service:"mcp", plus event fields) — the same shape the ratatosk worker
 // emits, so a collector lifts level into a severity label with no config.
-func newLogger(w io.Writer, level slog.Level) *slog.Logger {
+func NewLogger(w io.Writer, level slog.Level) *slog.Logger {
 	h := slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})
 	return slog.New(ctxHandler{h}).With("service", "mcp")
 }
 
-// setupLogging wires the default logger to stderr — stdout belongs to the
-// stdio transport — at the level MCP_LOG selects (default info; "debug" adds
-// per-call timing, still argument-free).
-func setupLogging() {
-	level := slog.LevelInfo
-	switch strings.ToLower(os.Getenv("MCP_LOG")) {
-	case "debug":
-		level = slog.LevelDebug
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	}
-	slog.SetDefault(newLogger(os.Stderr, level))
+// Setup wires the default logger to stderr — stdout belongs to the stdio
+// transport — at the level MCP_LOG selects (default info; "debug" adds
+// per-call timing, still argument-free; see internal/config).
+func Setup(level slog.Level) {
+	slog.SetDefault(NewLogger(os.Stderr, level))
 }
 
-// errKind classifies a transport error without quoting it: the error string
+// ErrKind classifies a transport error without quoting it: the error string
 // of a failed request embeds the full URL, and get_release URLs embed the
 // running version. Coarse buckets are exactly what an operator can act on.
-func errKind(err error) string {
+func ErrKind(err error) string {
 	var ne net.Error
 	switch {
 	case errors.Is(err, context.DeadlineExceeded), errors.As(err, &ne) && ne.Timeout():

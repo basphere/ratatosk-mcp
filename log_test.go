@@ -17,6 +17,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/logging"
 )
 
 // captureLogs redirects the default logger (at DEBUG, the most talkative
@@ -25,7 +27,7 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 	t.Helper()
 	var buf bytes.Buffer
 	prev := slog.Default()
-	slog.SetDefault(newLogger(&buf, slog.LevelDebug))
+	slog.SetDefault(logging.NewLogger(&buf, slog.LevelDebug))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	return &buf
 }

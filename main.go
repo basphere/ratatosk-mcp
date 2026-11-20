@@ -26,6 +26,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/basphere/ratatosk-mcp/internal/logging"
+	"github.com/basphere/ratatosk-mcp/internal/metrics"
 	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
@@ -34,6 +36,10 @@ import (
 var buildVersion = "dev"
 
 var api *apiClient
+
+// mx is the process's metrics; nil = off (the default). It stays a variable
+// here only until the server and the HTTP chain are built with it.
+var mx *metrics.Metrics
 
 // dataNote is said once in the server instructions and again in every tool
 // that returns model-written text, because a tool description is what an agent
@@ -66,7 +72,6 @@ func main() {
 	}
 	api = newAPIClient(base)
 
-	server := newServer()
 	metricsAddr := os.Getenv("MCP_METRICS_ADDR")
 
 	// Two transports, one binary: stdio for local agents (Claude Code, MCP
@@ -82,20 +87,22 @@ func main() {
 				slog.Error("MCP_METRICS_ADDR must differ from MCP_HTTP_ADDR: metrics are served on a listener of their own")
 				os.Exit(1)
 			}
-			mx = newMetrics(buildVersion)
+			mx = metrics.New(buildVersion)
 			ln, err := net.Listen("tcp", metricsAddr)
 			if err != nil {
-				slog.Error("metrics listener failed", "kind", errKind(err))
+				slog.Error("metrics listener failed", "kind", logging.ErrKind(err))
 				os.Exit(1)
 			}
 			go func() {
-				if err := metricsServer(mx).Serve(ln); err != nil {
-					slog.Error("metrics server exited", "kind", errKind(err))
+				if err := metrics.Server(mx).Serve(ln); err != nil {
+					slog.Error("metrics server exited", "kind", logging.ErrKind(err))
 					os.Exit(1)
 				}
 			}()
 			metricsField = metricsAddr + "/metrics"
 		}
+		// Built after the metrics, which it counts into.
+		server := newServer()
 		// MCP_HTTP_STATELESS=1 serves every POST on a temporary session: no
 		// Mcp-Session-Id round-trip, GET/DELETE answer 405 — and, per go-sdk
 		// v1.7.0, it is the only HTTP mode that speaks the 2026-07-28 revision
@@ -157,7 +164,7 @@ func main() {
 			MaxHeaderBytes:    1 << 20,
 		}
 		if err := srv.ListenAndServe(); err != nil {
-			slog.Error("http server exited", "kind", errKind(err))
+			slog.Error("http server exited", "kind", logging.ErrKind(err))
 			os.Exit(1)
 		}
 		return
@@ -167,12 +174,28 @@ func main() {
 		// a port per process would collide as soon as a second client starts one.
 		slog.Warn("MCP_METRICS_ADDR is ignored on stdio: metrics are served in HTTP mode only")
 	}
+	server := newServer()
 	slog.Info("listening", "transport", "stdio", "upstream", base, "version", buildVersion)
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
-		slog.Error("stdio session ended with error", "kind", errKind(err))
+		slog.Error("stdio session ended with error", "kind", logging.ErrKind(err))
 		os.Exit(1)
 	}
 	slog.Info("stdio session ended")
+}
+
+// setupLogging reads MCP_LOG (default info). It moves to internal/config with
+// the other environment variables.
+func setupLogging() {
+	level := slog.LevelInfo
+	switch strings.ToLower(os.Getenv("MCP_LOG")) {
+	case "debug":
+		level = slog.LevelDebug
+	case "warn":
+		level = slog.LevelWarn
+	case "error":
+		level = slog.LevelError
+	}
+	logging.Setup(level)
 }
 
 // newServer registers the six tools and the audit middleware. It is its own
@@ -187,7 +210,7 @@ func main() {
 // it) and outside every refusal, so it sees each one; it is the identity while
 // metrics are off.
 func mcpHTTPChain(rl *rateLimiter, inflight int, wait time.Duration, handler http.Handler) http.Handler {
-	return callerClassMiddleware(metricsHTTPMiddleware(rateLimitMiddleware(rl, rejectBatchMiddleware(inflightMiddleware(inflight, wait, handler)))))
+	return callerClassMiddleware(mx.HTTPMiddleware(rateLimitMiddleware(rl, rejectBatchMiddleware(inflightMiddleware(inflight, wait, handler)))))
 }
 
 // mcpMux is everything the MCP listener serves: /mcp and /healthz. Metrics are
@@ -378,7 +401,7 @@ func newServer() *mcp.Server {
 	server.AddReceivingMiddleware(deadlineMiddleware)
 	// Added last, so it is the outermost: a tool call is timed from the
 	// moment it arrives to its answer. The identity while metrics are off.
-	server.AddReceivingMiddleware(metricsMiddleware)
+	server.AddReceivingMiddleware(mx.Middleware)
 	return server
 }
 
@@ -458,7 +481,7 @@ func isJSONObject(b []byte) bool {
 type listProjectsArgs struct{}
 
 func listProjectsTool(ctx context.Context, req *mcp.CallToolRequest, args listProjectsArgs) (*mcp.CallToolResult, any, error) {
-	ctx = requestContext(ctx, "list_projects", req)
+	ctx = logging.RequestContext(ctx, "list_projects", req)
 	raw, err := api.projectsRaw(ctx, false)
 	if err != nil {
 		return errResult(err), nil, nil
@@ -479,7 +502,7 @@ type getReleaseArgs struct {
 }
 
 func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getReleaseArgs) (*mcp.CallToolResult, any, error) {
-	ctx = requestContext(ctx, "get_release", req)
+	ctx = logging.RequestContext(ctx, "get_release", req)
 	project := slugArg(args.Project)
 	if project == "" {
 		return errResult(fmt.Errorf("project is required")), nil, nil
@@ -589,7 +612,7 @@ type listReleasesArgs struct {
 }
 
 func listReleasesTool(ctx context.Context, req *mcp.CallToolRequest, args listReleasesArgs) (*mcp.CallToolResult, any, error) {
-	ctx = requestContext(ctx, "list_releases", req)
+	ctx = logging.RequestContext(ctx, "list_releases", req)
 	lang, err := langArg(args.Lang)
 	if err != nil {
 		return errResult(err), nil, nil
@@ -651,7 +674,7 @@ type searchArgs struct {
 }
 
 func searchTool(ctx context.Context, req *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
-	ctx = requestContext(ctx, "search", req)
+	ctx = logging.RequestContext(ctx, "search", req)
 	q := strings.TrimSpace(args.Q)
 	if n := len([]rune(q)); n < 2 || n > 200 {
 		return errResult(fmt.Errorf("q must be 2–200 characters")), nil, nil

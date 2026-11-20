@@ -25,7 +25,6 @@ package main
 // caller would only get in the way.
 
 import (
-	"context"
 	"net"
 	"net/http"
 	"os"
@@ -33,6 +32,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/basphere/ratatosk-mcp/internal/logging"
+	"github.com/basphere/ratatosk-mcp/internal/metrics"
 )
 
 const rateWindow = time.Minute
@@ -155,7 +157,7 @@ func callerClassMiddleware(next http.Handler) http.Handler {
 				break
 			}
 		}
-		next.ServeHTTP(w, req.WithContext(context.WithValue(req.Context(), ctxKeyCallerClass, class)))
+		next.ServeHTTP(w, req.WithContext(logging.WithCallerClass(req.Context(), class)))
 	})
 }
 
@@ -166,7 +168,7 @@ func rateLimitMiddleware(rl *rateLimiter, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		ok, retry := rl.allow(callerKey(req), time.Now())
 		if !ok {
-			refusedFor(req, "rate_limited") // before the answer; with metrics on it may read up to 4 KiB of the body (metrics.go)
+			metrics.RefusedFor(req, "rate_limited") // before the answer; with metrics on it may read up to 4 KiB of the body (metrics.go)
 			w.Header().Set("Retry-After", strconv.Itoa(retry))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
