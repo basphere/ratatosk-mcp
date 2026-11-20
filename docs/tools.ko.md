@@ -2,9 +2,11 @@
 
 [English](tools.en.md) · [한국어](tools.ko.md) · [日本語](tools.ja.md)
 
-이 문서는 ratatosk-mcp 1.0이 제공하는 여섯 가지 도구([`check_stack`](#check_stack), [`check_upgrade`](#check_upgrade), [`get_release`](#get_release), [`list_releases`](#list_releases), [`search`](#search), [`list_projects`](#list_projects))의 용도와 파라미터, 실제 호출 및 응답 예시, 에이전트 질문 예시를 설명합니다. 호스팅 엔드포인트, Docker, Helm, kagent 등 서버 연결 방법은 [설치 가이드](install.ko.md)에서 다룹니다.
+이 문서는 ratatosk-mcp가 제공하는 여섯 가지 도구([`check_stack`](#check_stack), [`check_upgrade`](#check_upgrade), [`get_release`](#get_release), [`list_releases`](#list_releases), [`search`](#search), [`list_projects`](#list_projects))의 용도와 파라미터, 실제 호출 및 응답 예시, 에이전트 질문 예시를 설명합니다. 호스팅 엔드포인트, Docker, Helm, kagent 등 서버 연결 방법은 [설치 가이드](install.ko.md)에서 다룹니다.
 
-> **2026-11-03 측정 기준**: 아래 응답 예시는 ratatosk.io `/v2` API 미리 보기 환경에서 실제로 호출한 결과이며, 출력된 주소는 `https://ratatosk.io`로 표기했습니다. 릴리스 데이터는 매시간 수집되므로 호출 시점에 따라 건수나 버전 수치는 달라질 수 있지만 응답 구조는 동일합니다. 긴 응답 본문은 `…`로 생략했습니다.
+최초의 1.x 판에 없던 파라미터와 응답 필드는 설명 끝에 처음 들어온 릴리스를 `1.2.0부터.` 형식으로 표시합니다. 그 릴리스보다 이전 서버는 해당 파라미터를 거절하고 해당 필드를 보내지 않습니다. 릴리스마다 바뀐 내용은 [변경 기록](../CHANGELOG.md)을 참고합니다.
+
+> **2026-11-20 측정 기준**: 이 서버를 ratatosk.io의 `/v2` API에 연결해 2026-11-20에 실제로 호출한 결과입니다. 릴리스 데이터는 매시간 늘어나므로 지금 호출하면 수치는 달라지지만 응답 구조는 같습니다. 긴 응답은 `…`로 줄였습니다. 배열은 앞의 몇 개 항목만 남겼고, `hint`의 글은 `…`로 바꿔 적었습니다.
 
 1.0 버전은 `/v2` API를 호출합니다. 0.x 버전에 있던 `list_changes`, `changes_by_entity`, `get_matter` 도구는 해당 도구들이 호출하던 `/v1` API 종료와 함께 제거되었습니다. 1.0에서는 최근 릴리스 조회는 `list_releases`로, 특정 CVE나 설정 플래그 검색은 `search`로, 여러 브랜치에 백포트된 동일 수정 확인은 `check_stack` 및 `check_upgrade` 브리핑 응답의 `also_in` 필드로 대체합니다.
 
@@ -74,37 +76,43 @@
 
 ## check_stack 브리핑 구조
 
-`check_stack`이 기본 상세 수준(`brief`)으로 반환하는 브리핑의 필드입니다. 위치가 "컴포넌트"인 필드는 `components`의 각 원소에 있습니다. `check_upgrade`는 프로젝트 하나만 다루므로 `summary`, `releases`, `before_upgrade`, `changes`, `changes_omitted`, `gaps`를 응답 최상위에 두고, `later_for_running` 대신 `later_for_from`을 반환합니다.
+`check_stack`이 기본 상세 수준(`brief`)으로 반환하는 브리핑의 필드입니다. 위치가 "컴포넌트"인 필드는 `components`의 각 원소에 있습니다. `check_upgrade`는 단일 프로젝트를 다루므로 `summary`, `releases`, `before_upgrade`, `changes`, `changes_omitted`, `changes_more`, `later_in_range`, `excluded_on_branch`, `version_read_as`, `note`, `gaps`를 응답 최상위에 두고, `later_for_running` 대신 `later_for_from`을 반환합니다.
 
 | 필드 | 위치 | 타입 | 설명 |
 |---|---|---|---|
 | `summary` | 컴포넌트 | `object` | 범위 안의 릴리스 수인 `releases`, 변경 종류별 건수인 `counts`, 주의 건수인 `warnings`, 그리고 `distinct_advisories`를 담는 객체입니다. `counts`와 `warnings`는 범위 안 각 릴리스의 건수를 릴리스마다 더한 값이므로, 같은 수정이 여러 브랜치에 들어갔으면 릴리스마다 한 번씩 세어집니다. |
-| `distinct_advisories` | `summary` | `object` | 범위 안의 보안 변경들이 가리키는 보안 공지를 공지마다 한 번씩 센 값입니다. 전체 건수는 `total`에 담고, 등급별 건수는 `critical`, `high`, `medium`, `low`, `ungraded`에 담습니다. `ungraded`는 등급을 찾지 못한 공지 수입니다. 한 변경에 CVE 번호와 GHSA 번호가 함께 있으면 공지 하나로 봅니다. 범위 안의 변경들이 이 번호들을 서로 다르게 짝지으면 번호마다 따로 세므로, 공지 하나가 두 번 집계될 수 있습니다. 다른 변경과 충돌하지 않는 짝은 적힌 대로 인정합니다. 따라서 한 변경이 서로 다른 두 공지의 번호를 짝지었더라도 두 번호는 공지 하나로 셉니다. 공지의 등급은 해당 공지만 가리키는 변경들의 등급 가운데 가장 높은 값으로 정합니다. 그런 변경에 등급이 하나도 없거나 해당 공지만 가리키는 변경이 없으면, 다른 공지와 함께 해당 공지를 가리키는 변경들의 등급 가운데 가장 높은 값을 사용합니다. 인식하는 종류인 CVE, GHSA, GO, RUSTSEC, PYSEC의 공지 번호가 하나도 없는 보안 변경은 세지 않지만, `counts.security`에는 포함됩니다. `note` 필드에서 실행 중인 버전의 브랜치에 이미 고쳤다고 알리는 보안 변경도 세지 않습니다. 업그레이드로 보안 공지 몇 건을 고치는지 말할 때는 `warnings.critical`이 아니라 이 값을 사용합니다. |
+| `distinct_advisories` | `summary` | `object` | 범위 안의 보안 변경들이 가리키는 보안 공지를 공지마다 한 번씩 센 값입니다. 전체 건수는 `total`에 담고, 등급별 건수는 `critical`, `high`, `medium`, `low`, `ungraded`에 담습니다. `ungraded`는 등급을 찾지 못한 공지 수입니다. 한 변경에 CVE 번호와 GHSA 번호가 함께 있으면 공지 하나로 봅니다. 범위 안의 변경들이 이 번호들을 서로 다르게 짝지으면 번호마다 따로 세므로, 공지 하나가 두 번 집계될 수 있습니다. 다른 변경과 충돌하지 않는 짝은 적힌 대로 인정합니다. 따라서 한 변경이 서로 다른 두 공지의 번호를 짝지었더라도 두 번호는 공지 하나로 셉니다. 공지의 등급은 해당 공지만 가리키는 변경들의 등급 가운데 가장 높은 값으로 정합니다. 그런 변경에 등급이 하나도 없거나 해당 공지만 가리키는 변경이 없으면, 다른 공지와 함께 해당 공지를 가리키는 변경들의 등급 가운데 가장 높은 값을 사용합니다. 인식하는 종류인 CVE, GHSA, GO, RUSTSEC, PYSEC의 공지 번호가 하나도 없는 보안 변경은 세지 않지만, `counts.security`에는 포함됩니다. 실행 중인 브랜치가 실행 중인 버전 이하에서 이미 고친 보안 공지는 세지 않으며, 브리핑에 남은 변경이 그 공지를 다른 공지와 함께 가리키더라도 마찬가지입니다. 이 때문에 브리핑에서 빠진 변경은 `excluded_on_branch`에 있습니다. 업그레이드로 보안 공지 몇 건을 고치는지 말할 때는 `warnings.critical`이 아니라 이 값을 사용합니다. 1.1.0부터. |
 | `releases` | 컴포넌트 | `array` | 실행 중인 버전과 같은 태그 계열에서 실행 중인 버전 직후부터 목표 버전까지(실행 중인 버전 제외, 목표 버전 포함)에 해당하는 버전 목록. 오래된 순서 |
-| `before_upgrade` | 컴포넌트 | `array` | 범위 안에 있는 모든 릴리스의 전제 조건, 알려진 문제, 업그레이드 안내를 버전 번호와 함께 모은 목록. 주로 새 마이너 버전의 첫 릴리스에 중요한 안내가 들어 있으므로 모두 확인합니다. |
-| `changes` | 컴포넌트 | `array` | 결정이 필요한 네 종류의 변경으로, 보안 변경, 호환성 변경, 폐기 예정, 중요 수정 순서입니다. 보안 변경은 심각한 것부터 나오며, 같은 등급 안에서와 나머지 종류에서는 할 일이 적힌 변경(`action_required`, `also_required`, `stated`나 `inferred`인 `no_downgrade` 또는 `removed_in`)이 먼저 나옵니다. 그 밖의 세 종류는 `summary.counts`에 건수만 표시되며, 내용은 `get_release` 도구로 확인합니다. |
-| `changes_omitted` | 컴포넌트 | `object` | 답에 다 담지 못해 빠진 변경의 종류별 건수. 보안 변경은 심각한 것을 남기고, 같은 등급 안에서와 나머지 종류에서는 할 일이 적힌 변경을 먼저 남깁니다. 표시된 건수만큼 실제 변경이 있다는 뜻이지, 변경이 없다는 뜻이 아닙니다. 빠진 변경은 `target_version`으로 범위를 좁히거나 `get_release`로 해당 릴리스를 직접 읽어 확인합니다. |
+| `before_upgrade` | 컴포넌트 | `array` | 범위 안 모든 릴리스의 전제 조건, 알려진 문제, 업그레이드 안내를 버전 번호와 함께 모은 목록입니다. 주로 새 마이너 버전의 첫 릴리스에 중요한 안내가 들어 있으므로 모두 확인합니다. 항목마다 본문 전체가 `body`에 오며, 본문이 없으면 `null`입니다. 접혀 있던 하위 항목도 `folded`로 함께 제공됩니다. 같은 글이 여러 릴리스에 실렸으면 가장 새 릴리스에 한 번만 나오고, 나머지 릴리스는 `also_in`에 적힙니다. 확인한 컴포넌트에는 이 필드가 늘 있으며, 항목이 없으면 빈 배열 `[]`입니다. |
+| `changes` | 컴포넌트 | `array` | 결정이 필요한 네 종류의 변경으로, 보안 변경, 호환성 변경, 폐기 예정, 중요 수정 순서입니다. 종류별로 보안 변경 20건 · 호환성 변경 20건 · 폐기 예정 10건 · 중요 수정 10건까지 본문과 함께 싣습니다. 보안 변경은 심각한 것부터 나오며, 같은 등급 안에서와 나머지 종류에서는 할 일이 적힌 변경(`action_required`, `also_required`, `stated`나 `inferred`인 `no_downgrade` 또는 `removed_in`)이 먼저 나옵니다. 그 밖의 세 종류는 `summary.counts`에 건수만 표시되며, 내용은 `get_release` 도구로 확인합니다. |
+| `changes_omitted` | 컴포넌트 | `object` | `changes`에 들어가지 않은 변경의 종류별 건수입니다. 보안 변경은 등급이 높은 것부터 남기고, 같은 등급 안에서는 물론 나머지 종류에서도 할 일이 적힌 변경을 먼저 남깁니다. 같은 릴리스의 다른 변경과 같은 보안 공지를 가리키는 보안 변경도 이 건수에 들어갑니다. 종류마다 `summary.counts`는 `changes`에 든 수, `changes_omitted`, `excluded_on_branch.security`, `also_in`이 가리키는 백포트 수를 더한 값과 같습니다. 이 가운데 보안 변경 · 호환성 변경 · 폐기 예정은 빠짐없이 `changes_more`에 한 줄씩 나옵니다. |
+| `changes_more` | 컴포넌트 | `array` | `changes_omitted`가 센 변경 가운데 보안 변경 · 호환성 변경 · 폐기 예정이 한 건에 한 줄씩 모두 나옵니다. 범위가 아무리 길어도 빠지지 않습니다. 어떤 항목의 백포트는 여기에 포함되지 않고 해당 항목의 `also_in`에 버전으로 표시되며, 실행 중인 버전의 브랜치에서 이미 고쳐 제외한 변경은 `excluded_on_branch`에 있습니다. 각 줄에는 `version`, `id`, `kind`, `title`, 보안 변경에만 해당하는 `severity`, `affects`(`text`, `status`), `also_in`이 있습니다. 변경이 요구하는 내용은 `action_required: true`, `also_required: true`, `no_downgrade: true`, `removed_in`(`text`, `status`) 표시로만 제공하며, 무엇을 해야 하는지는 변경 본문에 있습니다. 같은 릴리스의 다른 변경과 같은 보안 공지를 가리키는 보안 변경도 나옵니다. 중요 수정은 `changes`의 10건을 넘으면 건수로만 세며, `kinds`에 `important_fixes`를 지정하면 중요 수정도 한 줄씩 나옵니다. 한 줄의 본문과 근거는 `get_release(project, version, changes: [id])`로 읽습니다. 1.2.0부터. |
 | `affects` | 변경 항목 | `object` | 변경이 누구에게 해당하는지. 값이 `stated`나 `inferred`이면 적힌 조건이 내 환경 설정과 맞을 때만 해당하므로 조건을 확인한 뒤 보고합니다. 값이 `not_stated`이면 릴리스 노트에서 대상을 좁히지 않은 것입니다. 제목이 특정 기능이나 구성을 가리키지 않으면 모든 설치에 해당한다고 봅니다. |
-| `also_in` | 변경 항목 | `array` | 같은 보안 공지를 고친 다른 브랜치의 릴리스 버전. 표 아래 설명 참고 |
-| `note` | 컴포넌트 | `string` | 브리핑에서 특정 항목이나 컴포넌트를 제외한 사유. 표 아래 설명 참고 |
+| `also_in` | 변경 항목 | `array` | 같은 보안 공지를 고친 다른 브랜치의 릴리스 버전. 업그레이드 전 확인 항목에 붙은 `also_in`은 같은 글이 실린 다른 릴리스를 뜻합니다. 표 아래 설명 참고 |
+| `note` | 컴포넌트 | `string` | 브리핑에서 특정 항목이나 컴포넌트를 제외했거나 처리하지 못한 사유. 표 아래 설명 참고 |
 | `gaps` | 컴포넌트 | `array` | 이웃한 릴리스 사이에 버전 번호가 건너뛴 구간(예: `v3.5.32` 다음이 `v3.6.7`인 경우). 그 사이에 분석되지 않은 릴리스가 있을 수 있으므로 해당 구간은 릴리스 노트를 직접 확인합니다. |
 | `releases_not_read` | 컴포넌트 | `array` | 범위 안에 속하지만 상세 문서를 읽지 못한 버전 목록. 한 번 호출할 때 프로젝트마다 최근 릴리스를 최대 60개까지 읽습니다. |
 | `later_for_running` | 컴포넌트 | `array` | 실행 중인 버전이 발행된 뒤 그 릴리스에 기록된 일. `advisory_after_release`는 그 버전이 이미 고친 취약점에 대해 뒤에 공개된 보안 공지로, 그 버전이 취약하다는 뜻이 아닙니다. `known_issue_fixed`와 `regression_fixed`는 그 버전에 있는 문제를 `fixed_in`에서 고쳤다는 뜻입니다. 이전 버전에서 시작된 결함은 그 버전에 기록되고 여기에는 나오지 않으므로, 목록이 비었다고 알려진 결함이 없다는 뜻은 아닙니다. |
+| `later_in_range` | 컴포넌트 | `array` | 범위 안 릴리스에 기록된 문제 중, 그 릴리스에 있던 결함이 뒤의 릴리스에서 고쳐진 내역입니다. 종류는 `regression_fixed`와 `known_issue_fixed`이며, 고쳐진 버전은 `fixed_in`에 있습니다. 예를 들어 cilium v1.20.2에서 v1.20.5로 올리는 범위에서는 v1.20.3에서 생긴 BackendTLSPolicy 결함이 v1.20.4에서 고쳐졌다는 내용이 나와 중간 버전에서 멈추면 안 되는 까닭을 알려 줍니다. 범위 안 릴리스에 붙은 `advisory_after_release`는 싣지 않습니다. 해당 릴리스가 이미 고친 취약점에 관한 보안 공지이기 때문입니다. 기록된 내용이 없으면 빈 배열 `[]`입니다. 1.2.0부터. |
+| `excluded_on_branch` | 컴포넌트 | `object` | 실행 중인 버전의 브랜치가 해당 버전 이하에서 이미 고친 보안 공지에 해당해 브리핑에서 뺀 보안 변경을 나타냅니다. `security`는 뺀 건수이고, `advisories`는 공지 번호를 한 번씩 등급이 높은 순으로 담습니다. `severity`는 뺀 변경들의 등급 가운데 가장 높은 등급입니다. 뺀 변경도 `summary.counts`와 `summary.warnings`에는 그대로 셉니다. 따라서 `warnings.critical_excluded_on_branch`는 `warnings.critical` 중 이미 고쳐서 뺀 건수이며, `critical`의 일부이지 더하는 별도의 경고가 아닙니다. 이 값은 `summary`에 있고, 해당 릴리스가 있으면 `releases`의 그 릴리스에도 있습니다. `critical`에서 이 값을 빼면 이번 업그레이드로 새로 고쳐지는 critical 건수입니다. 뺀 변경이 있을 때만 이 필드가 있습니다. 1.2.0부터. |
 | `running_version` | 컴포넌트 | `string` | 호출 시 전달한 실행 중인 버전 |
-| `target_version` | 컴포넌트 | `string` | 범위의 끝 버전. 목표 버전을 지정하지 않으면 같은 태그 계열의 최신 버전 |
+| `version_read_as` | 컴포넌트 | `string` | 넘긴 버전 뒤에 이미지 빌드 꼬리가 붙어 있으면 꼬리를 떼고 읽은 버전입니다. 예를 들어 `v1.37.6-1789133542-<commit>`은 `v1.37.6`으로 읽습니다. 꼬리가 없으면 이 필드는 없습니다. `check_upgrade`도 `from`을 같은 방식으로 읽습니다. 1.2.0부터. |
+| `target_version` | 컴포넌트 | `string` | 범위가 끝나는 버전입니다. 넘긴 목표 버전, `same_minor`를 켰을 때 실행 중인 버전의 마이너의 가장 새 릴리스, 또는 그 외에는 같은 태그 계열의 가장 새 릴리스 중 하나입니다. 태그 계열은 마이너 버전이 아니라 태그 접두사(`flagd/`, `lts-`)로 갈립니다. 따라서 v1.36.5를 넘기면 v1.37.x까지 봅니다. |
 | `version_source` | 컴포넌트 | `string` | 호출 시 전달한 값 그대로 |
 | `tracked` | 컴포넌트 | `boolean` | ratatosk가 모르는 슬러그이면 `false`(`list_projects`에서 슬러그를 확인하고, 목록에 없으면 다루지 않는 프로젝트). 다루지만 분석된 릴리스가 아직 없으면 `true`. 그 밖에는 생략 |
 | `releases_full` | 컴포넌트 | `array` | `detail`이 `full`일 때만 포함. 범위 안 릴리스의 원본으로, 컴포넌트마다 최대 15개, 한 번 호출에 약 2MB까지 |
 | `releases_full_omitted` | 컴포넌트 | `integer` | `releases_full`에 담지 못한 릴리스 수 |
 | `could_not_check` | 응답 최상위 | `array` | 업그레이드 경로를 확인하지 못한 컴포넌트와 그 사유. ratatosk가 모르는 프로젝트 이름(`tracked: false`. `list_projects`에도 없으면 안전하다는 뜻이 아니라 수집 대상이 아니라는 뜻입니다), 해석할 수 없는 버전 문자열, 수집된 릴리스가 없는 태그 계열, 같은 태그 계열에서 분석된 모든 릴리스보다 높은 실행 중인 버전이 여기에 표시됩니다. |
 | `privacy` | 응답 최상위 | `string` | 이 호출에서 버전 정보가 전달된 범위를 알리는 영어 문장 |
-| `hint` | 응답 최상위 | `string` | 브리핑 읽는 법을 요약한 영어 안내문. `brief`일 때만 포함 |
+| `hint` | 응답 최상위 | `string` | 브리핑 읽는 법을 요약한 영어 안내문. `brief`일 때만 포함하며 최대 2,000자입니다. |
 
-브리핑은 설명(`body`), 임시 조치(`workaround.text`), 결함 최초 발생 버전(`regression_since.text`)의 글을 각각 160자까지만 포함합니다. 잘린 글은 끝에 `…`가 붙습니다. 전체 글은 `get_release` 도구로 해당 릴리스를 조회하면 확인할 수 있습니다.
+브리핑은 변경의 `body` · `workaround.text` · `regression_since.text`를 160자까지만 싣습니다. 잘린 글은 `…`로 끝납니다. 업그레이드 전 확인 항목은 자르지 않습니다. 브리핑에는 근거 인용이 없습니다. 보고할 항목의 전체 글과 근거는 `get_release(project, version, changes: [id, …])`로 읽습니다.
+
+**크기**: 브리핑은 크기에 맞춰 자르지 않습니다. 범위 안의 보안 변경 · 호환성 변경 · 폐기 예정은 모두 항목이나 한 줄로 실립니다. 범위가 길거나 컴포넌트가 많으면 답이 길어집니다. 2026-11-20 실측으로 마이너 버전이 여럿 뒤처진 컴포넌트 다섯을 확인했을 때 약 30만 자였습니다. 짧게 받으려면 `kinds`로 종류를 한 번에 하나씩 요청하거나 컴포넌트 수를 줄이고, `target_version` 또는 `same_minor`를 지정합니다.
 
 **`also_in`**: 프로젝트는 보안 수정 하나를 여러 브랜치에 백포트할 수 있습니다. 예를 들어 같은 CVE의 수정이 v2.2.4와 v2.3.1에 들어갈 수 있습니다. 그러면 범위에 같은 보안 공지를 고친 변경이 여러 번 나타납니다. 답에는 가장 이른 릴리스인 v2.2.4의 변경만 표시합니다. 다른 브랜치의 릴리스인 v2.3.1은 그 변경의 `also_in`에 버전만 표시합니다. 같은 브랜치의 나중 릴리스인 v2.2.6이 같은 보안 공지를 다시 고친 경우에는 별도 변경으로 표시합니다. 이 경우 첫 수정이 불완전했습니다.
 
-**`note`**: 실행 중인 버전의 브랜치에서 해당 버전 이하에 이미 수정된 보안 변경(단, 같은 브랜치의 이후 릴리스에서 같은 보안 공지를 다시 수정한 변경은 제외하지 않음), 실행 중인 버전 이하로 지정된 목표 버전, 수집된 가장 오래된 릴리스보다 이전인 실행 중인 버전, 같은 태그 계열에서 분석된 모든 릴리스보다 높은 실행 중인 버전(이 컴포넌트는 `could_not_check`에도 표시), 추측성 값으로 보이는 `version_source` 등이 있을 때 그 이유를 설명합니다.
+**`note`**: `check_stack`에서는 다음 경우에 `note`가 붙습니다. 실행 중인 버전의 브랜치에서 해당 버전 이하에 이미 수정된 보안 변경(단, 같은 브랜치의 이후 릴리스에서 같은 보안 공지를 다시 수정한 변경은 제외하지 않음), 실행 중인 버전 이하로 지정된 목표 버전, 수집된 가장 오래된 릴리스보다 이전인 실행 중인 버전, 같은 태그 계열에서 분석된 모든 릴리스보다 높은 실행 중인 버전(이 컴포넌트는 `could_not_check`에도 표시), 추측성 값으로 보이는 `version_source` 등이 있을 때 그 이유를 설명합니다. 뺀 공지가 무엇인지는 `excluded_on_branch`에 있습니다. 실행 중인 브랜치에서 실행 중인 버전 이하인 릴리스 가운데 읽지 못한 것이 있으면 `note`가 붙습니다. 한 프로젝트에서 최신 60개 릴리스만 읽으므로, 그 릴리스들이 고친 보안 변경은 걸러지지 않고 브리핑에 그대로 남습니다. `same_minor`를 켰는데 실행 중인 버전의 마이너에 더 새 릴리스가 없는 경우에도 `note`가 붙습니다. `check_upgrade`의 `note`는 응답 최상위에 있으며 하지 못한 일을 말합니다. `from` 이하 릴리스를 읽지 못한 경우에는 아무것도 빼지 않고, `from`에 붙은 빌드 꼬리를 떼어 읽지 못한 경우에도 `note`가 붙습니다. `same_minor`를 켰는데 해당 마이너에 더 새 릴리스가 없는 경우도 알립니다. `check_upgrade`가 뺀 보안 변경은 `note`가 아니라 `excluded_on_branch`에만 나옵니다.
 
 ## check_stack
 
@@ -117,6 +125,7 @@
 | `components` | `array` | 예 | 없음 | 확인할 컴포넌트 목록(최대 100개). 각 원소의 필드는 아래 표 참고 |
 | `detail` | `string` | 아니요 | `brief` | 응답 상세 수준. `brief`는 핵심 변경만 요약하고, `full`은 범위 안의 릴리스 원본을 최대 15개까지 포함 |
 | `lang` | `string` | 아니요 | `en` | 텍스트 필드의 응답 언어(`en` · `ko` · `ja`) |
+| `kinds` | `array` | 아니요 | 모든 종류 | 지정한 종류의 변경만 싣는 최상위 파라미터로, 모든 컴포넌트에 적용. `brief`에서는 `security`, `breaking`, `deprecations`, `important_fixes`를 고를 수 있으며, 나머지 세 종류는 브리핑이 `summary.counts`에서 건수로만 세므로 지정하면 오류가 나고 읽을 위치를 알려 줍니다. `full`에서는 일곱 종류 모두 고를 수 있으며 접어 둔 줄(`folded`)은 빠집니다. `summary`는 범위 전체의 수로 좁혀지지 않습니다. 1.2.0부터. |
 
 `components`의 각 원소는 아래 필드로 구성됩니다.
 
@@ -124,7 +133,8 @@
 |---|---|---|---|---|
 | `project` | `string` | 예 | 없음 | `list_projects`의 슬러그. 이미지 별칭도 인식해 슬러그로 변환 |
 | `version` | `string` | 예 | 없음 | 실행 중인 버전. 발행된 표기 그대로 입력하며 태그 계열 접두사도 포함(예: `flagd/v0.16.1`) |
-| `target_version` | `string` | 아니요 | 같은 태그 계열의 최신 버전 | 목표 버전. `version`보다 높을 때만 범위를 제한 |
+| `target_version` | `string` | 아니요 | 같은 태그 계열의 최신 버전 | 목표 버전. `version`보다 높을 때만 범위를 제한합니다. 태그 계열은 마이너 버전이 아니라 태그 접두사(`flagd/`, `lts-`)로 갈립니다. 목표를 주지 않으면 v1.36.5는 v1.37.x까지 봅니다. |
+| `same_minor` | `boolean` | 아니요 | `false` | `true`이면 실행 중인 버전의 마이너의 가장 새 릴리스에서 범위를 끊습니다(v1.36.5면 가장 새 v1.36.x까지). `target_version`과 함께 쓸 수 없습니다. 1.2.0부터. |
 | `version_source` | `string` | 아니요 | 없음 | 버전을 확인한 위치. 응답에도 같은 값이 반환 |
 
 ### 호출 예시
@@ -142,30 +152,32 @@
       "project": "etcd",
       "running_version": "v3.5.30",
       "version_source": "user stated",
-      "target_version": "v3.6.13",
-      "note": "4 security change(s) in range were excluded: their advisories are already fixed at or below v3.5.30 on your branch",
+      "target_version": "v3.7.4",
+      "note": "5 security change(s) in range were excluded: their advisories are already fixed at or below v3.5.30 on your branch",
       "summary": {
-        "releases": 9,
+        "releases": 22,
+        "distinct_advisories": {
+          "total": 25,
+          "critical": 0,
+          "high": 2,
+          "medium": 1,
+          "low": 0,
+          "ungraded": 22
+        },
         "counts": {
-          "breaking": 3,
-          "dependency_updates": 9,
-          "deprecations": 1,
-          "enhancements": 6,
-          "important_fixes": 10,
-          "other": 4,
-          "security": 14
+          "breaking": 22,
+          "dependency_updates": 25,
+          "deprecations": 2,
+          "enhancements": 7,
+          "important_fixes": 27,
+          "other": 45,
+          "security": 56
         },
         "warnings": {
           "critical": 0,
           "no_downgrade": 0
         }
       },
-      "gaps": [
-        {
-          "after": "v3.5.32",
-          "before": "v3.6.7"
-        }
-      ],
       "releases": [
         {
           "version": "v3.5.31",
@@ -181,58 +193,94 @@
             "security": 1
           }
         },
-        {
-          "version": "v3.5.32",
-          "released_at": "2026-07-01T20:32:19Z",
-          "url": "https://ratatosk.io/en/releases/etcd/v3.5.32",
-          "counts": {
-            "breaking": 1,
-            "dependency_updates": 1,
-            "deprecations": 0,
-            "enhancements": 2,
-            "important_fixes": 1,
-            "other": 0,
-            "security": 3
-          }
-        },
         "…"
       ],
       "before_upgrade": [
         {
-          "version": "v3.5.31",
+          "version": "v3.5.36",
           "section": "upgrade_guide",
-          "id": "etcd@v3.5.31#6c4bd81c",
-          "title": "Full change list and upgrade guidance"
-        },
-        {
-          "version": "v3.5.32",
-          "section": "upgrade_guide",
-          "id": "etcd@v3.5.32#6c4bd81c",
-          "title": "Upgrade guidance for potential breaking changes"
+          "id": "etcd@v3.5.36#6c4bd81c",
+          "title": "Changelog of v3.5.36 changes and upgrade guidance",
+          "body": null,
+          "also_in": [
+            "v3.5.31",
+            "v3.5.32",
+            "v3.5.33",
+            "…"
+          ]
         },
         "…"
       ],
       "changes": [
         {
-          "version": "v3.5.32",
-          "id": "etcd@v3.5.32#4aa67035",
+          "version": "v3.5.33",
+          "id": "etcd@v3.5.33#cbcb276f",
           "kind": "security",
-          "title": "gRPC client certificate revocation checks enforced",
-          "body": "A client with a revoked certificate could authenticate over gRPC even though the HTTP endpoint rejected it. The gRPC listener now rejects peers whose certificat…",
-          "severity": null,
+          "title": "Watch API authorization bypass fixed",
+          "body": "A user with READ permission on one key could use `clientv3.WithFromKey()` in a Watch request to receive events for every key at or after it, not just that key.",
+          "severity": "high",
           "advisories": [
-            "GHSA-3wh4-j44w-pg92"
+            "CVE-2026-73499",
+            "GHSA-xg4h-6gfc-h4m8"
           ],
           "affects": {
-            "text": "split HTTP and gRPC client endpoints using `--listen-client-http-urls` with `--client-crl-file` configured",
+            "text": "authenticated clusters with exact-key READ grants",
             "status": "stated"
           },
           "workaround": {
-            "text": "If upgrading is not immediately possible, reduce exposure by restricting network access to etcd client ports using firewall rules or network policy so that only…",
+            "text": "Audit READ grants and revoke or tighten grants that should not permit full read access; restrict access to etcd's client (gRPC) port using firewall rules or net…",
             "status": "stated"
+          },
+          "also_in": [
+            "v3.6.14",
+            "v3.7.1"
+          ]
+        },
+        "…"
+      ],
+      "changes_omitted": {
+        "breaking": 2,
+        "important_fixes": 17,
+        "security": 15
+      },
+      "changes_more": [
+        {
+          "version": "v3.5.33",
+          "id": "etcd@v3.5.33#d2bfd54f-c40cb2",
+          "kind": "security",
+          "title": "Infinite loop in `norm.Iter` on invalid UTF-8 fixed",
+          "severity": null,
+          "affects": {
+            "text": "code using `golang.org/x/text` `norm.Iter`",
+            "status": "inferred"
           }
         },
         "…"
+      ],
+      "later_in_range": [],
+      "excluded_on_branch": {
+        "security": 5,
+        "advisories": [
+          {
+            "id": "CVE-2026-33413",
+            "severity": "high"
+          },
+          {
+            "id": "GHSA-q8m4-xhhv-38mg",
+            "severity": "high"
+          },
+          {
+            "id": "CVE-2026-33343",
+            "severity": "low"
+          },
+          "…"
+        ]
+      },
+      "gaps": [
+        {
+          "after": "v3.5.36",
+          "before": "v3.6.7"
+        }
       ]
     },
     "…"
@@ -244,8 +292,8 @@
       "reason": "unknown project name — not a slug ratatosk knows: check the slug with list_projects (the project may be listed under another slug); if it is not listed, ratatosk does NOT track it, so no changes here means no coverage, not safety"
     }
   ],
-  "privacy": "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)",
-  "hint": "…"
+  "hint": "…",
+  "privacy": "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)"
 }
 ```
 
@@ -259,7 +307,7 @@
 
 ## check_upgrade
 
-단일 프로젝트의 두 버전 간 업그레이드 내역을 원격 서버의 `/v2/upgrade` 엔드포인트로 계산해 `check_stack`과 같은 형식으로 반환합니다. `from`과 `to` 버전이 원격 서버로 전송되므로, 실행 중인 버전을 외부로 보내지 않으려면 `check_stack`을 사용합니다. 버전 정보가 민감하지 않거나 아직 배포하지 않은 버전 사이의 업그레이드를 계획할 때 사용합니다.
+단일 프로젝트의 두 버전 간 업그레이드 내역을 원격 서버의 `/v2/upgrade` 엔드포인트로 계산해 `check_stack`과 같은 형식으로 반환합니다. `from`과 `to` 버전이 원격 서버로 전송되므로, 실행 중인 버전을 외부로 보내지 않으려면 `check_stack`을 사용합니다. 버전 정보가 민감하지 않거나 아직 배포하지 않은 버전 사이의 업그레이드를 계획할 때 사용합니다. `check_stack`처럼 `from`의 브랜치가 `from` 이하에서 이미 고친 보안 공지에 해당하는 보안 변경은 브리핑에서 제외하고 `excluded_on_branch`에 셉니다. 이를 확인하기 위해 해당 프로젝트의 릴리스 목록과 `from` 브랜치의 `from` 이하 릴리스를 읽습니다. 이 릴리스들을 읽지 못하면 아무것도 제외하지 않으며, 최상위 `note`가 그 사실을 알립니다. `detail: "full"`에서는 빌드 꼬리가 붙었거나 `same_minor`를 켰을 때만 릴리스 목록을 읽습니다. `same_minor`를 켰는데 해당 마이너에 더 새 릴리스가 없으면 범위가 비고 `note`가 그 사실을 알립니다. 이는 `brief`와 `full` 모두에 해당합니다. `from`에 붙은 이미지 빌드 꼬리는 `check_stack`처럼 떼고 읽으며, 답의 `from`은 넘긴 그대로 둡니다. 읽은 버전은 `version_read_as`에 표시합니다.
 
 ### 파라미터
 
@@ -267,8 +315,10 @@
 |---|---|---|---|---|
 | `project` | `string` | 예 | 없음 | 프로젝트 슬러그 |
 | `from` | `string` | 예 | 없음 | 기준이 되는 실행 중인 버전(조회 결과에서는 제외) |
-| `to` | `string` | 아니요 | 같은 태그 계열의 최신 버전 | 업그레이드 목표 버전(조회 결과에 포함) |
+| `to` | `string` | 아니요 | 같은 태그 계열의 최신 버전 | 업그레이드 목표 버전(조회 결과에 포함). 태그 계열은 마이너 버전이 아니라 태그 접두사로 갈립니다. `to`를 주지 않으면 v1.36.5는 v1.37.x까지 갑니다. |
+| `same_minor` | `boolean` | 아니요 | `false` | `true`이면 `from`의 마이너에서 가장 새 릴리스까지만 범위에 포함합니다. `to`와 함께 쓸 수 없습니다. 1.2.0부터. |
 | `detail` | `string` | 아니요 | `brief` | 응답 상세 수준(`full`은 서버 응답 전체를 그대로 반환) |
+| `kinds` | `array` | 아니요 | 모든 종류 | 지정한 종류의 변경만 반환합니다. 쓰는 방법은 `check_stack`의 `kinds`와 같습니다. 1.2.0부터. |
 | `lang` | `string` | 아니요 | `en` | 텍스트 필드의 응답 언어(`en` · `ko` · `ja`) |
 
 ### 호출 예시
@@ -281,33 +331,98 @@
 
 ```json
 {
-  "project": "etcd",
-  "from": "v3.5.30",
-  "to": "v3.6.13",
-  "summary": {
-    "releases": 9,
-    "counts": {
-      "breaking": 3,
-      "dependency_updates": 9,
-      "deprecations": 1,
-      "enhancements": 6,
-      "important_fixes": 10,
-      "other": 4,
-      "security": 14
+  "before_upgrade": [
+    {
+      "version": "v3.5.36",
+      "section": "upgrade_guide",
+      "id": "etcd@v3.5.36#6c4bd81c",
+      "title": "Changelog of v3.5.36 changes and upgrade guidance",
+      "body": null,
+      "also_in": [
+        "v3.5.31",
+        "v3.5.32",
+        "v3.5.33",
+        "…"
+      ]
     },
-    "warnings": {
-      "critical": 0,
-      "no_downgrade": 0
-    }
+    "…"
+  ],
+  "changes": [
+    {
+      "version": "v3.5.33",
+      "id": "etcd@v3.5.33#cbcb276f",
+      "kind": "security",
+      "title": "Watch API authorization bypass fixed",
+      "body": "A user with READ permission on one key could use `clientv3.WithFromKey()` in a Watch request to receive events for every key at or after it, not just that key.",
+      "severity": "high",
+      "advisories": [
+        "CVE-2026-73499",
+        "GHSA-xg4h-6gfc-h4m8"
+      ],
+      "affects": {
+        "text": "authenticated clusters with exact-key READ grants",
+        "status": "stated"
+      },
+      "workaround": {
+        "text": "Audit READ grants and revoke or tighten grants that should not permit full read access; restrict access to etcd's client (gRPC) port using firewall rules or net…",
+        "status": "stated"
+      },
+      "also_in": [
+        "v3.6.14",
+        "v3.7.1"
+      ]
+    },
+    "…"
+  ],
+  "changes_more": [
+    {
+      "version": "v3.5.33",
+      "id": "etcd@v3.5.33#d2bfd54f-c40cb2",
+      "kind": "security",
+      "title": "Infinite loop in `norm.Iter` on invalid UTF-8 fixed",
+      "severity": null,
+      "affects": {
+        "text": "code using `golang.org/x/text` `norm.Iter`",
+        "status": "inferred"
+      }
+    },
+    "…"
+  ],
+  "changes_omitted": {
+    "breaking": 2,
+    "important_fixes": 17,
+    "security": 15
   },
+  "excluded_on_branch": {
+    "security": 5,
+    "advisories": [
+      {
+        "id": "CVE-2026-33413",
+        "severity": "high"
+      },
+      {
+        "id": "GHSA-q8m4-xhhv-38mg",
+        "severity": "high"
+      },
+      {
+        "id": "CVE-2026-33343",
+        "severity": "low"
+      },
+      "…"
+    ]
+  },
+  "from": "v3.5.30",
   "gaps": [
     {
-      "after": "v3.5.32",
+      "after": "v3.5.36",
       "before": "v3.6.7"
     }
   ],
+  "hint": "…",
   "later_for_from": [],
+  "later_in_range": [],
   "privacy": "from and to were sent to the server (/v2/upgrade); use check_stack to keep versions on your side",
+  "project": "etcd",
   "releases": [
     {
       "version": "v3.5.31",
@@ -323,60 +438,33 @@
         "security": 1
       }
     },
-    {
-      "version": "v3.5.32",
-      "released_at": "2026-07-01T20:32:19Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.5.32",
-      "counts": {
-        "breaking": 1,
-        "dependency_updates": 1,
-        "deprecations": 0,
-        "enhancements": 2,
-        "important_fixes": 1,
-        "other": 0,
-        "security": 3
-      }
-    },
     "…"
   ],
-  "before_upgrade": [
-    {
-      "version": "v3.5.31",
-      "section": "upgrade_guide",
-      "id": "etcd@v3.5.31#6c4bd81c",
-      "title": "Full change list and upgrade guidance"
+  "summary": {
+    "releases": 22,
+    "distinct_advisories": {
+      "total": 25,
+      "critical": 0,
+      "high": 2,
+      "medium": 1,
+      "low": 0,
+      "ungraded": 22
     },
-    {
-      "version": "v3.5.32",
-      "section": "upgrade_guide",
-      "id": "etcd@v3.5.32#6c4bd81c",
-      "title": "Upgrade guidance for potential breaking changes"
+    "counts": {
+      "breaking": 22,
+      "dependency_updates": 25,
+      "deprecations": 2,
+      "enhancements": 7,
+      "important_fixes": 27,
+      "other": 45,
+      "security": 56
     },
-    "…"
-  ],
-  "changes": [
-    {
-      "version": "v3.6.9",
-      "id": "etcd@v3.6.9#73465b78",
-      "kind": "security",
-      "title": "etcd API authorization bypass fixed",
-      "body": "Before this release, unauthorized clients could call `MemberList`, `Alarm`, Lease APIs, and compaction, potentially exposing cluster topology, disrupting operat…",
-      "severity": "high",
-      "advisories": [
-        "CVE-2026-33413",
-        "GHSA-q8m4-xhhv-38mg"
-      ],
-      "affects": {
-        "text": "etcd clusters with authentication enabled and gRPC access exposed to untrusted or partially trusted clients",
-        "status": "stated"
-      },
-      "workaround": {
-        "text": "If upgrading is not immediately possible, reduce exposure by treating the affected RPCs as unauthenticated in practice: restrict network access to etcd server p…",
-        "status": "stated"
-      }
-    },
-    "…"
-  ]
+    "warnings": {
+      "critical": 0,
+      "no_downgrade": 0
+    }
+  },
+  "to": "v3.7.4"
 }
 ```
 
@@ -384,13 +472,19 @@
 
 단일 릴리스의 전체 데이터를 위에 설명한 릴리스 데이터 구조로 반환합니다. `version`을 생략하면 최신 릴리스를 반환하며, 존재하지 않는 버전을 입력하면 해당 프로젝트의 최근 버전 목록을 담은 오류를 반환합니다.
 
+릴리스 하나의 데이터가 매우 길 수 있습니다. 실측으로 cilium v1.20.0은 약 758,000자에 변경 1,094건이었습니다. 일부만 읽어도 된다면 필요한 항목만 지정합니다. `kinds`에는 읽을 변경 종류를 지정할 수 있습니다. 결정이 필요한 변경만 보려면 `["security", "breaking", "deprecations", "important_fixes"]`를 사용합니다. `changes`에는 변경 id를 최대 50개까지 지정할 수 있으며, 브리핑의 `changes` · `changes_more` · `before_upgrade`에 나온 id를 사용할 수 있습니다. 지정한 변경과 업그레이드 전 확인 항목만 본문 · 근거와 함께 반환하고, 해당 릴리스에 없는 id는 `not_found`에 적습니다.
+
+`version` 없이 `changes`만 지정하면 id가 가리키는 릴리스들을 읽습니다(최대 10개). 이때 응답은 `{project, releases: [{version, url, release_notes_url, changes, before_upgrade}], not_found}` 형식이며, `before_upgrade`는 id가 업그레이드 전 확인 항목을 가리킬 때만 있습니다. 접어 둔 줄(`folded`)은 모두 제외합니다. `changes`를 지정하면 지정하지 않은 업그레이드 전 확인 항목도 제외합니다. `kinds`와 `changes`는 함께 쓸 수 없습니다.
+
 ### 파라미터
 
 | 파라미터 | 타입 | 필수 | 기본값 | 설명 |
 |---|---|---|---|---|
 | `project` | `string` | 예 | 없음 | 프로젝트 슬러그 |
-| `version` | `string` | 아니요 | 최신 릴리스 | 발행된 표기 그대로 입력합니다. 앞에 `v`를 붙여도 되고 생략해도 됩니다. |
+| `version` | `string` | 아니요 | 최신 릴리스 | 발행된 표기 그대로 입력합니다. 앞에 `v`를 붙여도 되고 생략해도 됩니다. `changes`를 주고 `version`을 생략하면 id가 가리키는 릴리스를 읽습니다. |
 | `lang` | `string` | 아니요 | `en` | 텍스트 필드의 응답 언어(`en` · `ko` · `ja`, 원문 근거 인용구는 번역하지 않음) |
+| `kinds` | `array` | 아니요 | 모든 종류 | 지정한 종류의 변경만 반환합니다. 이때 `folded`는 제외합니다. 1.2.0부터. |
+| `changes` | `array` | 아니요 | 모든 변경 | 변경 또는 업그레이드 전 확인 항목의 id를 최대 50개까지 지정합니다. 지정한 항목만 반환하고, 찾지 못한 id는 `not_found`에 적습니다. `version`이 없으면 id가 가리키는 릴리스들을 읽습니다(최대 10개). `kinds`와 함께 쓸 수 없습니다. 1.2.0부터. |
 
 ### 호출 예시
 
@@ -445,17 +539,19 @@
     {
       "id": "etcd@v3.5.32#4aa67035",
       "kind": "security",
-      "title": "gRPC client certificate revocation checks enforced",
-      "body": "A client with a revoked certificate could authenticate over gRPC even though the HTTP endpoint rejected it. The gRPC listener now rejects peers whose certificate serial number appears in the configured CRL.",
-      "severity": null,
+      "title": "gRPC client certificate revocation enforcement fixed",
+      "body": "Before this release, a certificate listed in the CRL was rejected over HTTP but could still authenticate over gRPC. The gRPC listener now rejects clients whose certificate serial number is listed in the CRL.",
+      "severity": "medium",
       "advisories": [
+        "CVE-2026-59818",
         "GHSA-3wh4-j44w-pg92"
       ],
       "affects": {
-        "text": "split HTTP and gRPC client endpoints using `--listen-client-http-urls` with `--client-crl-file` configured",
+        "text": "Split HTTP and gRPC client endpoints configured with `--listen-client-http-urls` and `--client-crl-file`",
         "status": "stated"
       },
       "also_required": null,
+      "no_downgrade": null,
       "security_unclear": false,
       "silent_failure": false,
       "workaround": {
@@ -480,8 +576,7 @@
   ],
   "folded": {
     "dependency_updates_without_security": [
-      "- Compile binaries using [go 1.25.11](https://github.com/etcd-io/etcd/pull/21893)",
-      "…"
+      "- Compile binaries using [go 1.25.11](https://github.com/etcd-io/etcd/pull/21893)"
     ],
     "already_in_earlier_release": []
   },
@@ -518,54 +613,34 @@
     {
       "project": "etcd",
       "name": "etcd",
-      "version": "v3.6.13",
-      "released_at": "2026-07-01T20:43:27Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.6.13",
-      "counts": {
-        "security": 3,
-        "breaking": 0,
-        "deprecations": 0,
-        "important_fixes": 1,
-        "enhancements": 1,
-        "dependency_updates": 1,
-        "other": 0
-      },
-      "warnings": {
-        "critical": 0,
-        "no_downgrade": 0
-      }
-    },
-    {
-      "project": "etcd",
-      "name": "etcd",
-      "version": "v3.5.32",
-      "released_at": "2026-07-01T20:32:19Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.5.32",
-      "counts": {
-        "security": 3,
-        "breaking": 1,
-        "deprecations": 0,
-        "important_fixes": 1,
-        "enhancements": 2,
-        "dependency_updates": 1,
-        "other": 0
-      },
-      "warnings": {
-        "critical": 0,
-        "no_downgrade": 0
-      }
-    },
-    {
-      "project": "etcd",
-      "name": "etcd",
-      "version": "v3.6.12",
-      "released_at": "2026-06-01T20:59:07Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.6.12",
+      "version": "v3.7.4",
+      "released_at": "2026-11-19T00:06:43Z",
+      "url": "https://ratatosk.io/en/releases/etcd/v3.7.4",
       "counts": {
         "security": 0,
-        "breaking": 0,
+        "breaking": 1,
         "deprecations": 0,
         "important_fixes": 2,
+        "enhancements": 0,
+        "dependency_updates": 0,
+        "other": 6
+      },
+      "warnings": {
+        "critical": 0,
+        "no_downgrade": 0
+      }
+    },
+    {
+      "project": "etcd",
+      "name": "etcd",
+      "version": "v3.6.17",
+      "released_at": "2026-11-18T23:03:50Z",
+      "url": "https://ratatosk.io/en/releases/etcd/v3.6.17",
+      "counts": {
+        "security": 1,
+        "breaking": 0,
+        "deprecations": 0,
+        "important_fixes": 1,
         "enhancements": 0,
         "dependency_updates": 1,
         "other": 1
@@ -574,9 +649,10 @@
         "critical": 0,
         "no_downgrade": 0
       }
-    }
+    },
+    "…"
   ],
-  "next_before": "2026-06-01T20:59:07Z"
+  "next_before": "2026-11-18T20:45:15Z"
 }
 ```
 
@@ -590,6 +666,7 @@
 |---|---|---|---|---|
 | `q` | `string` | 예 | 없음 | 검색어(2~200자) |
 | `lang` | `string` | 아니요 | `en` | 텍스트 필드의 응답 언어(`en` · `ko` · `ja`) |
+| `project` | `string` | 아니요 | 모든 프로젝트 | 지정한 프로젝트의 릴리스만 검색하는 필터로, 결과의 세 배열 모두에 적용됩니다. 1.2.0부터. |
 
 ### 결과 필드
 
@@ -598,8 +675,11 @@
 | `in_analysis` | `array` | 정리된 변경이나 업그레이드 전 확인 항목 또는 프로젝트 이름·버전(`matched.kind: "release"`)이 일치한 릴리스 |
 | `in_release_notes` | `array` | 릴리스 노트 원문이 일치한 릴리스 |
 | `in_linked_documents` | `array` | 노트가 링크한 문서가 일치한 릴리스 |
+| `matches` | `array` | 항목이 맞아서 찾은 `in_analysis` 릴리스에 붙으며, 해당 릴리스에서 `q`와 맞는 항목을 모두 담습니다. 항목마다 `id`, `kind`, `title`이 있고, 업그레이드 전 확인 항목이면 `kind`는 `before_upgrade`입니다. 최대 20개까지 나오며, `matched`는 그중 첫 항목만 가리킵니다. 이런 릴리스 가운데 처음 8개에만 붙습니다. 접어 둔 의존성 줄이 맞아 찾은 릴리스(`matched`의 종류가 `dependency_updates`이고 제목이 없는 경우)에는 늘어놓을 항목이 없어 `matches`가 없습니다. 1.2.0부터. |
+| `matches_omitted` | `integer` | 해당 릴리스에서 20개를 넘어 더 맞은 항목 수입니다. 1.2.0부터. |
+| `matches_not_computed` | `integer` | 응답 최상위에 있으며, 항목이 맞아 찾은 `in_analysis` 릴리스 중 `matches`가 붙지 않은 수입니다. 한 번 호출에 최대 8개 릴리스만 읽거나 릴리스를 읽지 못하면 이 값에 셉니다. `project`로 범위를 좁히면 그 제한에 걸린 릴리스까지 도달할 수 있습니다. 1.2.0부터. |
 
-`in_analysis` 배열에서는 프로젝트 이름이나 버전이 검색어와 일치한 릴리스(`matched.kind`가 `"release"`인 결과)가 먼저 나오고, 변경 항목이 일치한 릴리스가 그다음에 나오며, 각 그룹은 최근에 발행된 릴리스부터 정렬됩니다. `in_release_notes`와 `in_linked_documents` 배열은 최근에 발행된 릴리스부터 정렬됩니다. `in_analysis`는 200건, `in_release_notes`와 `in_linked_documents`는 각각 100건까지 반환합니다. 상한을 넘는 결과가 더 있어도 응답에는 그 사실이 표시되지 않습니다. 어느 배열의 결과 수가 상한과 같으면 검색어(`q`)를 더 구체적으로 입력합니다.
+`in_analysis` 배열에서는 프로젝트 이름이나 버전이 검색어와 일치한 릴리스(`matched.kind`가 `"release"`인 결과)가 먼저 나오고, 변경 항목이 일치한 릴리스가 그다음에 나오며, 각 그룹은 최근에 발행된 릴리스부터 정렬됩니다. `in_release_notes`와 `in_linked_documents` 배열은 최근에 발행된 릴리스부터 정렬됩니다. `in_analysis`는 200건, `in_release_notes`와 `in_linked_documents`는 각각 100건까지 반환합니다. 상한을 넘는 결과가 더 있어도 응답에는 그 사실이 표시되지 않습니다. 어느 배열의 결과 수가 상한과 같으면 검색어(`q`)를 더 구체적으로 입력합니다. `project`는 서버가 이미 상한에서 자른 배열에 적용되므로 배열이 길면 `q`도 함께 좁힙니다. `matches`는 릴리스를 `lang` 언어로 읽습니다. 제목과 본문은 해당 언어로 나오고, 근거 인용과 보안 공지 번호는 발행된 그대로입니다. `matched`가 가리킨 항목은 늘 `matches` 안에 있습니다. 항목의 본문과 근거는 해당 id를 `get_release(project, version, changes: [id, …])`에 넘겨 읽습니다.
 
 ### 호출 예시
 
@@ -611,8 +691,40 @@
 
 ```json
 {
+  "matches_not_computed": 0,
   "query": "GHSA-3wh4-j44w-pg92",
   "in_analysis": [
+    {
+      "project": "etcd",
+      "name": "etcd",
+      "version": "v3.7.0",
+      "released_at": "2026-07-08T18:26:53Z",
+      "url": "https://ratatosk.io/en/releases/etcd/v3.7.0",
+      "counts": {
+        "security": 2,
+        "breaking": 4,
+        "deprecations": 0,
+        "important_fixes": 1,
+        "enhancements": 0,
+        "dependency_updates": 3,
+        "other": 5
+      },
+      "warnings": {
+        "critical": 0,
+        "no_downgrade": 0
+      },
+      "matched": {
+        "kind": "security",
+        "title": "gRPC certificate revocation checks fixed"
+      },
+      "matches": [
+        {
+          "id": "etcd@v3.7.0#427c7c39",
+          "kind": "security",
+          "title": "gRPC certificate revocation checks fixed"
+        }
+      ]
+    },
     {
       "project": "etcd",
       "name": "etcd",
@@ -634,8 +746,15 @@
       },
       "matched": {
         "kind": "security",
-        "title": "gRPC CRL revocation checks enforced"
-      }
+        "title": "gRPC client certificate revocation checks enforced"
+      },
+      "matches": [
+        {
+          "id": "etcd@v3.6.13#1713075e",
+          "kind": "security",
+          "title": "gRPC client certificate revocation checks enforced"
+        }
+      ]
     },
     "…"
   ],
@@ -679,34 +798,28 @@
 {
   "projects": [
     {
-      "slug": "envoy",
-      "name": "Envoy",
+      "slug": "argo",
+      "name": "Argo",
       "tier": "graduated",
-      "category": "Networking & Messaging",
-      "website": "https://www.envoyproxy.io",
+      "category": "CI/CD & App Delivery",
+      "website": "https://argoproj.github.io",
       "latest": {
-        "version": "v1.38.3",
-        "released_on": "2026-06-23"
+        "version": "v3.6.2",
+        "released_on": "2026-11-18"
       },
-      "analyzed_releases": 25,
-      "image_aliases": [
-        "cilium-envoy"
-      ],
-      "cluster_core": true
+      "analyzed_releases": 67
     },
     {
-      "slug": "etcd",
-      "name": "etcd",
-      "tier": "graduated",
-      "category": "Kubernetes Core",
-      "website": "https://etcd.io",
+      "slug": "artifact-hub",
+      "name": "Artifact Hub",
+      "tier": "incubating",
+      "category": "CI/CD & App Delivery",
+      "website": "https://artifacthub.io",
       "latest": {
-        "version": "v3.6.13",
-        "released_on": "2026-07-01"
+        "version": "v1.24.0",
+        "released_on": "2026-11-17"
       },
-      "analyzed_releases": 20,
-      "cluster_core": true,
-      "visibility": "may live outside the k8s API, be hidden by a managed control plane, or be replaced entirely — a missing pod is not a missing component; when unreadable, report it under Could not check instead of guessing a version"
+      "analyzed_releases": 3
     },
     "…"
   ]
@@ -720,11 +833,11 @@
 | 상황 | 도구 | 오류 문장(일부) | 대응 |
 |---|---|---|---|
 | 존재하지 않는 버전 | `get_release` | `HTTP 404`, `no analyzed release etcd v9.9.9`, `recent: v3.7.3, v3.6.16, …` | 오류 문장에 적힌 최근 버전 중 하나를 지정해 다시 호출 |
-| 존재하지 않는 프로젝트 | `get_release`, `list_releases`, `check_upgrade` | `unknown project nope` | `list_projects`에서 슬러그 확인. 모든 도구는 슬러그의 대소문자와 앞뒤 공백을 무시 |
+| 존재하지 않는 프로젝트 | `get_release`, `list_releases`, `check_upgrade`, `search` | `unknown project nope` | `list_projects`에서 슬러그 확인. 모든 도구는 슬러그의 대소문자와 앞뒤 공백을 무시 |
 | 필수 파라미터 누락 | 전체 | `project is required`, `project and from are required`, `components is required` | 빠진 파라미터를 넣어 다시 호출 |
 | `components` 원소에 `project` 없음 | `check_stack` | `component 1 has no project (keys received: …)` | 오류 문장에 함께 제시된 예시 형식으로 다시 호출 |
 | 컴포넌트 100개 초과 | `check_stack` | `too many components: 120 (max 100)` | 여러 차례로 나누어 호출 |
-| 허용되지 않는 값 | 전체 | `lang must be "en", "ko" or "ja"`, `detail must be "brief" or "full"`, `kind must be one of …`, `since must be a date, YYYY-MM-DD`, `q must be 2–200 characters` | 오류 문장에 적힌 값으로 다시 호출 |
+| 허용되지 않는 값 | 전체 | `lang must be "en", "ko" or "ja"`, `detail must be "brief" or "full"`, `kind must be one of …`, `kinds: unknown kind`, `kinds: a briefing lists …`, `changes: 51 ids, at most 50`, `pass changes or kinds, not both`, `changes name 11 releases`, `sets both same_minor and target_version`, `same_minor and to are both set`, `since must be a date, YYYY-MM-DD`, `q must be 2–200 characters` | 오류 문장에 적힌 값으로 다시 호출 |
 | 같은 태그 계열에서 분석된 모든 릴리스보다 높은 `from`, 또는 분석된 릴리스가 없는 태그 계열의 `from` | `check_upgrade` | `HTTP 404`, `is newer than every analyzed release`, `no analyzed release of … in the release line` | 실행 중인 버전을 다시 확인하고, 오류 문장의 태그처럼 태그 계열 접두사를 포함해 다시 호출 |
 | 범위 안 릴리스 60개 초과 | `check_upgrade` | `HTTP 400`, `101 releases between v0.0.1 and v1.0.76`, `(max 60)` | `to`를 지정해 구간을 나누어 호출 |
 | 호출 한도 초과 | 전체 | `HTTP 429` | 잠시 후 다시 호출. 여러 프로젝트는 한 번의 `check_stack` 호출로 묶음 |
@@ -736,7 +849,7 @@
 |---|---|
 | ratatosk가 모르는 프로젝트 이름(`tracked: false`) | `list_projects`에서 슬러그 확인. 다른 슬러그로 등록되어 있을 수 있음. 목록에 없으면 수집 대상이 아님 |
 | 해석할 수 없는 버전 문자열 | 발행된 표기 그대로 다시 입력 |
-| 수집된 릴리스가 없는 태그 계열 | 사유에 나온 예시처럼 태그 계열 접두사를 포함해 다시 입력(예: `flagd/v0.16.1`) |
+| 수집된 릴리스가 없는 태그 계열 | 사유에 적힌 대로 태그 계열 접두사를 붙여 버전을 넘깁니다(예: `flagd/v0.16.1`). 사유가 버전 뒤에 태그 계열이 아닌 것이 붙어 있다고 하면 이미지 태그가 덧붙인 부분을 떼고 버전만 넘깁니다. 커밋으로 된 이미지 빌드 꼬리(`v1.37.6-1789133542-<commit>`)는 서버가 알아서 떼고 읽으며, 읽은 버전은 `version_read_as`에 적습니다. |
 | 같은 태그 계열에서 분석된 모든 릴리스보다 높은 실행 중인 버전 | ratatosk가 아직 분석하지 않은 버전이거나 버전을 잘못 읽은 것. 실행 중인 리소스에서 버전을 다시 읽고, 맞다면 릴리스 노트를 직접 확인 |
 | 호출 시간(90초) 초과 | 남은 컴포넌트로 다시 호출 |
 | 한 번에 읽을 수 있는 릴리스 수(600개) 초과 | 남은 컴포넌트로 다시 호출 |

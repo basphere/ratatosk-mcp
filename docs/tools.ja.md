@@ -2,7 +2,7 @@
 
 [English](tools.en.md) · [한국어](tools.ko.md) · [日本語](tools.ja.md)
 
-ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスです。
+ratatosk-mcp が提供する 6 つのツールの詳細リファレンスです。
 [`check_stack`](#check_stack)、[`check_upgrade`](#check_upgrade)、
 [`get_release`](#get_release)、[`list_releases`](#list_releases)、
 [`search`](#search)、[`list_projects`](#list_projects)。ツールごとに、使う場面、
@@ -10,10 +10,9 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 サーバーの接続（ホスト型エンドポイント、Docker、Helm、kagent）は
 [インストールガイド](install.ja.md)を参照してください。
 
-> **2026-11-03 測定**：以下の応答はすべて、このサーバーを ratatosk.io `/v2` API の
-> プレビューにつないで得たもので、ホストは `https://ratatosk.io` に置き換えて
-> います。リリースデータは毎時増えるので、今日呼ぶと数値は異なりますが、応答の形は
-> 同じです。長い応答は `…` で省略しています。
+1.x の最初のリリースにはなかったパラメータや応答フィールドには、説明の末尾に追加されたリリースを `1.2.0 以降。` の形で記しています。それより前のサーバーはそのパラメータを拒否し、該当するフィールドを応答に含めません。各リリースで変わった内容は[変更履歴](../CHANGELOG.md)を参照してください。
+
+> **2026-11-20 測定**：以下の応答はすべて、このサーバーを ratatosk.io `/v2` API 自体につないで得たものです。リリースデータは毎時増えるため、今日呼ぶと数値は異なりますが、応答の形は同じです。長い応答は `…` で省略しています。配列では先頭の数件を示し、`hint` のテキストは `…` に置き換えています。
 
 1.0 は `/v2` を読みます。0.x の `list_changes`・`changes_by_entity`・`get_matter`
 は、それらが読んでいた `/v1` API とともになくなりました。それらの質問には、
@@ -91,38 +90,39 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 ## check_stack ブリーフィングの読み方
 
 `check_stack` が既定の詳しさ（`brief`）で返すブリーフィングの欄です。位置が
-「コンポーネント」の欄は `components` の各要素にあります。`check_upgrade` は
-プロジェクト 1 つだけを扱うので、`summary`・`releases`・`before_upgrade`・`changes`・
-`changes_omitted`・`gaps` を応答の最上位に置き、`later_for_running` の代わりに
-`later_for_from` を返します。
+「コンポーネント」の欄は `components` の各要素にあります。`check_upgrade` は `summary`、`releases`、`before_upgrade`、`changes`、`changes_omitted`、`changes_more`、`later_in_range`、`excluded_on_branch`、`version_read_as`、`note`、`gaps` を応答の最上位に置きます。`later_for_running` の代わりに `later_for_from` を返します。
 
 | 欄 | 位置 | 型 | 意味 |
 |---|---|---|---|
 | `summary` | コンポーネント | `object` | 範囲内のリリース数（`releases`）、種類ごとの変更数（`counts`）、注意が必要な変更の数（`warnings`）、`distinct_advisories`。`counts` と `warnings` は範囲内のリリースを 1 つずつ足した数なので、複数のリリースラインに入った同じ修正はリリースごとに数えられます |
-| `distinct_advisories` | `summary` | `object` | 範囲内のセキュリティ変更が挙げるアドバイザリを、それぞれ 1 回ずつ数えた値。合計（`total`）と深刻度別（`critical`・`high`・`medium`・`low`、深刻度が見つからない `ungraded`）。1 つの変更に CVE と GHSA が併記されている場合、それらは 1 つのアドバイザリとして扱います。範囲内の変更がそれらの ID を異なる組み合わせで挙げている場合は、各 ID を個別に数えるため、同じアドバイザリが 2 回数えられることがあります。ほかの変更と矛盾しない組み合わせはそのまま採用するため、1 つの変更が 2 つのアドバイザリの ID を組み合わせて挙げていても、1 つとして数えます。アドバイザリの深刻度は、そのアドバイザリだけを挙げる変更の深刻度のうち最も高いものです。それらの変更に深刻度が付いていない場合、または単独で挙げる変更がない場合は、ほかのアドバイザリと一緒に挙げる変更の深刻度のうち最も高いものです。認識対象のアドバイザリ ID（CVE、GHSA、GO、RUSTSEC、PYSEC）を挙げていないセキュリティ変更（`counts.security` には含まれます）と、`note` に稼働中バージョンのブランチですでに修正済みと記載された変更は数えません。アップグレードによって修正されるアドバイザリの数を示す場合は、`warnings.critical` ではなくこの値を使ってください |
+| `distinct_advisories` | `summary` | `object` | 範囲内のセキュリティ変更が挙げるアドバイザリを、それぞれ 1 回ずつ数えた値。合計（`total`）と深刻度別（`critical`・`high`・`medium`・`low`、深刻度が見つからない `ungraded`）。1 つの変更に CVE と GHSA が併記されている場合、それらは 1 つのアドバイザリとして扱います。範囲内の変更がそれらの ID を異なる組み合わせで挙げている場合は、各 ID を個別に数えるため、同じアドバイザリが 2 回数えられることがあります。ほかの変更と矛盾しない組み合わせはそのまま採用するため、1 つの変更が 2 つのアドバイザリの ID を組み合わせて挙げていても、1 つとして数えます。アドバイザリの深刻度は、そのアドバイザリだけを挙げる変更の深刻度のうち最も高いものです。それらの変更に深刻度が付いていない場合、または単独で挙げる変更がない場合は、ほかのアドバイザリと一緒に挙げる変更の深刻度のうち最も高いものです。認識対象のアドバイザリ ID（CVE、GHSA、GO、RUSTSEC、PYSEC）を挙げていないセキュリティ変更（`counts.security` には含まれます）は数えません。稼働中ブランチが稼働中バージョン以前にすでに修正したアドバイザリは、ブリーフィングに残る変更がほかのアドバイザリと併記していても数えません。この理由でブリーフィングから除外した変更は `excluded_on_branch` に示します。アップグレードによって修正されるアドバイザリの数を示す場合は、`warnings.critical` ではなくこの値を使ってください。1.1.0 以降。 |
 | `releases` | コンポーネント | `array` | （稼働中, 目標] の間のバージョン。古い順、稼働中バージョンのリリースラインのみ |
-| `before_upgrade` | コンポーネント | `array` | 範囲内の前提条件・既知の問題・アップグレードガイドすべて、バージョン付き。多くは新しい minor を始めるリリースにあります。すべて読んでください |
-| `changes` | コンポーネント | `array` | 判断が必要な種類。`security`・`breaking`・`deprecations`・`important_fixes`。セキュリティは深刻なものから並び、同じ深刻度の中とほかの種類では、すべきことが書かれた変更（`action_required`・`also_required`・`stated` か `inferred` の `no_downgrade` または `removed_in`）が先に来ます。残りの 3 種類は `summary.counts` に件数だけあり、`get_release` にすべてあります |
-| `changes_omitted` | コンポーネント | `object` | 種類ごとに収まらなかった件数（セキュリティは深刻なものを残し、同じ深刻度の中とほかの種類では、すべきことが書かれた変更を先に残す）。実在する変更の数であり「何もない」ではありません。`target_version` で絞るか `get_release` で読んでください |
+| `before_upgrade` | コンポーネント | `array` | 範囲内の前提条件・既知の問題・アップグレードガイドすべて、バージョン付き。多くは新しい minor を始めるリリースにあります。すべて読んでください。各項目の全文を `body` に含め、本文がない場合は `null` です。項目に折りたたまれている情報も `folded` に含めます。同じテキストが複数のリリースにある場合は最新のリリースに 1 件だけ載せ、ほかのリリースは `also_in` に示します。確認したコンポーネントには必ずあり、該当項目がなければ `[]` です。 |
+| `changes` | コンポーネント | `array` | 判断が必要な種類。`security`・`breaking`・`deprecations`・`important_fixes`。本文付きで返す上限は、種類ごとにそれぞれ 20、20、10、10 件です。セキュリティは深刻なものから並び、同じ深刻度の中とほかの種類では、すべきことが書かれた変更（`action_required`・`also_required`・`stated` か `inferred` の `no_downgrade` または `removed_in`）が先に来ます。残りの 3 種類は `summary.counts` に件数だけあり、`get_release` にすべてあります |
+| `changes_omitted` | コンポーネント | `object` | 種類ごとに、`changes` に含まれなかった変更の件数。セキュリティでは深刻度の高い変更を優先し、深刻度が同じ場合は、また他の種類では、対応方法が記された変更を優先します。同じリリース内の別の変更と同じアドバイザリを挙げるセキュリティ変更もここに数えます。種類ごとの合計は、`summary.counts` = `changes` の件数 + `changes_omitted` + `excluded_on_branch.security` + `also_in` が示すバックポートの件数です。セキュリティ・破壊的変更・非推奨については、ここに数えた変更もすべて `changes_more` に行があります。 |
+| `changes_more` | コンポーネント | `array` | `changes_omitted` に数えたセキュリティ・破壊的変更・非推奨を、範囲がどれだけ長くても省略せず、1 件ずつ行にします。バックポート（項目の `also_in` にあるバージョン）と、稼働中ブランチですでに修正された変更（`excluded_on_branch`）は含みません。各行には `version`、`id`、`kind`、`title`、セキュリティの場合のみ `severity`、`affects`（`text`、`status`）、`also_in` を含みます。変更が求める対応は `action_required: true`、`also_required: true`、`no_downgrade: true`、`removed_in`（`text`、`status`）の印で示し、対応方法は変更の本文にあります。同じリリース内の別の変更と同じアドバイザリを挙げるセキュリティ変更も含みます。`changes` の上限 10 件を超える重大な修正は件数だけを数えますが、`kinds` に `important_fixes` を指定すると、それぞれの行も返します。行の本文と根拠は `get_release(project, version, changes: [id])` で取得できます。1.2.0 以降。 |
 | `affects` | 変更 | `object` | 変更が誰に当てはまるかを決めます。`stated`・`inferred`：稼働中の設定でそれが成り立つときだけ当てはまるので、確認してから報告してください。`not_stated`：ノートが範囲を絞っていないので、タイトルが特定のものを指していない限り、すべてのインストールに当てはまると見なしてください |
-| `also_in` | 変更 | `array` | 範囲内の別ブランチで同じアドバイザリを修正したリリースのバージョン。表の下の説明を参照 |
-| `note` | コンポーネント | `string` | 何をなぜ除外したか。表の下の説明を参照 |
+| `also_in` | 変更 | `array` | 同じアドバイザリを修正した範囲内の別ブランチのリリースバージョン。アップグレード前の確認事項では、同じテキストを含むほかのリリースを示します。表の下の説明を参照 |
+| `note` | コンポーネント | `string` | 何を除外したか、または何ができなかったかと、その理由。表の下の説明を参照 |
 | `gaps` | コンポーネント | `array` | 番号が飛んでいる隣り合うバージョン（v3.5.32 の次が v3.6.7）。その間に分析されていないリリースがありうるので、リリースノートを直接確認してください |
 | `releases_not_read` | コンポーネント | `array` | 範囲内だが文書を読めなかったバージョン。1 回の呼び出しでプロジェクトごとに最近の 60 リリースを読みます |
 | `later_for_running` | コンポーネント | `array` | 稼働中のバージョンについて公開後に判明し、そのリリースに記録されたこと。`advisory_after_release` はそのバージョンがすでに修正した脆弱性について後から公開されたアドバイザリで、そのバージョンが脆弱だという意味ではありません。`known_issue_fixed`・`regression_fixed` はそのバージョンにある問題を `fixed_in` が修正したという意味です。前のバージョンで生じた不具合はそのバージョンに記録され、ここには出ないので、空でも既知の不具合がないという意味ではありません |
+| `later_in_range` | コンポーネント | `array` | 範囲内のリリースで記録され、その後のリリースで修正された不具合。種類は `regression_fixed` または `known_issue_fixed` で、修正したバージョンを `fixed_in` に示します。たとえば cilium v1.20.2 → v1.20.5 では、v1.20.3 で始まった BackendTLSPolicy のリグレッションが v1.20.4 で修正されたことがここに載ります。途中のバージョンで止めないほうがよい理由を確認できます。範囲内のリリースにある `advisory_after_release` は、脆弱性をそのリリースがすでに修正しているため、問題として載せません。該当する情報がなければ `[]` です。1.2.0 以降。 |
+| `excluded_on_branch` | コンポーネント | `object` | 稼働中バージョン以前に稼働中ブランチが修正したアドバイザリを含むため、ブリーフィングから除外したセキュリティ変更の情報です。`security` は除外した変更の件数、`advisories` はアドバイザリ ID ごとに 1 件ずつの一覧で、深刻度の高い順です。各 `severity` は、除外した変更でそのアドバイザリに付いていた深刻度のうち最も高いものです。除外した変更も `summary.counts` と `summary.warnings` に数えます。そのため `summary` と、該当する除外があった `releases` のリリースには、`warnings.critical_excluded_on_branch` として、そのうち `warnings.critical` に当たる件数も示します。この件数は `critical` の内数であり、警告に加算するものではありません。`critical` からこの件数を引くと、このアップグレードで新たに修正される critical の件数がわかります。除外した変更がある場合だけ存在します。1.2.0 以降。 |
 | `running_version` | コンポーネント | `string` | 呼び出しで渡された稼働中バージョン |
-| `target_version` | コンポーネント | `string` | 範囲の終わりのバージョン。目標バージョンを指定しなければ同じリリースラインの最新 |
+| `version_read_as` | コンポーネント | `string` | 渡されたバージョンにイメージビルドのサフィックスが付いている場合、サフィックスを除いて読み取ったバージョン。たとえば `v1.37.6-1789133542-<commit>` は `v1.37.6` として読み取られます。サフィックスがなければ含まれません。`check_upgrade` も `from` を同じ方法で読み取ります。1.2.0 以降。 |
+| `target_version` | コンポーネント | `string` | 範囲の終わりのバージョン。目標バージョンを指定した場合はそのバージョン、`same_minor` を指定した場合は稼働中ブランチの最新リリース、それ以外は同じリリースラインの最新リリースです。リリースラインはタグの接頭辞（`flagd/`、`lts-`）であり、minor バージョンではありません。たとえば v1.36.5 からは v1.37.x までが対象になります。 |
 | `version_source` | コンポーネント | `string` | 呼び出しで渡された値そのまま |
 | `tracked` | コンポーネント | `boolean` | ratatosk が知らないスラッグなら `false`（`list_projects` でスラッグを確認し、一覧になければ追跡していないプロジェクト）。追跡しているが分析済みのリリースがまだなければ `true`。それ以外では省略 |
 | `releases_full` | コンポーネント | `array` | `detail` が `full` のときだけ。範囲内のリリースの原本で、コンポーネントごとに最大 15 件、1 回の呼び出しで約 2 MB まで |
 | `releases_full_omitted` | コンポーネント | `integer` | `releases_full` に収まらなかったリリースの数 |
 | `could_not_check` | 応答の最上位 | `array` | 確認できなかったコンポーネントとその理由。ratatosk が知らないプロジェクト名（`tracked: false`。`list_projects` にもなければ対象外という意味で、安全という意味ではない）、解釈できないバージョン、記録されたリリースのないリリースライン、同じリリースラインの分析済みのどのリリースよりも新しい稼働中バージョン |
 | `privacy` | 応答の最上位 | `string` | この呼び出しでバージョンがどこまで送られたかを示す英語の文 |
-| `hint` | 応答の最上位 | `string` | ブリーフィングの読み方を短くまとめた英語の案内。`brief` のときだけ |
+| `hint` | 応答の最上位 | `string` | ブリーフィングの読み方を短くまとめた英語の案内。`brief` のときだけ。最大 2,000 文字 |
 
-ブリーフィングでは、`body`・`workaround.text`・`regression_since.text` の各欄を
-160 文字に切り詰めます。切り詰めた場合は末尾に `…` が付きます。全文は
-`get_release` で取得できます。
+ブリーフィングでは、変更の `body`、`workaround.text`、`regression_since.text` を 160 文字で切り詰め、切り詰めたテキストの末尾に `…` を付けます。アップグレード前の確認事項は切り詰めません。ブリーフィングには根拠の引用を含みません。報告された項目の全文と根拠は `get_release(project, version, changes: [id, …])` で取得できます。
+
+**サイズ**：ブリーフィングのサイズは切り詰めません。範囲内のセキュリティ・破壊的変更・非推奨は、すべて項目または行として含まれます。そのため、範囲が長い場合やコンポーネントが多い場合は応答も長くなります。2026-11-20 の測定では、数マイナー遅れた 5 コンポーネントで約 300,000 文字でした。応答を短くするには、`kinds` で一度に 1 種類に絞る、コンポーネントを減らす、`target_version` を指定する、または `same_minor` を使います。
 
 **`also_in`**：プロジェクトは 1 つのセキュリティ修正を複数のブランチにバックポート
 することがあり、その場合は同じアドバイザリの修正が範囲内に複数回現れます。変更は
@@ -130,12 +130,12 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 バージョンだけを記載します。同じブランチの後続リリースがそのアドバイザリを再度
 修正した変更は別に記載します。
 
-**`note`**：何をなぜ除外したかを記します。対象は、稼働中バージョンのブランチがそのバージョン以下ですでに修正した
+**`note`**：`check_stack` では、次の場合に `note` を付けます。対象は、稼働中バージョンのブランチがそのバージョン以下ですでに修正した
 セキュリティ変更（同じブランチの後続リリースが同じアドバイザリを再度修正した変更は
 除外しません）、稼働中バージョン以下を目標とするもの、記録上のどのリリースよりも
 古い稼働中バージョン、同じリリースラインの分析済みのどのリリースよりも新しい稼働中
 バージョン（このコンポーネントは `could_not_check` にも載る）、推測と読める
-`version_source` です。
+`version_source` です。この理由で除外したアドバイザリは `excluded_on_branch` に示します。稼働中ブランチの稼働中バージョン以前のリリースを読み取れなかった場合も `note` が付きます。プロジェクトごとに最新 60 件のリリースだけを読むため、それより前のリリースが読み取れないことがあります。その場合、それらのリリースが修正したセキュリティ変更は絞り込まれず、ブリーフィングに残ります。`same_minor` を指定していて、稼働中の minor にそれより新しいリリースがない場合も `note` が付きます。`check_upgrade` の `note` は応答の最上位にあり、できなかったことを示します。`from` 以前のリリースを読み取れなかった場合は、変更を何も除外しません。`from` のビルドサフィックスを読み取れなかった場合や、`same_minor` を指定してその minor に新しいリリースがなかった場合にも `note` が付きます。`check_upgrade` が除外したセキュリティ変更は `note` ではなく、`excluded_on_branch` だけに示されます。
 
 ## check_stack
 
@@ -152,6 +152,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | `components` | `array` | はい | なし | 確認するコンポーネントの一覧（最大 100 件）。各要素の欄は次の表を参照 |
 | `detail` | `string` | いいえ | `brief` | `brief` または `full`（範囲内のリリースの原本、最大 15 件） |
 | `lang` | `string` | いいえ | `en` | `en`・`ko`・`ja`：文章の欄の言語 |
+| `kinds` | `array` | いいえ | すべての種類 | 指定した種類の変更だけを返す、コンポーネントすべてに適用されるパラメータです。`brief` では `security`、`breaking`、`deprecations`、`important_fixes` を指定できます。それ以外の 3 種類は `summary.counts` に件数だけが載り、指定すると、参照先を示すエラーになります。`full` では 7 種類を指定でき、その場合 `folded` の行は含めません。`summary` は絞り込まず、常に範囲全体の値です。1.2.0 以降。 |
 
 `components` の各要素は次の欄を持ちます。
 
@@ -159,7 +160,8 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 |---|---|---|---|---|
 | `project` | `string` | はい | なし | `list_projects` のスラッグ。イメージの別名も受け付け、対応するスラッグに変換します |
 | `version` | `string` | はい | なし | 稼働中バージョン。公開されたとおりに、リリースラインの接頭辞も含めて渡します（`flagd/v0.16.1`） |
-| `target_version` | `string` | いいえ | 同じリリースラインの最新 | 目標バージョン。`version` より新しい場合に限り、範囲を制限します |
+| `target_version` | `string` | いいえ | 同じリリースラインの最新 | 目標バージョン。`version` より新しい場合に限り、範囲を制限します。リリースラインはタグの接頭辞（`flagd/`、`lts-`）であり、minor バージョンではありません。目標バージョンを指定しない場合、v1.36.5 からは v1.37.x までが対象になります。 |
+| `same_minor` | `boolean` | いいえ | `false` | `true` の場合、範囲を稼働中バージョンの minor の最新リリースまでにします（v1.36.5 なら最新の v1.36.x まで）。`target_version` とは同時に指定できません。1.2.0 以降。 |
 | `version_source` | `string` | いいえ | なし | バージョンをどこで読んだか。応答にそのまま返します |
 
 ### 呼び出し例
@@ -177,30 +179,32 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
       "project": "etcd",
       "running_version": "v3.5.30",
       "version_source": "user stated",
-      "target_version": "v3.6.13",
-      "note": "4 security change(s) in range were excluded: their advisories are already fixed at or below v3.5.30 on your branch",
+      "target_version": "v3.7.4",
+      "note": "5 security change(s) in range were excluded: their advisories are already fixed at or below v3.5.30 on your branch",
       "summary": {
-        "releases": 9,
+        "releases": 22,
+        "distinct_advisories": {
+          "total": 25,
+          "critical": 0,
+          "high": 2,
+          "medium": 1,
+          "low": 0,
+          "ungraded": 22
+        },
         "counts": {
-          "breaking": 3,
-          "dependency_updates": 9,
-          "deprecations": 1,
-          "enhancements": 6,
-          "important_fixes": 10,
-          "other": 4,
-          "security": 14
+          "breaking": 22,
+          "dependency_updates": 25,
+          "deprecations": 2,
+          "enhancements": 7,
+          "important_fixes": 27,
+          "other": 45,
+          "security": 56
         },
         "warnings": {
           "critical": 0,
           "no_downgrade": 0
         }
       },
-      "gaps": [
-        {
-          "after": "v3.5.32",
-          "before": "v3.6.7"
-        }
-      ],
       "releases": [
         {
           "version": "v3.5.31",
@@ -216,58 +220,94 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
             "security": 1
           }
         },
-        {
-          "version": "v3.5.32",
-          "released_at": "2026-07-01T20:32:19Z",
-          "url": "https://ratatosk.io/en/releases/etcd/v3.5.32",
-          "counts": {
-            "breaking": 1,
-            "dependency_updates": 1,
-            "deprecations": 0,
-            "enhancements": 2,
-            "important_fixes": 1,
-            "other": 0,
-            "security": 3
-          }
-        },
         "…"
       ],
       "before_upgrade": [
         {
-          "version": "v3.5.31",
+          "version": "v3.5.36",
           "section": "upgrade_guide",
-          "id": "etcd@v3.5.31#6c4bd81c",
-          "title": "Full change list and upgrade guidance"
-        },
-        {
-          "version": "v3.5.32",
-          "section": "upgrade_guide",
-          "id": "etcd@v3.5.32#6c4bd81c",
-          "title": "Upgrade guidance for potential breaking changes"
+          "id": "etcd@v3.5.36#6c4bd81c",
+          "title": "Changelog of v3.5.36 changes and upgrade guidance",
+          "body": null,
+          "also_in": [
+            "v3.5.31",
+            "v3.5.32",
+            "v3.5.33",
+            "…"
+          ]
         },
         "…"
       ],
       "changes": [
         {
-          "version": "v3.5.32",
-          "id": "etcd@v3.5.32#4aa67035",
+          "version": "v3.5.33",
+          "id": "etcd@v3.5.33#cbcb276f",
           "kind": "security",
-          "title": "gRPC client certificate revocation checks enforced",
-          "body": "A client with a revoked certificate could authenticate over gRPC even though the HTTP endpoint rejected it. The gRPC listener now rejects peers whose certificat…",
-          "severity": null,
+          "title": "Watch API authorization bypass fixed",
+          "body": "A user with READ permission on one key could use `clientv3.WithFromKey()` in a Watch request to receive events for every key at or after it, not just that key.",
+          "severity": "high",
           "advisories": [
-            "GHSA-3wh4-j44w-pg92"
+            "CVE-2026-73499",
+            "GHSA-xg4h-6gfc-h4m8"
           ],
           "affects": {
-            "text": "split HTTP and gRPC client endpoints using `--listen-client-http-urls` with `--client-crl-file` configured",
+            "text": "authenticated clusters with exact-key READ grants",
             "status": "stated"
           },
           "workaround": {
-            "text": "If upgrading is not immediately possible, reduce exposure by restricting network access to etcd client ports using firewall rules or network policy so that only…",
+            "text": "Audit READ grants and revoke or tighten grants that should not permit full read access; restrict access to etcd's client (gRPC) port using firewall rules or net…",
             "status": "stated"
+          },
+          "also_in": [
+            "v3.6.14",
+            "v3.7.1"
+          ]
+        },
+        "…"
+      ],
+      "changes_omitted": {
+        "breaking": 2,
+        "important_fixes": 17,
+        "security": 15
+      },
+      "changes_more": [
+        {
+          "version": "v3.5.33",
+          "id": "etcd@v3.5.33#d2bfd54f-c40cb2",
+          "kind": "security",
+          "title": "Infinite loop in `norm.Iter` on invalid UTF-8 fixed",
+          "severity": null,
+          "affects": {
+            "text": "code using `golang.org/x/text` `norm.Iter`",
+            "status": "inferred"
           }
         },
         "…"
+      ],
+      "later_in_range": [],
+      "excluded_on_branch": {
+        "security": 5,
+        "advisories": [
+          {
+            "id": "CVE-2026-33413",
+            "severity": "high"
+          },
+          {
+            "id": "GHSA-q8m4-xhhv-38mg",
+            "severity": "high"
+          },
+          {
+            "id": "CVE-2026-33343",
+            "severity": "low"
+          },
+          "…"
+        ]
+      },
+      "gaps": [
+        {
+          "after": "v3.5.36",
+          "before": "v3.6.7"
+        }
       ]
     },
     "…"
@@ -279,8 +319,8 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
       "reason": "unknown project name — not a slug ratatosk knows: check the slug with list_projects (the project may be listed under another slug); if it is not listed, ratatosk does NOT track it, so no changes here means no coverage, not safety"
     }
   ],
-  "privacy": "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)",
-  "hint": "…"
+  "hint": "…",
+  "privacy": "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)"
 }
 ```
 
@@ -298,7 +338,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 1 プロジェクトの 1 回のアップグレードを同じ形で、サーバーが `/v2/upgrade` で計算
 します。`from` と `to` はサーバーに送られます。稼働中のバージョンを手元に留める
 なら `check_stack` を使ってください。バージョンが機微でない場合や、まだ動かして
-いないバージョンへのアップグレードを計画するときに使います。
+いないバージョンへのアップグレードを計画するときに使います。`check_stack` と同様に、`check_upgrade` は `from` のブランチが `from` 以前にすでに修正したアドバイザリを含むセキュリティ変更を除外し、件数を `excluded_on_branch` に記録します。判定のため、プロジェクトのリリース一覧と、`from` のブランチにある `from` 以前のリリースを読み取ります。それらを読み取れない場合は何も除外せず、応答の最上位の `note` で知らせます。この場合の応答は 1.2.0 より前のサーバーと同じです。`detail: "full"` の場合、リリース一覧を読むのは `from` にビルドサフィックスがある場合、または `same_minor` を指定した場合だけです。`same_minor` を指定してもその minor に新しいリリースがなければ、範囲は空になり、`note` で知らせます。`from` にイメージビルドのサフィックスがある場合は `check_stack` と同様に読み取り、`version_read_as` に読み取ったバージョンを示します。応答の `from` は渡された値のままです。
 
 ### パラメーター
 
@@ -306,8 +346,10 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 |---|---|---|---|---|
 | `project` | `string` | はい | なし | プロジェクトのスラッグ |
 | `from` | `string` | はい | なし | 現在のバージョン（範囲に含まない） |
-| `to` | `string` | いいえ | 同じリリースラインの最新 | 目標バージョン（範囲に含む） |
+| `to` | `string` | いいえ | 同じリリースラインの最新 | 目標バージョン（範囲に含む）。リリースラインはタグの接頭辞であり、minor バージョンではありません。`to` を指定しない場合、v1.36.5 からは v1.37.x までが対象になります。 |
+| `same_minor` | `boolean` | いいえ | `false` | `true` の場合、`from` の minor の最新リリースまでを範囲にします。`to` とは同時に指定できません。1.2.0 以降。 |
 | `detail` | `string` | いいえ | `brief` | `brief` または `full`（サーバーの応答そのまま） |
+| `kinds` | `array` | いいえ | すべての種類 | 指定した種類の変更だけを返します。指定方法は `check_stack` と同じです。1.2.0 以降。 |
 | `lang` | `string` | いいえ | `en` | `en`・`ko`・`ja` |
 
 ### 呼び出し例
@@ -320,33 +362,98 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 
 ```json
 {
-  "project": "etcd",
-  "from": "v3.5.30",
-  "to": "v3.6.13",
-  "summary": {
-    "releases": 9,
-    "counts": {
-      "breaking": 3,
-      "dependency_updates": 9,
-      "deprecations": 1,
-      "enhancements": 6,
-      "important_fixes": 10,
-      "other": 4,
-      "security": 14
+  "before_upgrade": [
+    {
+      "version": "v3.5.36",
+      "section": "upgrade_guide",
+      "id": "etcd@v3.5.36#6c4bd81c",
+      "title": "Changelog of v3.5.36 changes and upgrade guidance",
+      "body": null,
+      "also_in": [
+        "v3.5.31",
+        "v3.5.32",
+        "v3.5.33",
+        "…"
+      ]
     },
-    "warnings": {
-      "critical": 0,
-      "no_downgrade": 0
-    }
+    "…"
+  ],
+  "changes": [
+    {
+      "version": "v3.5.33",
+      "id": "etcd@v3.5.33#cbcb276f",
+      "kind": "security",
+      "title": "Watch API authorization bypass fixed",
+      "body": "A user with READ permission on one key could use `clientv3.WithFromKey()` in a Watch request to receive events for every key at or after it, not just that key.",
+      "severity": "high",
+      "advisories": [
+        "CVE-2026-73499",
+        "GHSA-xg4h-6gfc-h4m8"
+      ],
+      "affects": {
+        "text": "authenticated clusters with exact-key READ grants",
+        "status": "stated"
+      },
+      "workaround": {
+        "text": "Audit READ grants and revoke or tighten grants that should not permit full read access; restrict access to etcd's client (gRPC) port using firewall rules or net…",
+        "status": "stated"
+      },
+      "also_in": [
+        "v3.6.14",
+        "v3.7.1"
+      ]
+    },
+    "…"
+  ],
+  "changes_more": [
+    {
+      "version": "v3.5.33",
+      "id": "etcd@v3.5.33#d2bfd54f-c40cb2",
+      "kind": "security",
+      "title": "Infinite loop in `norm.Iter` on invalid UTF-8 fixed",
+      "severity": null,
+      "affects": {
+        "text": "code using `golang.org/x/text` `norm.Iter`",
+        "status": "inferred"
+      }
+    },
+    "…"
+  ],
+  "changes_omitted": {
+    "breaking": 2,
+    "important_fixes": 17,
+    "security": 15
   },
+  "excluded_on_branch": {
+    "security": 5,
+    "advisories": [
+      {
+        "id": "CVE-2026-33413",
+        "severity": "high"
+      },
+      {
+        "id": "GHSA-q8m4-xhhv-38mg",
+        "severity": "high"
+      },
+      {
+        "id": "CVE-2026-33343",
+        "severity": "low"
+      },
+      "…"
+    ]
+  },
+  "from": "v3.5.30",
   "gaps": [
     {
-      "after": "v3.5.32",
+      "after": "v3.5.36",
       "before": "v3.6.7"
     }
   ],
+  "hint": "…",
   "later_for_from": [],
+  "later_in_range": [],
   "privacy": "from and to were sent to the server (/v2/upgrade); use check_stack to keep versions on your side",
+  "project": "etcd",
   "releases": [
     {
       "version": "v3.5.31",
@@ -362,60 +469,33 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
         "security": 1
       }
     },
-    {
-      "version": "v3.5.32",
-      "released_at": "2026-07-01T20:32:19Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.5.32",
-      "counts": {
-        "breaking": 1,
-        "dependency_updates": 1,
-        "deprecations": 0,
-        "enhancements": 2,
-        "important_fixes": 1,
-        "other": 0,
-        "security": 3
-      }
-    },
     "…"
   ],
-  "before_upgrade": [
-    {
-      "version": "v3.5.31",
-      "section": "upgrade_guide",
-      "id": "etcd@v3.5.31#6c4bd81c",
-      "title": "Full change list and upgrade guidance"
+  "summary": {
+    "releases": 22,
+    "distinct_advisories": {
+      "total": 25,
+      "critical": 0,
+      "high": 2,
+      "medium": 1,
+      "low": 0,
+      "ungraded": 22
     },
-    {
-      "version": "v3.5.32",
-      "section": "upgrade_guide",
-      "id": "etcd@v3.5.32#6c4bd81c",
-      "title": "Upgrade guidance for potential breaking changes"
+    "counts": {
+      "breaking": 22,
+      "dependency_updates": 25,
+      "deprecations": 2,
+      "enhancements": 7,
+      "important_fixes": 27,
+      "other": 45,
+      "security": 56
     },
-    "…"
-  ],
-  "changes": [
-    {
-      "version": "v3.6.9",
-      "id": "etcd@v3.6.9#73465b78",
-      "kind": "security",
-      "title": "etcd API authorization bypass fixed",
-      "body": "Before this release, unauthorized clients could call `MemberList`, `Alarm`, Lease APIs, and compaction, potentially exposing cluster topology, disrupting operat…",
-      "severity": "high",
-      "advisories": [
-        "CVE-2026-33413",
-        "GHSA-q8m4-xhhv-38mg"
-      ],
-      "affects": {
-        "text": "etcd clusters with authentication enabled and gRPC access exposed to untrusted or partially trusted clients",
-        "status": "stated"
-      },
-      "workaround": {
-        "text": "If upgrading is not immediately possible, reduce exposure by treating the affected RPCs as unauthenticated in practice: restrict network access to etcd server p…",
-        "status": "stated"
-      }
-    },
-    "…"
-  ]
+    "warnings": {
+      "critical": 0,
+      "no_downgrade": 0
+    }
+  },
+  "to": "v3.7.4"
 }
 ```
 
@@ -424,13 +504,19 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 リリース 1 件の全体を、上の形で返します。`version` を省くと最新で、バージョンが
 違えばそのプロジェクトの最近のバージョンを示すエラーが返ります。
 
+リリース 1 件が非常に長くなる場合があります。cilium v1.20.0 は 1,094 件の変更を含み、約 758,000 文字でした。必要な部分だけでよい場合は、`kinds` または `changes` で絞り込めます。`kinds` は指定した種類の変更だけを残します。判断が必要な種類は `["security", "breaking", "deprecations", "important_fixes"]` です。
+
+`changes` にはブリーフィングの `changes`、`changes_more`、`before_upgrade` に載った ID を最大 50 件指定できます。指定した変更とアップグレード前の確認事項だけを、本文と根拠付きで返します。リリースにない ID は `not_found` に載ります。`version` を省略して `changes` を指定すると、ID が示すリリースを最大 10 件読み込み、`{project, releases: [{version, url, release_notes_url, changes, before_upgrade}], not_found}` の形で返します。`before_upgrade` があるのは、ID がアップグレード前の確認事項を示す場合だけです。`kinds` と `changes` のどちらを使っても、折りたたまれた行（`folded`）は含まれません。`changes` では、指定していないアップグレード前の確認事項も含まれません。`kinds` と `changes` は同時に指定できません。
+
 ### パラメーター
 
 | パラメーター | 型 | 必須 | 既定値 | 意味 |
 |---|---|---|---|---|
 | `project` | `string` | はい | なし | プロジェクトのスラッグ |
-| `version` | `string` | いいえ | 最新のリリース | 公開されたとおり。先頭の `v` はあってもなくてもよい |
+| `version` | `string` | いいえ | 最新のリリース | 公開されたとおり。先頭の `v` はあってもなくてもよい。`changes` を指定して `version` を省略した場合は、ID が示すリリースを読み込みます |
 | `lang` | `string` | いいえ | `en` | `en`・`ko`・`ja`。根拠の引用は原文のまま |
+| `kinds` | `array` | いいえ | すべての種類 | 指定した種類の変更だけを返します。この場合、折りたたまれた行（`folded`）は含まれません。1.2.0 以降。 |
+| `changes` | `array` | いいえ | すべての変更 | 変更またはアップグレード前の確認事項の ID を最大 50 件指定し、その項目だけを返します。見つからない ID は `not_found` に載ります。`version` を省略すると、ID が示すリリースを最大 10 件読み込みます。`kinds` とは同時に指定できません。1.2.0 以降。 |
 
 ### 呼び出し例
 
@@ -485,17 +571,19 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
     {
       "id": "etcd@v3.5.32#4aa67035",
       "kind": "security",
-      "title": "gRPC client certificate revocation checks enforced",
-      "body": "A client with a revoked certificate could authenticate over gRPC even though the HTTP endpoint rejected it. The gRPC listener now rejects peers whose certificate serial number appears in the configured CRL.",
-      "severity": null,
+      "title": "gRPC client certificate revocation enforcement fixed",
+      "body": "Before this release, a certificate listed in the CRL was rejected over HTTP but could still authenticate over gRPC. The gRPC listener now rejects clients whose certificate serial number is listed in the CRL.",
+      "severity": "medium",
       "advisories": [
+        "CVE-2026-59818",
         "GHSA-3wh4-j44w-pg92"
       ],
       "affects": {
-        "text": "split HTTP and gRPC client endpoints using `--listen-client-http-urls` with `--client-crl-file` configured",
+        "text": "Split HTTP and gRPC client endpoints configured with `--listen-client-http-urls` and `--client-crl-file`",
         "status": "stated"
       },
       "also_required": null,
+      "no_downgrade": null,
       "security_unclear": false,
       "silent_failure": false,
       "workaround": {
@@ -520,8 +608,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
   ],
   "folded": {
     "dependency_updates_without_security": [
-      "- Compile binaries using [go 1.25.11](https://github.com/etcd-io/etcd/pull/21893)",
-      "…"
+      "- Compile binaries using [go 1.25.11](https://github.com/etcd-io/etcd/pull/21893)"
     ],
     "already_in_earlier_release": []
   },
@@ -562,54 +649,34 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
     {
       "project": "etcd",
       "name": "etcd",
-      "version": "v3.6.13",
-      "released_at": "2026-07-01T20:43:27Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.6.13",
-      "counts": {
-        "security": 3,
-        "breaking": 0,
-        "deprecations": 0,
-        "important_fixes": 1,
-        "enhancements": 1,
-        "dependency_updates": 1,
-        "other": 0
-      },
-      "warnings": {
-        "critical": 0,
-        "no_downgrade": 0
-      }
-    },
-    {
-      "project": "etcd",
-      "name": "etcd",
-      "version": "v3.5.32",
-      "released_at": "2026-07-01T20:32:19Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.5.32",
-      "counts": {
-        "security": 3,
-        "breaking": 1,
-        "deprecations": 0,
-        "important_fixes": 1,
-        "enhancements": 2,
-        "dependency_updates": 1,
-        "other": 0
-      },
-      "warnings": {
-        "critical": 0,
-        "no_downgrade": 0
-      }
-    },
-    {
-      "project": "etcd",
-      "name": "etcd",
-      "version": "v3.6.12",
-      "released_at": "2026-06-01T20:59:07Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.6.12",
+      "version": "v3.7.4",
+      "released_at": "2026-11-19T00:06:43Z",
+      "url": "https://ratatosk.io/en/releases/etcd/v3.7.4",
       "counts": {
         "security": 0,
-        "breaking": 0,
+        "breaking": 1,
         "deprecations": 0,
         "important_fixes": 2,
+        "enhancements": 0,
+        "dependency_updates": 0,
+        "other": 6
+      },
+      "warnings": {
+        "critical": 0,
+        "no_downgrade": 0
+      }
+    },
+    {
+      "project": "etcd",
+      "name": "etcd",
+      "version": "v3.6.17",
+      "released_at": "2026-11-18T23:03:50Z",
+      "url": "https://ratatosk.io/en/releases/etcd/v3.6.17",
+      "counts": {
+        "security": 1,
+        "breaking": 0,
+        "deprecations": 0,
+        "important_fixes": 1,
         "enhancements": 0,
         "dependency_updates": 1,
         "other": 1
@@ -618,9 +685,10 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
         "critical": 0,
         "no_downgrade": 0
       }
-    }
+    },
+    "…"
   ],
-  "next_before": "2026-06-01T20:59:07Z"
+  "next_before": "2026-11-18T20:45:15Z"
 }
 ```
 
@@ -639,6 +707,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 |---|---|---|---|---|
 | `q` | `string` | はい | なし | 検索語。2〜200 文字 |
 | `lang` | `string` | いいえ | `en` | `en`・`ko`・`ja` |
+| `project` | `string` | いいえ | すべてのプロジェクト | 指定したプロジェクトのリリースだけを検索します。結果にある 3 つの配列すべてに適用されます。1.2.0 以降。 |
 
 ### 応答の欄
 
@@ -647,12 +716,15 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | `in_analysis` | `array` | 変更やアップグレード前の確認項目、またはプロジェクト名やバージョン（`matched.kind: "release"`）が一致したリリース |
 | `in_release_notes` | `array` | リリースノートが一致したリリース |
 | `in_linked_documents` | `array` | ノートがリンクする文書が一致したリリース |
+| `matches` | `array` | リリース項目を通じて見つかった `in_analysis` のリリースにある、一致項目の一覧です。各項目には `id`、`kind`、`title` を含みます。アップグレード前の確認事項の `kind` は `before_upgrade` です。1 リリースにつき最大 20 件で、`matched` にはその先頭の項目だけを示します。結果の先頭 8 件の該当リリースに付きます。折りたたまれた依存関係の行（`matched` の `kind` が `dependency_updates` で、`title` がない場合）には一覧にできる項目がないため、`matches` は付きません。1.2.0 以降。 |
+| `matches_omitted` | `integer` | そのリリースで一致した項目のうち、`matches` の上限 20 件を超えた件数。1.2.0 以降。 |
+| `matches_not_computed` | `integer` | 応答の最上位に置かれます。項目を通じて見つかった `in_analysis` のリリースのうち、1 回の呼び出しで読める上限 8 件を超えたもの、または読み取れなかったもののために `matches` が付かなかった件数です。`project` で絞ると、これらのリリースにたどり着けます。1.2.0 以降。 |
 
 各配列には、公開日が新しいリリースから順に、`in_analysis` は 200 件、
 `in_release_notes` と `in_linked_documents` は 100 件までのリリースが含まれます。
 ただし `in_analysis` では、プロジェクト名やバージョンが一致したリリース（`matched.kind: "release"`）が先に並び、その後に変更項目が一致したリリースが続きます（それぞれ公開日が新しい順）。
 切り捨てを示す印はないため、配列が上限に達した場合は `q` をより具体的に指定して
-ください。
+ください。`project` は、サーバーがすでに上限を適用した配列に対して絞り込みます。配列が長い場合は `q` も絞ってください。`matches` は `lang` で各リリースを読み取り、その言語のタイトルと本文を使います。根拠の引用とアドバイザリ ID は公開されたとおりです。`matches` があるリリースでは、`matched` が示す項目は必ずその中に含まれます。項目の本文と根拠は、その ID を `get_release(project, version, changes: [id, …])` に渡して取得できます。
 
 ### 呼び出し例
 
@@ -664,8 +736,40 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 
 ```json
 {
+  "matches_not_computed": 0,
   "query": "GHSA-3wh4-j44w-pg92",
   "in_analysis": [
+    {
+      "project": "etcd",
+      "name": "etcd",
+      "version": "v3.7.0",
+      "released_at": "2026-07-08T18:26:53Z",
+      "url": "https://ratatosk.io/en/releases/etcd/v3.7.0",
+      "counts": {
+        "security": 2,
+        "breaking": 4,
+        "deprecations": 0,
+        "important_fixes": 1,
+        "enhancements": 0,
+        "dependency_updates": 3,
+        "other": 5
+      },
+      "warnings": {
+        "critical": 0,
+        "no_downgrade": 0
+      },
+      "matched": {
+        "kind": "security",
+        "title": "gRPC certificate revocation checks fixed"
+      },
+      "matches": [
+        {
+          "id": "etcd@v3.7.0#427c7c39",
+          "kind": "security",
+          "title": "gRPC certificate revocation checks fixed"
+        }
+      ]
+    },
     {
       "project": "etcd",
       "name": "etcd",
@@ -687,8 +791,15 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
       },
       "matched": {
         "kind": "security",
-        "title": "gRPC CRL revocation checks enforced"
-      }
+        "title": "gRPC client certificate revocation checks enforced"
+      },
+      "matches": [
+        {
+          "id": "etcd@v3.6.13#1713075e",
+          "kind": "security",
+          "title": "gRPC client certificate revocation checks enforced"
+        }
+      ]
     },
     "…"
   ],
@@ -732,34 +843,28 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 {
   "projects": [
     {
-      "slug": "envoy",
-      "name": "Envoy",
+      "slug": "argo",
+      "name": "Argo",
       "tier": "graduated",
-      "category": "Networking & Messaging",
-      "website": "https://www.envoyproxy.io",
+      "category": "CI/CD & App Delivery",
+      "website": "https://argoproj.github.io",
       "latest": {
-        "version": "v1.38.3",
-        "released_on": "2026-06-23"
+        "version": "v3.6.2",
+        "released_on": "2026-11-18"
       },
-      "analyzed_releases": 25,
-      "image_aliases": [
-        "cilium-envoy"
-      ],
-      "cluster_core": true
+      "analyzed_releases": 67
     },
     {
-      "slug": "etcd",
-      "name": "etcd",
-      "tier": "graduated",
-      "category": "Kubernetes Core",
-      "website": "https://etcd.io",
+      "slug": "artifact-hub",
+      "name": "Artifact Hub",
+      "tier": "incubating",
+      "category": "CI/CD & App Delivery",
+      "website": "https://artifacthub.io",
       "latest": {
-        "version": "v3.6.13",
-        "released_on": "2026-07-01"
+        "version": "v1.24.0",
+        "released_on": "2026-11-17"
       },
-      "analyzed_releases": 20,
-      "cluster_core": true,
-      "visibility": "may live outside the k8s API, be hidden by a managed control plane, or be replaced entirely — a missing pod is not a missing component; when unreadable, report it under Could not check instead of guessing a version"
+      "analyzed_releases": 3
     },
     "…"
   ]
@@ -774,11 +879,11 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 | 状況 | ツール | エラー文（一部） | 対処 |
 |---|---|---|---|
 | 分析済みリリースにないバージョン | `get_release` | `HTTP 404`、`no analyzed release etcd v9.9.9`、`recent: v3.7.3, v3.6.16, …` | エラー文にある最近のバージョンのいずれかで呼び直す |
-| 不明なプロジェクト | `get_release`、`list_releases`、`check_upgrade` | `unknown project nope` | `list_projects` でスラッグを確認する。どのツールもスラッグの大文字小文字と前後の空白を無視する |
+| 不明なプロジェクト | `get_release`、`list_releases`、`check_upgrade`、`search` | `unknown project nope` | `list_projects` でスラッグを確認する。どのツールもスラッグの大文字小文字と前後の空白を無視する |
 | 必須パラメーターの不足 | すべて | `project is required`、`project and from are required`、`components is required` | 不足しているパラメーターを加えて呼び直す |
 | `components` の要素に `project` がない | `check_stack` | `component 1 has no project (keys received: …)` | エラー文が示す形のとおりに呼び直す |
 | コンポーネントが 100 件を超える | `check_stack` | `too many components: 120 (max 100)` | 複数回に分けて呼び出す |
-| 受け付けない値 | すべて | `lang must be "en", "ko" or "ja"`、`detail must be "brief" or "full"`、`kind must be one of …`、`since must be a date, YYYY-MM-DD`、`q must be 2–200 characters` | エラー文が示す値で呼び直す |
+| 受け付けない値 | すべて | `lang must be "en", "ko" or "ja"`、`detail must be "brief" or "full"`、`kind must be one of …`、`kinds: unknown kind`、`kinds: a briefing lists …`、`changes: 51 ids, at most 50`、`pass changes or kinds, not both`、`changes name 11 releases`、`sets both same_minor and target_version`、`same_minor and to are both set`、`since must be a date, YYYY-MM-DD`、`q must be 2–200 characters` | エラー文が示す値で呼び直す |
 | 同じリリースラインの分析済みのどのリリースよりも新しい `from`、または分析済みリリースのないリリースラインの `from` | `check_upgrade` | `HTTP 404`、`is newer than every analyzed release`、`no analyzed release of … in the release line` | 稼働中バージョンを確認し直し、エラー文のタグのようにリリースラインの接頭辞を含めて呼び直す |
 | 範囲内のリリースが 60 件を超える | `check_upgrade` | `HTTP 400`、`101 releases between v0.0.1 and v1.0.76`、`(max 60)` | `to` を指定して区間を分けて呼び出す |
 | レート制限に達した | すべて | `HTTP 429` | しばらく待って呼び直す。複数のプロジェクトは `check_stack` 1 回にまとめる |
@@ -791,7 +896,7 @@ ratatosk-mcp 1.0 が提供する 6 つのツールの詳細リファレンスで
 |---|---|
 | ratatosk が知らないプロジェクト名（`tracked: false`） | `list_projects` でスラッグを確認する。別のスラッグで載っていることがあります。一覧になければ ratatosk の追跡対象ではありません |
 | 解釈できないバージョン | 公開されたとおりに渡し直す |
-| 記録されたリリースのないリリースライン | 理由にある例のように、リリースラインの接頭辞を含めて渡し直す（例：`flagd/v0.16.1`） |
+| 記録されたリリースのないリリースライン | リリースラインの接頭辞を付けてバージョンを再度渡してください（例：`flagd/v0.16.1`）。エラーの理由に、バージョンの後ろにリリースラインではない文字列があると示されている場合は、イメージタグが付加した部分を除いて渡してください。コミットを含むイメージビルドサフィックス（`v1.37.6-1789133542-<commit>`）はサーバーが自動的に読み取り、読み取ったバージョンは `version_read_as` に示します。 |
 | 同じリリースラインの分析済みのどのリリースよりも新しい稼働中バージョン | ratatosk がまだ分析していないバージョンか、バージョンの読み違い。稼働中のリソースから読み直し、正しければリリースノートを直接確認する |
 | 呼び出しの時間切れ（90 秒） | 残りのコンポーネントで呼び直す |
 | 1 回の呼び出しで読み取れるリリース数の上限（600 件）を超過 | 残りのコンポーネントで呼び直す |
