@@ -8,6 +8,7 @@ import (
 	"go/parser"
 	"go/token"
 	"io/fs"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -19,7 +20,11 @@ import (
 )
 
 // importRules are imports a package must not reach, directly or through the
-// packages it imports (non-test files only).
+// packages it imports (non-test files only): the module's client, and the
+// standard library's ways to the network (see network). What this holds is
+// that such a package cannot fetch by itself. A client, or a function that
+// fetches, handed to it as an argument fetches all the same; only the
+// behaviour tests — what check_stack sends upstream — hold that.
 var importRules = []struct{ from, to, why string }{
 	{"internal/briefing", "internal/upstream", "a briefing is computed from the documents it is given: if it could fetch, " +
 		"what check_stack sends upstream could depend on the running version, which is what check_stack exists to prevent"},
@@ -28,6 +33,21 @@ var importRules = []struct{ from, to, why string }{
 	{"internal/advisory", "internal/upstream", "the advisory count is a function of the documents a briefing is given"},
 	{"internal/release", "internal/upstream", "the release shapes are what the code that decides on releases may know " +
 		"without knowing the client"},
+}
+
+// network says whether a standard package can reach the network: open a
+// connection (net and the packages under it, crypto/tls) or start or call
+// something that does (os/exec, syscall). net/url, net/netip and net/mail only
+// parse values. A rule against internal/upstream alone let a package import
+// net/http and fetch (independent review, 2026-11-21).
+func network(p string) bool {
+	switch p {
+	case "net/url", "net/netip", "net/mail":
+		return false
+	case "net", "crypto/tls", "os/exec", "syscall":
+		return true
+	}
+	return strings.HasPrefix(p, "net/")
 }
 
 // modulePackages reads every package of the module: its import path relative
@@ -108,8 +128,14 @@ func TestImportRules(t *testing.T) {
 			t.Errorf("rule for %s: no such package", r.from)
 			continue
 		}
-		if reach(imports, r.from)[r.to] {
+		reached := reach(imports, r.from)
+		if reached[r.to] {
 			t.Errorf("%s reaches %s: %s", r.from, r.to, r.why)
+		}
+		for _, p := range slices.Sorted(maps.Keys(reached)) {
+			if _, ours := imports[p]; !ours && network(p) {
+				t.Errorf("%s reaches %s, a way to the network: %s", r.from, p, r.why)
+			}
 		}
 	}
 
