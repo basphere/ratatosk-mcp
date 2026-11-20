@@ -1,4 +1,4 @@
-package main
+package tools
 
 // The P1/P2 "done means" from docs/logging-design.md, as tests: a forced
 // upstream failure produces exactly one ERROR line; the marker probe holds
@@ -13,15 +13,12 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/basphere/ratatosk-mcp/internal/config"
 	"github.com/basphere/ratatosk-mcp/internal/logging"
-	"github.com/basphere/ratatosk-mcp/internal/upstream"
 )
 
 // captureLogs redirects the default logger (at DEBUG, the most talkative
@@ -33,13 +30,6 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 	slog.SetDefault(logging.NewLogger(&buf, slog.LevelDebug))
 	t.Cleanup(func() { slog.SetDefault(prev) })
 	return &buf
-}
-
-func swapAPI(t *testing.T, ts *httptest.Server) {
-	t.Helper()
-	orig := api
-	api = upstream.New(ts.URL, buildVersion, config.Read(os.Getenv).CacheMaxBytes, mx)
-	t.Cleanup(func() { api = orig; ts.Close() })
 }
 
 func logLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
@@ -62,11 +52,11 @@ func TestLogInvariantMarkerProbe(t *testing.T) {
 	const markerVersion = "9.9.9-MRKVER"
 	const markerSource = "MRKSRC daemonset image tag"
 	buf := captureLogs(t)
-	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := withAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusBadGateway)
 	})))
 
-	_, _, err := checkStackTool(context.Background(), nil, checkStackArgs{
+	_, _, err := h.checkStackTool(context.Background(), nil, checkStackArgs{
 		Components: []stackComponent{{Project: "envoy", Version: markerVersion, VersionSource: markerSource}},
 	})
 	if err != nil {
@@ -98,11 +88,11 @@ func TestLogInvariantMarkerProbe(t *testing.T) {
 
 func TestClientMistakeIsNotError(t *testing.T) {
 	buf := captureLogs(t)
-	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := withAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"unknown project"}`, http.StatusNotFound)
 	})))
 
-	if _, _, err := getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "no-such-thing"}); err != nil {
+	if _, _, err := h.getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "no-such-thing"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range logLines(t, buf) {
@@ -117,13 +107,13 @@ func TestTracePropagation(t *testing.T) {
 	const traceID = "4bf92f3577b34da6a3ce929d0e0e4736"
 	buf := captureLogs(t)
 	var upstreamSaw []string
-	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := withAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		upstreamSaw = append(upstreamSaw, r.Header.Get("traceparent"))
 		w.Write([]byte(`{"projects":[]}`))
 	})))
 
 	req := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Meta: mcp.Meta{"traceparent": tp}}}
-	if _, _, err := listProjectsTool(context.Background(), req, listProjectsArgs{}); err != nil {
+	if _, _, err := h.listProjectsTool(context.Background(), req, listProjectsArgs{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -146,7 +136,7 @@ func TestTracePropagation(t *testing.T) {
 	// A malformed traceparent is dropped, not forwarded.
 	upstreamSaw = nil
 	bad := &mcp.CallToolRequest{Params: &mcp.CallToolParamsRaw{Meta: mcp.Meta{"traceparent": "garbage"}}}
-	if _, _, err := listProjectsTool(context.Background(), bad, listProjectsArgs{}); err != nil {
+	if _, _, err := h.listProjectsTool(context.Background(), bad, listProjectsArgs{}); err != nil {
 		t.Fatal(err)
 	}
 	if len(upstreamSaw) == 0 || upstreamSaw[0] != "" {

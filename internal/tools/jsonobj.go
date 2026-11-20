@@ -1,4 +1,4 @@
-package main
+package tools
 
 // Reading part of an upstream answer and passing the rest on as it came.
 //
@@ -6,9 +6,10 @@ package main
 // arrays out of answers that were passed through verbatim until now. Decoding
 // them into Go maps and encoding again would sort every key and drop nothing,
 // but it would reorder the server's fields, and a struct would drop the fields
-// the server adds later (client.go: unknown fields are ignored so the server
-// can add them). These helpers keep each object's keys in the order received
-// and every value byte for byte, and touch only the arrays a filter names.
+// the server adds later (internal/release: unknown fields are ignored so the
+// server can add them). These helpers keep each object's keys in the order
+// received and every value byte for byte, and touch only the arrays a filter
+// names.
 
 import (
 	"bytes"

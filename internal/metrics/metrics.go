@@ -65,9 +65,10 @@ var (
 )
 
 // Buckets. Duration: 182 normal calls on the hosted endpoint, 2026-11-11 to
-// 11-18, took 1.49 s at most; a call ends at 90 s (toolTimeout). Bytes: agent
-// clients cap a tool answer in the tens to low hundreds of KB, so the steps
-// around 64–256 KiB are the ones that say how often an answer goes over.
+// 11-18, took 1.49 s at most; a call ends at 90 s (toolTimeout,
+// internal/mcpserver). Bytes: agent clients cap a tool answer in the tens to
+// low hundreds of KB, so the steps around 64–256 KiB are the ones that say how
+// often an answer goes over.
 var (
 	durationBuckets = []float64{0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30, 60, 90}
 	bytesBuckets    = []float64{1 << 10, 4 << 10, 16 << 10, 32 << 10, 64 << 10, 128 << 10, 256 << 10, 512 << 10, 1 << 20, 2 << 20, 4 << 20}

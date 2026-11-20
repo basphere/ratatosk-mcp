@@ -1,6 +1,7 @@
-package main
+package tools
 
-// search's project filter and per-release matches (1.2.0).
+// search: the website's search, with a project filter and per-release
+// matches (1.2.0).
 //
 // Why: /v2/search names one matched item per release (matched — the first in
 // screen order) and takes no project. On 2026-11-20 agents searching
@@ -15,11 +16,81 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/logging"
 	"github.com/basphere/ratatosk-mcp/internal/release"
+	"github.com/basphere/ratatosk-mcp/internal/upstream"
 )
+
+// searchDef is search as a client lists it.
+func searchDef() *mcp.Tool {
+	return &mcp.Tool{
+		Name:        "search",
+		Annotations: &mcp.ToolAnnotations{Title: "Search releases", ReadOnlyHint: true},
+		Description: "Find releases by an advisory id (CVE-…, GHSA-…), a configuration flag, or text, as the " +
+			"website's search does. q matches case-insensitively anywhere in the text, so a partial id finds the full " +
+			"one. A complete advisory ID (CVE-2026-1234, GHSA-xxxx-xxxx-xxxx) matches only that ID. Three groups: in_analysis (a change or before-upgrade item matched, or the project name or version; " +
+			"matched names its kind, release for the latter, and title), in_release_notes (the release notes matched; excerpt shows where) and " +
+			"in_linked_documents (a document the notes link matched). in_analysis lists releases matched by project name " +
+			"or version first, then releases matched through a change item, each set newest first; the other two groups " +
+			"list releases newest first. The groups are capped at 200, 100 and 100 results, respectively. Truncation is not marked, so narrow q if a group reaches " +
+			"its limit. project keeps one project's releases; the caps apply before it, so narrow q as well when a group is long. " +
+			"An in_analysis release matched through an item also carries matches: every item of that release that " +
+			"matches q (id, kind, title; up to 20, matches_omitted counts the rest), on the first 8 such releases; " +
+			"matches_not_computed, at the top, counts the ones that carry none — narrow with project to reach them. " +
+			"A release matched through a folded dependency line (matched kind dependency_updates, no title) has no item " +
+			"to list and carries no matches. " +
+			"q is 2–200 characters. Drill in with get_release(project, version, " +
+			"changes:[id, …]) for the matched items' body and evidence. " + DataNote,
+	}
+}
+
+type searchArgs struct {
+	Q       string `json:"q" jsonschema:"advisory id (CVE-…, GHSA-…), configuration flag, project, version or text; 2–200 characters"`
+	Lang    string `json:"lang,omitempty" jsonschema:"en (default), ko or ja"`
+	Project string `json:"project,omitempty" jsonschema:"project slug, e.g. cilium: only that project's releases; omit for every project"`
+}
+
+func (h *handlers) searchTool(ctx context.Context, req *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
+	ctx = logging.RequestContext(ctx, "search", req)
+	q := strings.TrimSpace(args.Q)
+	if n := len([]rune(q)); n < 2 || n > 200 {
+		return errResult(fmt.Errorf("q must be 2–200 characters")), nil, nil
+	}
+	lang, err := langArg(args.Lang)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	// An unknown slug is an error, as in list_releases: no results for a name
+	// spelled differently reads as "nothing matched".
+	project := slugArg(args.Project)
+	if project != "" {
+		roster, err := h.api.Projects(ctx)
+		if err != nil {
+			return errResult(fmt.Errorf("could not read the project list: %w", err)), nil, nil
+		}
+		if !slices.ContainsFunc(roster, func(p upstream.Project) bool { return p.Slug == project }) {
+			return errResult(unknownProject(project)), nil, nil
+		}
+	}
+	raw, err := h.api.SearchRaw(ctx, q, lang)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	if !isJSONObject(raw) {
+		return rawResult(raw), nil, nil
+	}
+	b, err := h.searchAnswer(ctx, raw, project, q, lang)
+	if err != nil {
+		return errResult(fmt.Errorf("/v2/search: %w", err)), nil, nil
+	}
+	return rawResult(b), nil, nil
+}
 
 // searchMatchReleases bounds the release documents one search call reads for
 // matches (the spec, revised 2026-11-20): a document is up to 870 KB (cilium
@@ -149,10 +220,10 @@ func (d matchDoc) items() []matchItem {
 // The website's index holds every language, so a query in English text can
 // match a release here on its English title alone; the server's own matched
 // item is always among the matches, so such a release still lists that one.
-func releaseMatches(ctx context.Context, project, ver, lang string, find func(string) bool, matched *searchMatch) ([]searchMatch, error) {
+func (h *handlers) releaseMatches(ctx context.Context, project, ver, lang string, find func(string) bool, matched *searchMatch) ([]searchMatch, error) {
 	read := func(l string) (matchDoc, error) {
 		var d matchDoc
-		b, err := api.ReleaseRaw(ctx, project, ver, l, true)
+		b, err := h.api.ReleaseRaw(ctx, project, ver, l, true)
 		if err != nil {
 			return d, err
 		}
@@ -196,7 +267,7 @@ func releaseMatches(ctx context.Context, project, ver, lang string, find func(st
 // and adds matches to the in_analysis releases matched through an item, and
 // matches_not_computed, first, for those that carry none. Everything else is
 // passed on as received.
-func searchAnswer(ctx context.Context, raw []byte, project, q, lang string) ([]byte, error) {
+func (h *handlers) searchAnswer(ctx context.Context, raw []byte, project, q, lang string) ([]byte, error) {
 	fields, err := readObject(raw)
 	if err != nil {
 		return nil, err
@@ -264,7 +335,7 @@ func searchAnswer(ctx context.Context, raw []byte, project, q, lang string) ([]b
 				go func(jb job) {
 					defer wg.Done()
 					defer func() { <-sem }()
-					m, err := releaseMatches(ctx, jb.h.Project, jb.h.Version, lang, find, jb.h.Matched)
+					m, err := h.releaseMatches(ctx, jb.h.Project, jb.h.Version, lang, find, jb.h.Matched)
 					if err != nil {
 						return // that release carries no matches; the row itself is still answered
 					}

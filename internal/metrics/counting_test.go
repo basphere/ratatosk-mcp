@@ -1,4 +1,11 @@
-package main
+package metrics_test
+
+// Counting end to end: through the HTTP chain (internal/httpfront) and the
+// server (internal/mcpserver), built the way main builds them — each POST
+// counted exactly once, every outcome, every refusal, and nothing a caller sent
+// in the exposition. An external test package, because it needs the packages
+// that import this one; the closed label lists and the body scanner it checks
+// against are exported to it by export_test.go.
 
 import (
 	"bufio"
@@ -10,6 +17,7 @@ import (
 	"os"
 	"regexp"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -19,18 +27,11 @@ import (
 
 	"github.com/basphere/ratatosk-mcp/internal/config"
 	"github.com/basphere/ratatosk-mcp/internal/httpfront"
+	"github.com/basphere/ratatosk-mcp/internal/mcpserver"
 	"github.com/basphere/ratatosk-mcp/internal/metrics"
+	"github.com/basphere/ratatosk-mcp/internal/upstream"
 	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
-
-func withMetrics(t *testing.T) *metrics.Metrics {
-	t.Helper()
-	m := metrics.New("test-1.1")
-	orig := mx
-	mx = m
-	t.Cleanup(func() { mx = orig })
-	return m
-}
 
 // series parses an exposition into "name{labels}" → value.
 func series(t *testing.T, m *metrics.Metrics) map[string]float64 {
@@ -96,12 +97,47 @@ func mcpPost(t *testing.T, url, body string, hdr map[string]string) (int, string
 	return resp.StatusCode, resp.Header.Get("Mcp-Session-Id") + "|" + string(b)
 }
 
-func mcpServer(t *testing.T, rl *httpfront.RateLimiter, stateless bool) *httptest.Server {
+func mcpServer(t *testing.T, api *upstream.Client, m *metrics.Metrics, rl *httpfront.RateLimiter, stateless bool) *httptest.Server {
 	t.Helper()
-	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return newServer() }, &mcp.StreamableHTTPOptions{Stateless: stateless})
-	ts := httptest.NewServer(httpfront.Handler(h, httpfront.Options{RateLimiter: rl, MaxInflight: 4, InflightWait: time.Second, SelfCallers: config.Read(os.Getenv).SelfCallers, Metrics: mx}))
+	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+		return mcpserver.New(mcpserver.Options{Version: "dev", API: api, Metrics: m})
+	}, &mcp.StreamableHTTPOptions{Stateless: stateless})
+	ts := httptest.NewServer(httpfront.Handler(h, httpfront.Options{RateLimiter: rl, MaxInflight: 4, InflightWait: time.Second, SelfCallers: config.Read(os.Getenv).SelfCallers, Metrics: m}))
 	t.Cleanup(ts.Close)
 	return ts
+}
+
+// withAPI is a client of ts that counts into m; ts is closed when the test
+// ends.
+func withAPI(t *testing.T, m *metrics.Metrics, ts *httptest.Server) *upstream.Client {
+	t.Helper()
+	t.Cleanup(ts.Close)
+	return upstream.New(ts.URL, "dev", 32<<20, m) // 32 MiB: the default cache budget
+}
+
+// serverToolNames lists the tools a client receives from the server, sorted.
+func serverToolNames(t *testing.T) []string {
+	t.Helper()
+	ctx := context.Background()
+	ct, st := mcp.NewInMemoryTransports()
+	if _, err := mcpserver.New(mcpserver.Options{}).Connect(ctx, st, nil); err != nil {
+		t.Fatal(err)
+	}
+	cs, err := mcp.NewClient(&mcp.Implementation{Name: "metrics-test"}, nil).Connect(ctx, ct, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cs.Close()
+	res, err := cs.ListTools(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, tool := range res.Tools {
+		names = append(names, tool.Name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 const (
@@ -115,9 +151,9 @@ func toolCall(id int, name, args string) string {
 
 // Every outcome, each POST counted once, labels from closed lists only.
 func TestMetricsCountEveryOutcomeOnce(t *testing.T) {
-	m := withMetrics(t)
-	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
-	ts := mcpServer(t, httpfront.NewRateLimiter(9), true)
+	m := metrics.New("test-1.1")
+	api := withAPI(t, m, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
+	ts := mcpServer(t, api, m, httpfront.NewRateLimiter(9), true)
 	u := ts.URL + "/mcp"
 
 	posts := 0
@@ -220,7 +256,7 @@ func assertClosedLabels(t *testing.T, m *metrics.Metrics) {
 // busy: the in-flight cap waited and gave up — counted under the tool the
 // refused call named, read from the body the server never got to.
 func TestMetricsCountBusy(t *testing.T) {
-	m := withMetrics(t)
+	m := metrics.New("test-1.1")
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
 	h := httpfront.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -263,10 +299,10 @@ func TestMetricsCountBusy(t *testing.T) {
 // the request's; each is still counted once, and the event stream (GET) is
 // not a request.
 func TestMetricsStatefulSessionCountsOnce(t *testing.T) {
-	m := withMetrics(t)
+	m := metrics.New("test-1.1")
 	t.Setenv("MCP_SELF_CALLERS", "127.0.0.1")
-	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
-	ts := mcpServer(t, nil, false)
+	api := withAPI(t, m, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
+	ts := mcpServer(t, api, m, nil, false)
 	u := ts.URL + "/mcp"
 	code, resp := mcpPost(t, u, initBody, nil)
 	sid, _, _ := strings.Cut(resp, "|")
@@ -296,7 +332,7 @@ func TestMetricsStatefulSessionCountsOnce(t *testing.T) {
 // Off by default: nothing is counted, the body is the caller's, and there is
 // no route to metrics on the MCP listener — with metrics on or off.
 func TestMetricsOffByDefaultAndNotOnTheMCPListener(t *testing.T) {
-	if mx != nil {
+	if config.Read(func(string) string { return "" }).MetricsAddr != "" {
 		t.Fatal("metrics are on before anything turned them on")
 	}
 	var seen io.ReadCloser
@@ -307,16 +343,17 @@ func TestMetricsOffByDefaultAndNotOnTheMCPListener(t *testing.T) {
 	})
 	r := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(notified))
 	body := r.Body
-	mx.HTTPMiddleware(inner).ServeHTTP(httptest.NewRecorder(), r)
+	(*metrics.Metrics)(nil).HTTPMiddleware(inner).ServeHTTP(httptest.NewRecorder(), r)
 	if seen != body || tally != nil {
 		t.Error("with metrics off the HTTP layer must hand the request on untouched")
 	}
 
 	for _, on := range []bool{false, true} {
+		var m *metrics.Metrics
 		if on {
-			withMetrics(t)
+			m = metrics.New("test-1.1")
 		}
-		ts := httptest.NewServer(httpfront.Handler(inner, httpfront.Options{InflightWait: time.Second, Metrics: mx}))
+		ts := httptest.NewServer(httpfront.Handler(inner, httpfront.Options{InflightWait: time.Second, Metrics: m}))
 		for _, p := range []string{"/metrics", "/mcp/metrics", "/healthz/metrics"} {
 			resp, err := http.Get(ts.URL + p)
 			if err != nil {
@@ -334,7 +371,7 @@ func TestMetricsOffByDefaultAndNotOnTheMCPListener(t *testing.T) {
 
 // The closed tool list is the tool list a client receives.
 func TestMetricsToolListMatchesServer(t *testing.T) {
-	if got := keys(serverTools(t)); !slices.Equal(got, metrics.ToolNames) {
+	if got := serverToolNames(t); !slices.Equal(got, metrics.ToolNames) {
 		t.Errorf("toolNames %v, server registers %v", metrics.ToolNames, got)
 	}
 }
@@ -369,7 +406,7 @@ func zerosCall(n int) string {
 // Labelling a refusal reads at most metricsPeekBytes of the body, in one pass
 // with no allocation but the labels; a tool name past the bound is "unknown".
 func TestRefusalLabellingIsBounded(t *testing.T) {
-	m := withMetrics(t)
+	m := metrics.New("test-1.1")
 	h := httpfront.Handler(http.NotFoundHandler(), httpfront.Options{RateLimiter: refusingLimiter(), Metrics: m})
 	body := &countingBody{r: strings.NewReader(zerosCall(64 << 10))}
 	r := httptest.NewRequest(http.MethodPost, "/mcp", body)
@@ -405,14 +442,14 @@ func TestRefusalLabellingIsBounded(t *testing.T) {
 // made net/http send 100 Continue, so the client sent a body the server then
 // refused, where 1.0.0 answered the rate limit at once.
 func TestRefusalBehindExpectSendsNoMoreThan100(t *testing.T) {
-	send := func(t *testing.T, outcome string) (status, sent int) {
-		h := httpfront.Handler(http.NotFoundHandler(), httpfront.Options{RateLimiter: refusingLimiter(), Metrics: mx})
+	send := func(t *testing.T, outcome string, m *metrics.Metrics) (status, sent int) {
+		h := httpfront.Handler(http.NotFoundHandler(), httpfront.Options{RateLimiter: refusingLimiter(), Metrics: m})
 		if outcome == "busy" {
 			release, started, held := make(chan struct{}), make(chan struct{}), make(chan struct{})
 			h = httpfront.Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				close(started)
 				<-release
-			}), httpfront.Options{MaxInflight: 1, InflightWait: 20 * time.Millisecond, Metrics: mx})
+			}), httpfront.Options{MaxInflight: 1, InflightWait: 20 * time.Millisecond, Metrics: m})
 			go func() {
 				h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}")))
 				close(held)
@@ -443,9 +480,9 @@ func TestRefusalBehindExpectSendsNoMoreThan100(t *testing.T) {
 		return resp.StatusCode, body.n
 	}
 	for _, outcome := range []string{"rate_limited", "busy"} {
-		offStatus, offSent := send(t, outcome)
-		m := withMetrics(t)
-		onStatus, onSent := send(t, outcome)
+		offStatus, offSent := send(t, outcome, nil)
+		m := metrics.New("test-1.1")
+		onStatus, onSent := send(t, outcome, m)
 		if onStatus != offStatus || onSent != offSent {
 			t.Errorf("%s: metrics on %d with %d body bytes sent, off %d with %d", outcome, onStatus, onSent, offStatus, offSent)
 		}
@@ -464,7 +501,6 @@ func TestRefusalBehindExpectSendsNoMoreThan100(t *testing.T) {
 		if refusals != 1 {
 			t.Errorf("%s: %v refusals counted, want 1", outcome, refusals)
 		}
-		mx = nil
 	}
 }
 
@@ -476,13 +512,11 @@ func BenchmarkRefusedRequestLabel(b *testing.B) {
 	body := []byte(zerosCall(64 << 10))
 	for _, on := range []bool{false, true} {
 		b.Run(map[bool]string{false: "metrics_off", true: "metrics_on"}[on], func(b *testing.B) {
-			orig := mx
-			mx = nil
+			var m *metrics.Metrics
 			if on {
-				mx = metrics.New("bench")
+				m = metrics.New("bench")
 			}
-			b.Cleanup(func() { mx = orig })
-			h := httpfront.Handler(http.NotFoundHandler(), httpfront.Options{RateLimiter: refusingLimiter(), Metrics: mx})
+			h := httpfront.Handler(http.NotFoundHandler(), httpfront.Options{RateLimiter: refusingLimiter(), Metrics: m})
 			b.ReportAllocs()
 			for b.Loop() {
 				r := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
@@ -505,12 +539,13 @@ func TestMetricsCountPostsTheSDKNeverRan(t *testing.T) {
 		{`{"jsonrpc":"2.0","id":5,"method":"tools/list","params":"x"}`, req("tools/list", "", "error", "false")},
 	}
 	// One metrics for both modes, read as deltas: the SDK handles a
-	// notification after it answers 202, so swapping the global between modes
-	// would race with it.
-	m := withMetrics(t)
-	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
+	// notification after it answers 202, so a notification of the first mode
+	// can still be counted while the second runs. (While the metrics were a
+	// global, swapping it between modes raced with that.)
+	m := metrics.New("test-1.1")
+	api := withAPI(t, m, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
 	for _, stateless := range []bool{true, false} {
-		u := mcpServer(t, nil, stateless).URL + "/mcp"
+		u := mcpServer(t, api, m, nil, stateless).URL + "/mcp"
 		var hdr map[string]string
 		if !stateless {
 			code, resp := mcpPost(t, u, initBody, nil)
@@ -544,9 +579,9 @@ func TestMetricsCountPostsTheSDKNeverRan(t *testing.T) {
 // body is a notification there; labelled from the scanner it added one to a
 // tools/call that never ran (final review, 2026-11-18).
 func TestMetricsCount202AsNoCall(t *testing.T) {
-	m := withMetrics(t) // one for both modes, read as deltas (see above)
+	m := metrics.New("test-1.1") // one for both modes, read as deltas (see above)
 	for _, stateless := range []bool{true, false} {
-		u := mcpServer(t, nil, stateless).URL + "/mcp"
+		u := mcpServer(t, nil, m, nil, stateless).URL + "/mcp"
 		var hdr map[string]string
 		if !stateless {
 			code, resp := mcpPost(t, u, initBody, nil)
@@ -571,23 +606,6 @@ func TestMetricsCount202AsNoCall(t *testing.T) {
 			if d := sumPrefix(now, `ratatosk_mcp_requests_total{method="tools/call"`) - sumPrefix(was, `ratatosk_mcp_requests_total{method="tools/call"`); d != 0 {
 				t.Errorf("stateless=%v %s: a notification moved tools/call by %v", stateless, body, d)
 			}
-		}
-	}
-}
-
-// The privacy bullets say every kind of number the metrics keep: per-tool
-// durations, answer sizes and upstream requests too, not only request counts
-// (final review, 2026-11-18). English is pinned here; the Korean and Japanese
-// bullets say the same.
-func TestPrivacyBulletsNameEveryMetric(t *testing.T) {
-	for _, p := range []string{"README.md", "docs/install.en.md"} {
-		raw, err := os.ReadFile(p)
-		if err != nil {
-			t.Fatal(err)
-		}
-		text := strings.Join(strings.Fields(string(raw)), " ")
-		if !strings.Contains(text, "how long calls took, how large the answers were and how many upstream requests they sent") {
-			t.Errorf("%s: the privacy bullet does not name durations, answer sizes and upstream requests", p)
 		}
 	}
 }

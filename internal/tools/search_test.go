@@ -1,4 +1,4 @@
-package main
+package tools
 
 // search's project filter and matches (1.2.0): agents searching
 // "BackendTLSPolicy" for a cilium upgrade got one matched item for cilium
@@ -32,7 +32,7 @@ func TestSearchFinderMatchesWholeAdvisoryIDs(t *testing.T) {
 	}
 }
 
-func searchServer(t *testing.T, matches int) *upstreamtest.Fake {
+func searchServer(t *testing.T, matches int) (*upstreamtest.Fake, *handlers) {
 	t.Helper()
 	row := func(project, ver, kind, title string) string {
 		m := fmt.Sprintf(`{"kind":%q,"title":%q}`, kind, title)
@@ -69,13 +69,13 @@ func searchServer(t *testing.T, matches int) *upstreamtest.Fake {
 		}
 		f.Handler(t)(w, r)
 	}))
-	swapAPI(t, ts)
-	return f
+	h := withAPI(t, ts)
+	return f, h
 }
 
 func TestSearchFiltersByProjectAndListsEveryMatch(t *testing.T) {
-	f := searchServer(t, 3)
-	res, _, _ := searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy", Project: " Etcd "})
+	f, h := searchServer(t, 3)
+	res, _, _ := h.searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy", Project: " Etcd "})
 	text := res.Content[0].(*mcp.TextContent).Text
 	if res.IsError {
 		t.Fatal(text)
@@ -116,15 +116,15 @@ func TestSearchFiltersByProjectAndListsEveryMatch(t *testing.T) {
 		t.Errorf("read releases the answer does not carry matches for: %s", reqs)
 	}
 
-	res, _, _ = searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy", Project: "argo-cd"})
+	res, _, _ = h.searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy", Project: "argo-cd"})
 	if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !strings.Contains(text, "unknown project argo-cd") {
 		t.Errorf("an unknown project: %s", text)
 	}
 }
 
 func TestSearchCountsMatchesPastTheBound(t *testing.T) {
-	searchServer(t, maxMatches+5)
-	res, _, _ := searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy"})
+	_, h := searchServer(t, maxMatches+5)
+	res, _, _ := h.searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy"})
 	var out struct {
 		NotComputed int `json:"matches_not_computed"`
 		InAnalysis  []struct {
@@ -156,14 +156,14 @@ func TestSearchReadsAtMostEightReleases(t *testing.T) {
 		rows = append(rows, fmt.Sprintf(`{"project":"etcd","version":%q,"matched":{"kind":"breaking","title":"BackendTLSPolicy"}}`, v))
 	}
 	answer := `{"query":"BackendTLSPolicy","in_analysis":[` + strings.Join(rows, ",") + `],"in_release_notes":[],"in_linked_documents":[]}`
-	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := withAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/v2/search" {
 			w.Write([]byte(answer))
 			return
 		}
 		f.Handler(t)(w, r)
 	})))
-	res, _, _ := searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy"})
+	res, _, _ := h.searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy"})
 	var out struct {
 		NotComputed int `json:"matches_not_computed"`
 		InAnalysis  []struct {

@@ -23,6 +23,8 @@ import (
 	"unicode"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/config"
 )
 
 // docTrios are the documents published in English, Korean and Japanese. Their
@@ -107,7 +109,7 @@ func serverTools(t *testing.T) map[string][]string {
 	t.Helper()
 	ctx := context.Background()
 	ct, st := mcp.NewInMemoryTransports()
-	if _, err := newServer().Connect(ctx, st, nil); err != nil {
+	if _, err := newServer(config.Read(func(string) string { return "" }), nil, nil).Connect(ctx, st, nil); err != nil {
 		t.Fatal(err)
 	}
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "docs-test"}, nil).Connect(ctx, ct, nil)
@@ -490,6 +492,23 @@ func TestDocsAnchorsResolve(t *testing.T) {
 					t.Errorf("%s links %s, but %s has no heading with that anchor", path, l, target)
 				}
 			}
+		}
+	}
+}
+
+// The privacy bullets say every kind of number the metrics keep: per-tool
+// durations, answer sizes and upstream requests too, not only request counts
+// (final review, 2026-11-18). English is pinned here; the Korean and Japanese
+// bullets say the same.
+func TestPrivacyBulletsNameEveryMetric(t *testing.T) {
+	for _, p := range []string{"README.md", "docs/install.en.md"} {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		text := strings.Join(strings.Fields(string(raw)), " ")
+		if !strings.Contains(text, "how long calls took, how large the answers were and how many upstream requests they sent") {
+			t.Errorf("%s: the privacy bullet does not name durations, answer sizes and upstream requests", p)
 		}
 	}
 }

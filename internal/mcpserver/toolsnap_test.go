@@ -1,4 +1,4 @@
-package main
+package mcpserver
 
 // What tools/list says in 1.2.0 is 1.1.0's plus the new arguments, and
 // nothing taken away or renamed.
@@ -6,10 +6,13 @@ package main
 // Why: the rule for 1.x (the owner, 2026-11-03) is that a version number moves
 // only when an argument or a field is removed or changes name or meaning;
 // additions keep it. A client written against 1.1.0 must find every argument
-// it sends where it was, with the same type. testdata/tools-list-1.1.0.json is
-// tools/list as 2613481 (the 1.1.0 tag) answers it, dumped through an
-// in-memory client from that commit's newServer — the way
-// testdata/tools-list-1.0.0.json was for 1.1.0.
+// it sends where it was, with the same type.
+// testdata/release-snapshot/tools-list-1.1.0.json is tools/list as 2613481
+// (the 1.1.0 tag) answers it, dumped through an in-memory client from that
+// commit's newServer; 1.1.0 was held to 1.0.0's snapshot the same way. Only
+// the latest release's snapshot is kept: the rule is additions only, so
+// holding each release to the one before chains back to 1.0.0. How to dump the
+// next one is in testdata/README.md at the repository root.
 //
 // What may differ: descriptions — 1.2.0 rewrites "the latest on the same
 // release line" (read as "the same minor" by 7 of 8 agent runs, 2026-11-20)
@@ -64,7 +67,7 @@ func currentToolsList(t *testing.T) []map[string]any {
 	t.Helper()
 	ctx := context.Background()
 	ct, st := mcp.NewInMemoryTransports()
-	if _, err := newServer().Connect(ctx, st, nil); err != nil {
+	if _, err := New(Options{}).Connect(ctx, st, nil); err != nil {
 		t.Fatal(err)
 	}
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "tools110-test"}, nil).Connect(ctx, ct, nil)
@@ -85,7 +88,7 @@ func currentToolsList(t *testing.T) []map[string]any {
 }
 
 func TestToolsListIs110PlusTheNewArguments(t *testing.T) {
-	raw, err := os.ReadFile("testdata/tools-list-1.1.0.json")
+	raw, err := os.ReadFile("testdata/release-snapshot/tools-list-1.1.0.json")
 	if err != nil {
 		t.Fatal(err)
 	}
