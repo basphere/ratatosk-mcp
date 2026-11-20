@@ -74,7 +74,11 @@ var (
 	bytesBuckets    = []float64{1 << 10, 4 << 10, 16 << 10, 32 << 10, 64 << 10, 128 << 10, 256 << 10, 512 << 10, 1 << 20, 2 << 20, 4 << 20}
 )
 
-func toolLabel(name string) string {
+// ToolLabel is name when it is one of the tools the server registers, and
+// "unknown" otherwise: what a series or a log line may carry for a tool name a
+// caller sent. A name the caller chose could carry anything, a running version
+// among it.
+func ToolLabel(name string) string {
 	if slices.Contains(toolNames, name) {
 		return name
 	}
@@ -171,7 +175,7 @@ func (m *Metrics) countRequest(method, tool, outcome string, self bool) {
 	}
 	k := requestKey{method: methodLabel(method), outcome: outcome, self: strconv.FormatBool(self)}
 	if k.method == "tools/call" {
-		k.tool = toolLabel(tool)
+		k.tool = ToolLabel(tool)
 	}
 	if !slices.Contains(requestOutcomes, k.outcome) {
 		k.outcome = "error"
@@ -188,7 +192,7 @@ func (m *Metrics) CountUpstream(tool, outcome string) {
 	if m == nil {
 		return
 	}
-	k := upstreamKey{tool: toolLabel(tool), outcome: outcome}
+	k := upstreamKey{tool: ToolLabel(tool), outcome: outcome}
 	if !slices.Contains(upstreamOutcomes, k.outcome) {
 		k.outcome = "transport"
 	}
@@ -204,7 +208,7 @@ func (m *Metrics) observeTool(tool string, d time.Duration, bytes int) {
 	if m == nil {
 		return
 	}
-	t := toolLabel(tool)
+	t := ToolLabel(tool)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.duration[t].observe(d.Seconds())

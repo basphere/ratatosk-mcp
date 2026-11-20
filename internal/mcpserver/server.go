@@ -9,6 +9,8 @@ package mcpserver
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -67,6 +69,10 @@ func New(o Options) *mcp.Server {
 	})
 	tools.Register(server, o.API)
 
+	// Added first, so it is the innermost: the audit stream, the deadline and
+	// the counters see a panicked call as an ordinary tool error (counted
+	// outcome="error").
+	server.AddReceivingMiddleware(recoverMiddleware)
 	// Audit stream (P3): observes tools/call when MCP_AUDIT is set; the
 	// identity function otherwise. See internal/audit and docs/logging-design.md.
 	server.AddReceivingMiddleware(o.Audit.Middleware)
@@ -75,6 +81,40 @@ func New(o Options) *mcp.Server {
 	// moment it arrives to its answer. The identity while metrics are off.
 	server.AddReceivingMiddleware(o.Metrics.Middleware)
 	return server
+}
+
+// panicAnswer is what a caller receives when its tool call panicked: that the
+// failure is the server's, so the same call will likely fail again, and that
+// other calls are unaffected — nothing of the failure itself.
+const panicAnswer = "internal error: the server failed while answering this call — a fault in the server, not an answer " +
+	"about the releases. The same call will most likely fail the same way, so do not retry it unchanged; other calls " +
+	"are not affected, and a narrower call (fewer components, another project) may succeed."
+
+// recoverMiddleware answers a tool call whose handling panicked with a tool
+// error, and logs one line: the tool (from the closed list of tool names) and
+// the panic value's type. A panic in a request goroutine reaches no recover in
+// the SDK, so one call took the whole server down with every call in flight
+// (a release document without warnings; independent review, 2026-11-21). The
+// panic's message is not logged: it can quote what the call carried, a
+// running version among it.
+func recoverMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (res mcp.Result, err error) {
+		if method != "tools/call" {
+			return next(ctx, method, req)
+		}
+		defer func() {
+			if r := recover(); r != nil {
+				name := ""
+				if p, ok := req.GetParams().(*mcp.CallToolParamsRaw); ok && p != nil {
+					name = p.Name
+				}
+				slog.ErrorContext(ctx, "tool call panicked", "tool", metrics.ToolLabel(name), "panic_type", fmt.Sprintf("%T", r))
+				res = &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: panicAnswer}}}
+				err = nil
+			}
+		}()
+		return next(ctx, method, req)
+	}
 }
 
 // deadlineMiddleware puts timeout on every tool call.

@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,7 +21,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/basphere/ratatosk-mcp/internal/audit"
+	"github.com/basphere/ratatosk-mcp/internal/logging"
 	"github.com/basphere/ratatosk-mcp/internal/mcpserver/mcpservertest"
+	"github.com/basphere/ratatosk-mcp/internal/metrics"
+	"github.com/basphere/ratatosk-mcp/internal/metrics/metricstest"
 	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
 
@@ -131,5 +135,59 @@ func TestAuditDefaultOff(t *testing.T) {
 	}
 	if buf.Len() != 0 {
 		t.Fatalf("audit bytes emitted with auditing off: %s", buf.String())
+	}
+}
+
+// A tool call that panics is answered as a tool error, logged in one line
+// without what the call carried, and counted outcome="error"; the server keeps
+// serving. A release document without warnings made check_stack panic, and
+// the panic took the whole server down (independent review, 2026-11-21).
+func TestToolCallPanicIsAnsweredAsAToolError(t *testing.T) {
+	var buf bytes.Buffer
+	prev := slog.Default()
+	logging.Setup(&buf, slog.LevelDebug)
+	t.Cleanup(func() { slog.SetDefault(prev) })
+
+	const marker = "v3.5.30-panic-marker"
+	m := metrics.New("test")
+	api := upstreamtest.Client(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)), m)
+	server := New(Options{API: api, Metrics: m})
+	type searchIn struct {
+		Q string `json:"q"`
+	}
+	// Replaces search: a handler that panics with what the call carried.
+	mcp.AddTool(server, &mcp.Tool{Name: "search"}, func(_ context.Context, _ *mcp.CallToolRequest, in searchIn) (*mcp.CallToolResult, any, error) {
+		panic("cannot read " + in.Q)
+	})
+	cs := mcpservertest.Connect(t, server, &mcp.Implementation{Name: "panic-test", Version: "0"})
+
+	text, isErr := sdkText(t, cs, "search", map[string]any{"q": marker})
+	if !isErr || text != panicAnswer {
+		t.Errorf("the panicked call: isError=%v %q, want the internal-error answer", isErr, text)
+	}
+	if text, isErr := sdkText(t, cs, "list_projects", nil); isErr || !strings.Contains(text, `"etcd"`) {
+		t.Errorf("the next call: isError=%v %.200s", isErr, text)
+	}
+
+	var lines []map[string]any
+	for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		var rec map[string]any
+		if json.Unmarshal([]byte(l), &rec) == nil && rec["msg"] == "tool call panicked" {
+			lines = append(lines, rec)
+		}
+	}
+	if len(lines) != 1 || lines[0]["level"] != "ERROR" || lines[0]["tool"] != "search" || lines[0]["panic_type"] != "string" {
+		t.Errorf("want one ERROR line with tool search and panic_type string, got %v", lines)
+	}
+	if strings.Contains(buf.String(), marker) || strings.Contains(buf.String(), "cannot read") {
+		t.Errorf("the log carries what the call sent or the panic's message:\n%s", buf.String())
+	}
+
+	series := metricstest.Series(t, metrics.Server(m).Handler)
+	if got := series[metricstest.Requests("tools/call", "search", "error", "false")]; got != 1 {
+		t.Errorf(`tools/call search outcome="error" = %v, want 1`, got)
+	}
+	if got := series[metricstest.Requests("tools/call", "list_projects", "ok", "false")]; got != 1 {
+		t.Errorf(`tools/call list_projects outcome="ok" = %v, want 1`, got)
 	}
 }
