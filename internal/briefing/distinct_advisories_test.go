@@ -396,3 +396,43 @@ func TestDistinctAdvisoriesLeaveOutWhatTheBranchFixed(t *testing.T) {
 		t.Errorf("without a fixed set, total %d, want 3", b.Summary.DistinctAdvisories.Total)
 	}
 }
+
+// A change is "alone" by the advisories it cites, not by those left after the
+// ids the running branch fixed are taken out. A critical card citing a fixed
+// CVE beside another gave that other one the card's critical as its own grade,
+// though a card citing it alone says medium (independent review, 2026-11-21).
+func TestDistinctAdvisoriesGradeByWhatAChangeCites(t *testing.T) {
+	const fixedCVE, other = "CVE-2026-10001", "CVE-2026-10002"
+	docs := []*release.Doc{relDoc(t, "v3.4.0",
+		secSpec{"both", "critical", []string{fixedCVE, other}},
+		secSpec{"alone", "medium", []string{other}},
+	)}
+	fixed, running := map[string]bool{fixedCVE: true}, []int{3, 3, 5}
+	b, settled := Build(docs, fixed, running)
+	if settled != 0 {
+		t.Fatalf("settled %d: the card cites an id the branch has not fixed and stays listed", settled)
+	}
+	if got, want := b.Summary.DistinctAdvisories, (advisory.Counts{Total: 1, Medium: 1}); got != want {
+		t.Errorf("distinct advisories %+v, want %+v", got, want)
+	}
+	assertSameAs100(t, docs, fixed, running)
+}
+
+// Left as it is: the branch fixed an advisory under its CVE alone, and a card
+// in range cites the CVE with its GHSA alias. 1.0.0 leaves a change out only
+// when the branch fixed every id it cites, so the change stays listed and its
+// advisory is counted; this pins that, so changing it is a decision
+// (independent review, 2026-11-21).
+func TestAChangeCitingAnAliasTheBranchDidNotCiteStays(t *testing.T) {
+	const cve, ghsa = "CVE-2026-20001", "GHSA-cfgh-2345-6789"
+	docs := []*release.Doc{relDoc(t, "v3.4.0", secSpec{"fix", "high", []string{cve, ghsa}})}
+	fixed, running := map[string]bool{cve: true}, []int{3, 3, 5}
+	b, settled := Build(docs, fixed, running)
+	if settled != 0 || b.ExcludedOnBranch != nil || len(b.Changes) != 1 {
+		t.Errorf("settled %d, excluded_on_branch %v, %d changes: want the change listed", settled, b.ExcludedOnBranch, len(b.Changes))
+	}
+	if got, want := b.Summary.DistinctAdvisories, (advisory.Counts{Total: 1, High: 1}); got != want {
+		t.Errorf("distinct advisories %+v, want %+v", got, want)
+	}
+	assertSameAs100(t, docs, fixed, running)
+}

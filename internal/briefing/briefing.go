@@ -266,7 +266,7 @@ func Build(docs []*release.Doc, alreadyFixed map[string]bool, runningKey []int) 
 						}
 					}
 				}
-				tally.Add(ix.Advisories(counted), c.Severity)
+				tally.Add(ix.Advisories(c.Advisories), ix.Advisories(counted), c.Severity)
 				if key != "" {
 					branch := key + "|" + branchOf(d.Version)
 					if i, ok := inRelease[key]; ok {

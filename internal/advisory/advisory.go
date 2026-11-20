@@ -230,20 +230,27 @@ func NewTally() *Tally {
 	return &Tally{seen: map[string]bool{}, aloneGrade: map[string]int{}, sharedGrade: map[string]int{}}
 }
 
-// Add records one security change. advs are its advisories (from
-// Index.Advisories). A change that cites no recognised advisory id is
-// a security change with no advisory id, and is not counted: a value such as
-// "OSV-2026-1" or "N/A" is no more an advisory alone than it is next to a CVE,
-// where it was always ignored (until the final review, 2026-11-18, it counted
-// when it stood alone; on the seven live ranges of that day no count moved).
-func (t *Tally) Add(advs []string, severity *string) {
+// Add records one security change. cited are the advisories it cites and
+// counted those of them the count takes (both from [Index.Advisories]):
+// whether the change cites an advisory alone is decided by cited. Decided by
+// what was left after the running branch's fixed ids were taken out, a
+// critical card citing a fixed CVE beside another gave that other one critical
+// as its own grade, over a card citing it alone as medium (independent review,
+// 2026-11-21).
+//
+// A change that cites no recognised advisory id is a security change with no
+// advisory id, and is not counted: a value such as "OSV-2026-1" or "N/A" is no
+// more an advisory alone than it is next to a CVE, where it was always ignored
+// (until the final review, 2026-11-18, it counted when it stood alone; on the
+// seven live ranges of that day no count moved).
+func (t *Tally) Add(cited, counted []string, severity *string) {
 	g := 0
 	if severity != nil {
 		g = GradeRank(*severity)
 	}
-	for _, a := range advs {
+	for _, a := range counted {
 		t.seen[a] = true
-		if len(advs) == 1 {
+		if len(cited) == 1 {
 			t.aloneGrade[a] = max(t.aloneGrade[a], g)
 		} else {
 			t.sharedGrade[a] = max(t.sharedGrade[a], g)
