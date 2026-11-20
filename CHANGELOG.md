@@ -116,6 +116,8 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `changes_more`, and that a briefing has no evidence quotes, so the body and
   evidence of what you report come from `get_release(changes: [...])`. They
   no longer send the agent to read whole releases for what was omitted.
+  When `kinds` names `important_fixes`, `hint` says they are all listed
+  instead of saying how to list them.
 
 ### Fixed
 

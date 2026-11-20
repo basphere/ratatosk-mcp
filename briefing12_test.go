@@ -289,6 +289,24 @@ func TestBriefingLeavesOutNoDecisionChangeHoweverLong(t *testing.T) {
 	}
 }
 
+// hint does not send a caller that asked for important fixes to ask again.
+func TestHintKnowsWhenImportantFixesAreListed(t *testing.T) {
+	n := map[string]int{"important_fixes": 30}
+	upgradeServer(t, changeDoc("p", "v1.0.0", n, 10))
+	out, _ := runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0"})
+	if !strings.Contains(out.Hint, `call again with kinds:["important_fixes"]`) {
+		t.Errorf("default hint does not say how to list important fixes: %s", out.Hint)
+	}
+	upgradeServer(t, changeDoc("p", "v1.0.0", n, 10))
+	out, _ = runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0", Kinds: stringList{"important_fixes"}})
+	if strings.Contains(out.Hint, "call again") || !strings.Contains(out.Hint, "nothing of that kind is left out") {
+		t.Errorf("hint with kinds important_fixes: %s", out.Hint)
+	}
+	if n := utf8.RuneCountInString(briefHint(map[string]bool{"important_fixes": true})); n > 2000 {
+		t.Errorf("hint is %d characters, at most 2,000", n)
+	}
+}
+
 // distinct_advisories is read before counts and warnings: an agent quoted
 // warnings.critical 15 for five advisories (field report, 2026-11-20).
 func TestSummaryLeadsWithDistinctAdvisories(t *testing.T) {

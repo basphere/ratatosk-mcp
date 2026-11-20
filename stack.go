@@ -1838,7 +1838,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		res, err := jsonResult(out)
 		return res, nil, err
 	}
-	out["hint"] = stackHint
+	out["hint"] = briefHint(kindSet)
 	res, err := jsonResult(out)
 	return res, nil, err
 }
@@ -1854,6 +1854,26 @@ func rowsOnLine(rows []v2Row, v string) []v2Row {
 	return out
 }
 
+// What hint says about important fixes depends on the call: counted only by
+// default, listed when kinds names them. One sentence for both had agents
+// read "call again with kinds" in the answer to that very call, and take
+// changes_omitted (65, all of them in changes_more) for something still
+// missing (five runs of the 2026-11-20 measurement).
+const (
+	importantFixesCounted = "Important fixes past the ones in changes are only counted in changes_omitted: call again with " +
+		"kinds:[\"important_fixes\"] to list them all."
+	importantFixesListed = "kinds names important_fixes, so the important fixes changes_omitted counts have their lines in " +
+		"changes_more too: nothing of that kind is left out."
+)
+
+// briefHint is stackHint for a call's kinds.
+func briefHint(kinds map[string]bool) string {
+	if kinds["important_fixes"] {
+		return strings.Replace(stackHint, importantFixesCounted, importantFixesListed, 1)
+	}
+	return stackHint
+}
+
 // stackHint travels with every briefing because the briefing is what the agent
 // reads when it decides; the tool description may be long gone from view. It
 // holds only what reading this answer needs — what a field means is in the
@@ -1866,9 +1886,8 @@ var stackHint = "briefing: a data classification, not a recommendation; changes 
 	"not_stated means the notes name no narrower scope. What is not listed is not absent: changes carries entries " +
 	"with a body, and changes_more has one line for every other security, breaking and deprecation change " +
 	"(changes_omitted counts them). Two things stand elsewhere: the same fix on another branch is a version in its " +
-	"entry's also_in, and security changes your branch already fixed are in excluded_on_branch. Important fixes past " +
-	"the ones in changes are only counted in changes_omitted: call again with kinds:[\"important_fixes\"] to list " +
-	"them all. A briefing has no " +
+	"entry's also_in, and security changes your branch already fixed are in excluded_on_branch. " + importantFixesCounted +
+	" A briefing has no " +
 	"evidence quotes: before you report a change, read its body and evidence with get_release(project, version, " +
 	"changes:[id, …]). Read every before_upgrade item. summary.counts and summary.warnings add up every release in " +
 	"range; summary.distinct_advisories counts each advisory once — quote it, and say that security changes citing " +
@@ -2032,7 +2051,7 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 		"summary": b.Summary,
 		"gaps":    gaps,
 		"privacy": "from and to were sent to the server (/v2/upgrade); use check_stack to keep versions on your side",
-		"hint":    stackHint,
+		"hint":    briefHint(kindSet),
 	}
 	if readAs != "" {
 		out["version_read_as"] = readAs
