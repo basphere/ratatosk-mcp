@@ -73,9 +73,11 @@ harness can lift them in a test.)
 
 - A parameter or response field added after 1.0.0 is marked in the tools
   reference with the release it arrived in, all three numbers:
-  `Since 1.2.0.` A minor release (the second number) is what adds tools,
-  parameters and fields, so the third number of a `Since` mark is 0; a patch
-  release fixes behaviour and adds no mark.
+  `Since 1.2.0.` (Korean `1.2.0부터.`, Japanese `1.2.0 以降。`). A minor
+  release (the second number) is what adds tools, parameters and fields, so
+  the third number of a `Since` mark is 0; a patch release fixes behaviour
+  and adds no mark. The docs test that refuses an older release number in
+  the docs lets these marks through and nothing else.
 - Prose does not name the current release ("the tools 1.2 provides"): it is
   wrong at the next release. The exceptions are the install commands and
   examples that pin an image tag, which the release procedure bumps, and

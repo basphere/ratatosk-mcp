@@ -381,6 +381,10 @@ func TestDocsRelativeLinksResolve(t *testing.T) {
 	}
 }
 
+// sinceMarkRE is the mark at the end of a description that says which release
+// a parameter or response field arrived in, in the three languages.
+var sinceMarkRE = regexp.MustCompile(`Since \d+\.\d+\.\d+\.|\d+\.\d+\.\d+부터\.|\d+\.\d+\.\d+ 以降。`)
+
 // An older release of this server named in the docs is a pin or an example
 // that was not moved: the install guides said 0.7.4 in prose, in a log line
 // and in a serverInfo answer until 1.0 prep (2026-11-04). Released versions
@@ -411,6 +415,11 @@ func TestDocsNameNoOlderRelease(t *testing.T) {
 				if strings.Contains(line, "0.x") {
 					continue
 				}
+				// The mark on a parameter or field that says which release it
+				// arrived in names an older release on purpose and stays true
+				// (2026-11-21). Only the mark is let through: the rest of the
+				// line is still checked.
+				line = sinceMarkRE.ReplaceAllString(line, "")
 				for j, re := range old {
 					if re.MatchString(line) {
 						t.Errorf("%s line %d names release %s (the chart ships %s): %s", path, i+1, names[j], app, strings.TrimSpace(line))

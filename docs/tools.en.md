@@ -11,10 +11,10 @@ response, and example questions you can put to an agent. For connecting the
 server itself (hosted endpoint, Docker, Helm, kagent), see the
 [installation guide](install.en.md).
 
-A parameter or response field added after 1.0.0 ends with the release it
-arrived in, written in full (`Since 1.2.0.`). A server older than that
-release rejects the parameter and does not send the field; the
-[changelog](../CHANGELOG.md) has each release.
+A parameter or response field that the first 1.x release did not have ends
+with the release it arrived in, written in full (`Since 1.2.0.`). A server
+older than that release rejects the parameter and does not send the field;
+the [changelog](../CHANGELOG.md) has each release.
 
 > **Measured 2026-11-03**: every response below came back from this server
 > running against a preview of the ratatosk.io `/v2` API, with the host shown
@@ -333,7 +333,7 @@ when you are planning an upgrade you do not run yet. Like `check_stack`, it
 leaves out a security change whose advisories `from`'s own branch already fixed
 at or below `from`, and counts it in `excluded_on_branch`: to tell, it reads the
 project's release list and the releases of `from`'s branch at or below `from`.
-If those cannot be read, nothing is left out, as in 1.1.0, and a top level
+If those cannot be read, nothing is left out, as a server before 1.2.0 answers, and a top level
 `note` says so. With `detail: "full"`, the list is read only for a build suffix
 or `same_minor`. With `same_minor` and nothing newer on the minor, the range is
 empty and `note` says so, in both details. An image build suffix on `from` is read off as in
