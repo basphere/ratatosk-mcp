@@ -25,6 +25,7 @@ package httpfront
 // caller would only get in the way.
 
 import (
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -62,7 +63,8 @@ func NewRateLimiter(limit int) *RateLimiter {
 
 // allow reports whether this caller may proceed, and how many seconds remain
 // in the window if it may not — counted from now, the time the window is
-// judged by, not from the wall clock.
+// judged by, not from the wall clock, and rounded up, so a client that waits
+// that long finds the window over.
 func (r *RateLimiter) allow(key string, now time.Time) (bool, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -80,7 +82,7 @@ func (r *RateLimiter) allow(key string, now time.Time) (bool, int) {
 	}
 	b.count++
 	if b.count > r.limit {
-		retry := int(b.resetAt.Sub(now).Seconds())
+		retry := int(math.Ceil(b.resetAt.Sub(now).Seconds()))
 		if retry < 1 {
 			retry = 1
 		}

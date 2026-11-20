@@ -73,6 +73,27 @@ func TestRateLimiterRetryAfterCountsFromTheGivenTime(t *testing.T) {
 	}
 }
 
+// Retry-After is rounded up: with 59.9 s left it said 59, and a client that
+// waited exactly that long met one more 429 (independent review,
+// 2026-11-21). Whole seconds stay as they are.
+func TestRateLimiterRetryAfterRoundsUp(t *testing.T) {
+	opened := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
+	for _, c := range []struct {
+		into time.Duration
+		want int
+	}{
+		{100 * time.Millisecond, 60}, // 59.9 s left
+		{time.Second, 59},            // 59 s left
+		{59*time.Second + time.Millisecond, 1},
+	} {
+		rl := NewRateLimiter(1)
+		rl.allow("1.2.3.4", opened)
+		if ok, retry := rl.allow("1.2.3.4", opened.Add(c.into)); ok || retry != c.want {
+			t.Errorf("over the limit %v into the window: allowed=%v retry-after %d, want refused and %d", c.into, ok, retry, c.want)
+		}
+	}
+}
+
 func TestRateLimitMiddlewareNilIsIdentity(t *testing.T) {
 	called := 0
 	h := rateLimitMiddleware(nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called++ }))
