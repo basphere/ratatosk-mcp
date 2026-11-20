@@ -40,6 +40,11 @@ func TestDescriptionsSayWhatLaterEventsMean(t *testing.T) {
 		{"hint", stackHint},
 	} {
 		for _, want := range []string{"already fixes", "does not mean the release is vulnerable", "recorded on that version, not here"} {
+			// hint keeps the first two; where a defect is recorded is in the
+			// descriptions (hint bounded at 2,000 characters, 2026-11-20).
+			if c.where == "hint" && want == "recorded on that version, not here" {
+				continue
+			}
 			if !strings.Contains(c.text, want) {
 				t.Errorf("%s does not say %q", c.where, want)
 			}
@@ -236,6 +241,8 @@ func TestDotSegmentsAreRefusedBeforeAnyRequest(t *testing.T) {
 func TestAnswersThatAreNotAPIAnswersAreErrors(t *testing.T) {
 	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/v2/releases": // check_upgrade reads the release list first (1.2.0)
+			w.Write([]byte(`{"releases":[],"next_before":null}`))
 		case strings.HasPrefix(r.URL.Path, "/v2/upgrade/"):
 			w.Write([]byte(`{"name":"Ratatosk agent API","version":"v2","endpoints":[]}`))
 		default:

@@ -121,7 +121,7 @@ func diffFrom100(docs []*v2Release, fixed map[string]bool, running []int) string
 	sum.DistinctAdvisories = distinctAdvisories{}
 	cur.Summary = &sum
 	old.BeforeUpgrade = nil
-	cur.Upgrade, cur.ChangesMore, cur.ChangesUnlisted, cur.LaterInRange, cur.ExcludedOnBranch = nil, nil, nil, nil, nil
+	cur.Upgrade, cur.ChangesMore, cur.ChangesUnlisted, cur.LaterInRange, cur.ExcludedOnBranch, cur.more = nil, nil, nil, nil, nil, nil
 	if oldSettled != curSettled {
 		return fmt.Sprintf("settled %d, 1.0.0 %d", curSettled, oldSettled)
 	}

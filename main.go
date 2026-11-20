@@ -270,7 +270,8 @@ func newServer() *mcp.Server {
 			"minor version, so from v1.36.5 the default reaches v1.37.x; same_minor:true stops at the newest patch of " +
 			"from's minor), computed BY THE SERVER: from and to are sent upstream. To keep " +
 			"running versions on your side, use check_stack instead — it compares locally and sends only project " +
-			"slugs. Returns a briefing (detail:\"brief\", default) in the same form as one check_stack component, or " +
+			"slugs. Returns a briefing (detail:\"brief\", default) in the same form as one check_stack component (the " +
+			"fields and the 40,000-character fitting are described there), or " +
 			"every release in range verbatim (detail:\"full\"); kinds keeps the changes of those kinds. Read before_upgrade of every release in range — " +
 			"prerequisites and upgrade guides usually sit on the release that starts a new minor. What does not fit in " +
 			"changes is listed one line each in changes_more; the briefing carries no evidence quotes, so read the body " +
@@ -293,15 +294,31 @@ func newServer() *mcp.Server {
 			"Returns, per component, the releases NEWER than the running version up to target_version (default the " +
 			"newest release on the running version's release line — a release line is a tag prefix such as flagd/ or " +
 			"lts-, not a minor version, so v1.36.5 is checked up to v1.37.x; same_minor:true stops at the newest patch " +
-			"of the running minor), oldest first: before_upgrade items of every release in range, and the " +
+			"of the running minor), oldest first: before_upgrade items of every release in range (each with its " +
+			"body and folded entries; an item whose text recurs on several releases is listed once, at the newest, " +
+			"with also_in naming the others), and the " +
 			"changes that need a decision — security, breaking, deprecations, important_fixes — with affects, " +
 			"required actions, no_downgrade and removed_in; enhancements, dependency_updates and other are counted " +
-			"in summary only. What does not fit in changes is listed one line each in changes_more (every security, " +
-			"breaking and deprecation change; important fixes as the answer's size allows, the rest counted in " +
-			"changes_unlisted). The briefing carries no evidence quotes: read the body and evidence of the entries you " +
-			"report with get_release(project, version, changes:[id, …]). kinds keeps the changes of those kinds. " +
+			"in summary only. action_required (breaking) and also_required (security) are what the notes say to do; " +
+			"no_downgrade means rolling back after the upgrade is not possible; removed_in is when a deprecation " +
+			"becomes a removal; security_unclear means two separate checks disagreed on whether the change is a " +
+			"security fix and the sources do not settle it (it stays in the kind first chosen); severity is the grade " +
+			"the project's own advisory states, null when no grade was found in what was read. changes holds up to " +
+			"20 security (most severe first), 20 breaking, 10 deprecations and 10 important_fixes with their body " +
+			"(inside a kind, the ones that say what to do first); changes_omitted counts per kind what is not in " +
+			"changes, and changes_more lists each of those in one line. A briefing answer is at most 40,000 " +
+			"characters, hint included: a component over its share of that first moves its entries into " +
+			"changes_more, then drops affects from the lines, then drops lines and counts them per kind in " +
+			"changes_unlisted — important fixes first, then deprecations, breaking changes that ask nothing, security " +
+			"from the lowest grade — and hint ends with the calls that list what was dropped (asked alone, a " +
+			"component keeps the id and title of every security, breaking and deprecation change unless those alone " +
+			"are over the budget; then one kind per call lists them). The briefing carries no evidence quotes: read " +
+			"the body and evidence of the entries you report with get_release(project, version, changes:[id, …]). " +
+			"kinds keeps the changes of those kinds. " +
 			"summary.counts and summary.warnings add up every release in range (one fix on several " +
 			"release lines counts once per release); summary.distinct_advisories counts each advisory once. " +
+			"Security changes citing no advisory id are not in distinct_advisories (summary.counts.security has them), " +
+			"and summary.counts and summary.warnings include the changes excluded_on_branch names. " +
 			"affects decides who a change touches: status stated or inferred means it applies ONLY " +
 			"IF that holds in this setup — check before you report it; not_stated means the release notes name no " +
 			"narrower scope. gaps lists where version numbers skip (releases in between may be unanalyzed); " +
@@ -338,8 +355,9 @@ func newServer() *mcp.Server {
 			"list releases newest first. The groups are capped at 200, 100 and 100 results, respectively. Truncation is not marked, so narrow q if a group reaches " +
 			"its limit. project keeps one project's releases; the caps apply before it, so narrow q as well when a group is long. " +
 			"An in_analysis release matched through an item also carries matches: every item of that release that " +
-			"matches q (id, kind, title; up to 20, matches_omitted counts the rest), on the first 20 such releases — " +
-			"narrow with project for the others. q is 2–200 characters. Drill in with get_release(project, version, " +
+			"matches q (id, kind, title; up to 20, matches_omitted counts the rest), on the first 8 such releases; " +
+			"matches_not_computed, at the top, counts the ones that carry none — narrow with project to reach them. " +
+			"q is 2–200 characters. Drill in with get_release(project, version, " +
 			"changes:[id, …]) for the matched items' body and evidence. " + dataNote,
 	}, searchTool)
 

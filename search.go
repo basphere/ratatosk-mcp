@@ -19,14 +19,16 @@ import (
 	"sync"
 )
 
-// searchMatchReleases bounds how many releases one search call reads for
-// matches. Each is one release document (two when lang is not en: the English
-// text is matched too) — up to 870 KB for cilium v1.20.0 — read through the
-// cache; a release past the bound carries no matches, and the tool description
-// says to narrow with project. 20 covers a project's matches for an
-// identifier: "BackendTLSPolicy" matched 11 releases over every project on
-// 2026-11-20.
-const searchMatchReleases = 20
+// searchMatchReleases bounds the release documents one search call reads for
+// matches (the spec, revised 2026-11-20): a document is up to 870 KB (cilium
+// v1.20.0), the hosted endpoint shares one upstream allowance among its
+// callers, and the first build read up to 40 documents a call (20 releases,
+// in lang and in English). Each release is read once, in lang. A release past
+// the bound, or one that could not be read, carries no matches and is counted
+// in matches_not_computed. "BackendTLSPolicy" with project cilium matched 4
+// releases on 2026-11-20; without project, 11. If /v2/search ever names every
+// matching item itself, this reading goes.
+const searchMatchReleases = 8
 
 // maxMatches bounds matches per release; the rest are counted in
 // matches_omitted.
@@ -132,10 +134,11 @@ func (d matchDoc) items() []matchItem {
 }
 
 // releaseMatches lists the items of one release that match q. The release is
-// read in lang; when lang is not en the English text is matched too, as the
-// website's index holds every language. The server's own matched item is
-// always among them (a field the server reads and this does not must not
-// leave it out).
+// read in lang only (one document per release — searchMatchReleases): titles
+// and bodies in that language, evidence quotes and advisory ids as published.
+// The website's index holds every language, so a query in English text can
+// match a release here on its English title alone; the server's own matched
+// item is always among the matches, so such a release still lists that one.
 func releaseMatches(ctx context.Context, project, ver, lang string, find func(string) bool, matched *searchMatch) ([]searchMatch, error) {
 	read := func(l string) (matchDoc, error) {
 		var d matchDoc
@@ -150,21 +153,9 @@ func releaseMatches(ctx context.Context, project, ver, lang string, find func(st
 	if err != nil {
 		return nil, err
 	}
-	hit := map[string]bool{}
-	if lang != "en" {
-		en, err := read("en")
-		if err != nil {
-			return nil, err
-		}
-		for _, it := range en.items() {
-			if find(it.hay()) {
-				hit[it.ID] = true
-			}
-		}
-	}
 	var out []searchMatch
 	for _, it := range doc.items() {
-		if hit[it.ID] || find(it.hay()) {
+		if find(it.hay()) {
 			out = append(out, searchMatch{ID: it.ID, Kind: it.Kind, Title: it.Title})
 		}
 	}
@@ -192,14 +183,16 @@ func releaseMatches(ctx context.Context, project, ver, lang string, find func(st
 }
 
 // searchAnswer cuts a /v2/search answer to one project (when project is set)
-// and adds matches to the in_analysis releases matched through an item.
-// Everything else is passed on as received.
+// and adds matches to the in_analysis releases matched through an item, and
+// matches_not_computed, first, for those that carry none. Everything else is
+// passed on as received.
 func searchAnswer(ctx context.Context, raw []byte, project, q, lang string) ([]byte, error) {
 	fields, err := readObject(raw)
 	if err != nil {
 		return nil, err
 	}
 	find := searchFinder(q)
+	notComputed := 0
 	for i, fl := range fields {
 		switch fl.Key {
 		case "in_analysis", "in_release_notes", "in_linked_documents":
@@ -239,7 +232,8 @@ func searchAnswer(ctx context.Context, raw []byte, project, q, lang string) ([]b
 					continue // matched by project name or version: no item to list
 				}
 				if len(jobs) == searchMatchReleases {
-					break
+					notComputed++
+					continue
 				}
 				jobs = append(jobs, job{j, h})
 			}
@@ -261,6 +255,11 @@ func searchAnswer(ctx context.Context, raw []byte, project, q, lang string) ([]b
 				}(jb)
 			}
 			wg.Wait()
+			for _, jb := range jobs {
+				if !ok[jb.i] {
+					notComputed++
+				}
+			}
 			for j := range kept {
 				if !ok[j] {
 					continue
@@ -285,5 +284,6 @@ func searchAnswer(ctx context.Context, raw []byte, project, q, lang string) ([]b
 		}
 		fields[i].Val = writeArray(kept)
 	}
-	return writeObject(fields), nil
+	nc, _ := json.Marshal(notComputed)
+	return writeObject(append([]objField{{Key: "matches_not_computed", Val: nc}}, fields...)), nil
 }

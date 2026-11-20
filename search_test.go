@@ -98,7 +98,7 @@ func TestSearchFiltersByProjectAndListsEveryMatch(t *testing.T) {
 	if len(out.InAnalysis) != 2 || len(out.InReleaseNotes) != 1 || out.InReleaseNotes[0].Project != "etcd" {
 		t.Fatalf("project etcd kept %+v / %+v", out.InAnalysis, out.InReleaseNotes)
 	}
-	if !out.Extra["kept"] || !strings.HasPrefix(text, `{"query":"BackendTLSPolicy","in_analysis":[{"project":"etcd"`) {
+	if !out.Extra["kept"] || !strings.HasPrefix(text, `{"matches_not_computed":0,"query":"BackendTLSPolicy","in_analysis":[{"project":"etcd"`) {
 		t.Errorf("the rest of the answer is passed on, in its order: %.120s", text)
 	}
 	var got []string
@@ -126,17 +126,67 @@ func TestSearchCountsMatchesPastTheBound(t *testing.T) {
 	searchServer(t, maxMatches+5)
 	res, _, _ := searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy"})
 	var out struct {
-		InAnalysis []struct {
+		NotComputed int `json:"matches_not_computed"`
+		InAnalysis  []struct {
 			Matches        []searchMatch `json:"matches"`
 			MatchesOmitted int           `json:"matches_omitted"`
 		} `json:"in_analysis"`
 	}
 	json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &out)
+	if out.NotComputed != 1 {
+		t.Errorf("the release that could not be read is counted: matches_not_computed %d", out.NotComputed)
+	}
 	// 25 changes, the folded prerequisite and the quoted fix match: 27.
 	if r := out.InAnalysis[0]; len(r.Matches) != maxMatches || r.MatchesOmitted != 27-maxMatches {
 		t.Errorf("%d matches, %d omitted", len(r.Matches), r.MatchesOmitted)
 	}
 	if r := out.InAnalysis[1]; r.Matches != nil {
 		t.Errorf("a release that could not be read carries no matches: %+v", r)
+	}
+}
+
+// matches reads at most searchMatchReleases documents a call; the releases it
+// did not read are counted at the top of the answer.
+func TestSearchReadsAtMostEightReleases(t *testing.T) {
+	f := newFakeEtcd()
+	var rows []string
+	for i := 0; i < searchMatchReleases+3; i++ {
+		v := fmt.Sprintf("v9.0.%d", i)
+		f.docs[v] = doc(v, "", "", `[{"id":"etcd@`+v+`#m","kind":"breaking","title":"BackendTLSPolicy","body":null,"evidence":[],"later":[]}]`, "")
+		rows = append(rows, fmt.Sprintf(`{"project":"etcd","version":%q,"matched":{"kind":"breaking","title":"BackendTLSPolicy"}}`, v))
+	}
+	answer := `{"query":"BackendTLSPolicy","in_analysis":[` + strings.Join(rows, ",") + `],"in_release_notes":[],"in_linked_documents":[]}`
+	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/search" {
+			w.Write([]byte(answer))
+			return
+		}
+		f.handler(t)(w, r)
+	})))
+	res, _, _ := searchTool(context.Background(), nil, searchArgs{Q: "BackendTLSPolicy"})
+	var out struct {
+		NotComputed int `json:"matches_not_computed"`
+		InAnalysis  []struct {
+			Matches []searchMatch `json:"matches"`
+		} `json:"in_analysis"`
+	}
+	json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &out)
+	with := 0
+	for _, r := range out.InAnalysis {
+		if r.Matches != nil {
+			with++
+		}
+	}
+	if with != searchMatchReleases || out.NotComputed != 3 {
+		t.Errorf("%d releases with matches, matches_not_computed %d", with, out.NotComputed)
+	}
+	docs := 0
+	for _, u := range f.requests() {
+		if strings.HasPrefix(u, "/v2/releases/") {
+			docs++
+		}
+	}
+	if docs != searchMatchReleases {
+		t.Errorf("%d release documents read, at most %d", docs, searchMatchReleases)
 	}
 }

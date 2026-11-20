@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -217,65 +218,149 @@ func runUpgrade(t *testing.T, args checkUpgradeArgs) (upgradeOut, string) {
 	return out, text
 }
 
-// The size budget is paid with important-fix lines and nothing else: a range
-// whose security, breaking and deprecation lines alone go over it keeps all of
-// them, lists no important fix, and says how to narrow.
-func TestBudgetNeverDropsASecurityBreakingOrDeprecationLine(t *testing.T) {
-	n := map[string]int{"security": 120, "breaking": 120, "deprecations": 60, "important_fixes": 200}
-	upgradeServer(t, changeDoc("p", "v1.0.0", n, 200))
-	out, text := runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0"})
-	if utf8.RuneCountInString(text) <= briefCharBudget {
-		t.Fatalf("the case must be over the budget: %d", utf8.RuneCountInString(text))
-	}
-	listed := map[string]int{}
+// assertNothingSilent checks a fitted briefing against the range it came from:
+// every decision change is an entry, a line or counted in changes_unlisted;
+// changes_omitted counts what is not in changes; a kind with unlisted changes
+// is named in hint with the call that lists it.
+func assertNothingSilent(t *testing.T, n map[string]int, out upgradeOut, call string) {
+	t.Helper()
+	entries, lines := map[string]int{}, map[string]int{}
 	for _, c := range out.Changes {
-		listed[c.Kind]++
+		entries[c.Kind]++
 	}
 	for _, l := range out.ChangesMore {
-		listed[l.Kind]++
+		lines[l.Kind]++
 	}
-	for _, k := range []string{"security", "breaking", "deprecations"} {
-		if listed[k] != n[k] {
-			t.Errorf("%s: %d listed of %d — a line the budget may not take was dropped", k, listed[k], n[k])
+	for _, k := range decisionKinds {
+		if got := entries[k] + lines[k] + out.ChangesUnlisted[k]; got != n[k] {
+			t.Errorf("%s: %d entries + %d lines + %d unlisted = %d of %d", k, entries[k], lines[k], out.ChangesUnlisted[k], got, n[k])
+		}
+		if n[k] > 0 && out.ChangesOmitted[k] != n[k]-entries[k] {
+			t.Errorf("%s: changes_omitted %d, %d not in changes", k, out.ChangesOmitted[k], n[k]-entries[k])
+		}
+		if out.ChangesUnlisted[k] > 0 && !strings.Contains(out.Hint, fmt.Sprintf("%s %d", k, out.ChangesUnlisted[k])) {
+			t.Errorf("hint does not count the unlisted %s: %s", k, out.Hint)
 		}
 	}
-	if listed["important_fixes"] != kindCaps["important_fixes"] || out.ChangesUnlisted["important_fixes"] != n["important_fixes"]-kindCaps["important_fixes"] {
-		t.Errorf("important fixes: %d listed, unlisted %v", listed["important_fixes"], out.ChangesUnlisted)
-	}
-	if !strings.HasSuffix(out.Hint, overBudgetHint) {
-		t.Error("an answer over the budget must say how to narrow it")
+	if len(out.ChangesUnlisted) > 0 && !strings.Contains(out.Hint, call) {
+		t.Errorf("hint does not name the call %s: %s", call, out.Hint)
 	}
 }
 
-// Under the budget, important fixes are listed in their order until it is
-// spent, and the rest are counted.
-func TestBudgetListsImportantFixesAsFarAsItGoes(t *testing.T) {
-	n := map[string]int{"important_fixes": 400}
+// No briefing answer is over the budget, hint included, and what gives way
+// is never silent: it is moved, shortened, or counted with the call that lists
+// it (spec revised 2026-11-20 — the first build answered six components with
+// 201,537 characters and a client hands anything over 50,000 to the model as a
+// file).
+func TestBudgetIsNeverExceededAndNothingGoesSilently(t *testing.T) {
+	n := map[string]int{"security": 150, "breaking": 150, "deprecations": 60, "important_fixes": 300}
+	upgradeServer(t, changeDoc("p", "v1.0.0", n, 200))
+	out, text := runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0"})
+	if r := utf8.RuneCountInString(text); r > briefCharBudget {
+		t.Fatalf("answer %d characters, budget %d", r, briefCharBudget)
+	}
+	assertNothingSilent(t, n, out, `check_upgrade(project:"p", from:"v0.9.0", to:"v1.0.0", kinds:[`)
+	// Lines are dropped in give-way order: a security line goes only after
+	// every important fix, deprecation and breaking change that asks nothing.
+	if out.ChangesUnlisted["security"] > 0 {
+		for _, k := range []string{"important_fixes", "deprecations", "breaking"} {
+			if out.ChangesUnlisted[k] != n[k] {
+				t.Errorf("security lines were dropped while %d of %d %s stayed", n[k]-out.ChangesUnlisted[k], n[k], k)
+			}
+		}
+	}
+	if len(out.Changes) != 0 {
+		t.Errorf("lines were dropped while %d entries kept their body", len(out.Changes))
+	}
+}
+
+// The promise: asked alone, a component keeps the id and title of every
+// security, breaking and deprecation change when those lines fit; only
+// important fixes are counted instead.
+func TestBudgetKeepsEverySecurityBreakingDeprecationLineOfOneComponent(t *testing.T) {
+	n := map[string]int{"security": 50, "breaking": 50, "deprecations": 25, "important_fixes": 400}
 	upgradeServer(t, changeDoc("p", "v1.0.0", n, 60))
 	out, text := runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0"})
-	runes := utf8.RuneCountInString(text)
-	if runes > briefCharBudget {
-		t.Fatalf("answer %d characters, budget %d", runes, briefCharBudget)
+	if r := utf8.RuneCountInString(text); r > briefCharBudget {
+		t.Fatalf("answer %d characters", r)
 	}
-	lines := len(out.ChangesMore)
-	if lines == 0 || out.ChangesUnlisted["important_fixes"] == 0 {
-		t.Fatalf("the case must list some and leave some out: %d lines, unlisted %v", lines, out.ChangesUnlisted)
+	assertNothingSilent(t, n, out, `kinds:["important_fixes"]`)
+	for _, k := range []string{"security", "breaking", "deprecations"} {
+		if out.ChangesUnlisted[k] != 0 {
+			t.Errorf("%s: %d unlisted though they fit", k, out.ChangesUnlisted[k])
+		}
 	}
-	if lines+out.ChangesUnlisted["important_fixes"] != out.ChangesOmitted["important_fixes"] {
-		t.Errorf("%d lines + %v unlisted != %v omitted", lines, out.ChangesUnlisted, out.ChangesOmitted)
+	if out.ChangesUnlisted["important_fixes"] == 0 {
+		t.Fatal("the case must leave important fixes out")
 	}
-	// One more line would not have fitted (with the room the keys take).
-	one, _ := json.Marshal(out.ChangesMore[0])
-	if runes+utf8.RuneCount(one)+1 <= briefCharBudget-64 {
-		t.Errorf("answer %d characters left room for another line of %d", runes, utf8.RuneCount(one))
+	// One kind per call lists them.
+	out, text = runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0", Kinds: stringList{"important_fixes"}})
+	if r := utf8.RuneCountInString(text); r > briefCharBudget {
+		t.Fatalf("answer %d characters", r)
 	}
-	if strings.HasSuffix(out.Hint, overBudgetHint) {
-		t.Error("an answer under the budget does not say it is over")
+	assertNothingSilent(t, map[string]int{"important_fixes": 400}, out, `narrow the range`)
+}
+
+// One kind alone over the budget: the hint does not send the agent back to the
+// call it just made, it says to narrow the range.
+func TestBudgetOneKindOverTheBudgetSaysNarrow(t *testing.T) {
+	n := map[string]int{"breaking": 400}
+	upgradeServer(t, changeDoc("p", "v1.0.0", n, 200))
+	out, text := runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0", Kinds: stringList{"breaking"}})
+	if r := utf8.RuneCountInString(text); r > briefCharBudget {
+		t.Fatalf("answer %d characters", r)
 	}
-	// kinds:["important_fixes"] has the same budget and nothing else to pay.
-	_, text2 := runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0", Kinds: stringList{"important_fixes"}})
-	if utf8.RuneCountInString(text2) > briefCharBudget {
-		t.Error("kinds answer over the budget")
+	assertNothingSilent(t, n, out, "narrow the range (a nearer to, or same_minor)")
+}
+
+// The three steps in order, each in give-way order: entries become lines
+// (important fixes first), then lines lose affects, then lines are dropped.
+func TestFitStepsAndGiveWayOrder(t *testing.T) {
+	crit, low := "critical", "low"
+	ar := "migrate"
+	d := &v2Release{Version: "v1.0.0", Changes: []v2Change{
+		{ID: "s-crit", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-1"}, Affects: &v2Attr{Text: "a", Status: "stated"}},
+		{ID: "s-low", Kind: "security", Severity: &low, Advisories: []string{"CVE-2026-2"}, Affects: &v2Attr{Text: "a", Status: "stated"}},
+		{ID: "b-step", Kind: "breaking", ActionRequired: &ar, Affects: &v2Attr{Text: "a", Status: "stated"}},
+		{ID: "b-plain", Kind: "breaking", Affects: &v2Attr{Text: "a", Status: "stated"}},
+		{ID: "dep", Kind: "deprecations", Affects: &v2Attr{Text: "a", Status: "stated"}},
+		{ID: "ifx", Kind: "important_fixes", Affects: &v2Attr{Text: "a", Status: "stated"}},
+	}}
+	b, _ := buildBriefing([]*v2Release{d}, nil, nil)
+	f := newFitComp(&b, func(map[string]int) string { return "" })
+	var order []string
+	for _, it := range f.all {
+		order = append(order, it.c.ID)
+	}
+	if want := []string{"ifx", "dep", "b-plain", "s-low", "s-crit", "b-step"}; !slices.Equal(order, want) {
+		t.Fatalf("give-way order %v, want %v", order, want)
+	}
+	f.set(1)
+	if len(b.Changes) != 5 || b.ChangesMore[0].ID != "ifx" || b.ChangesOmitted["important_fixes"] != 1 {
+		t.Errorf("step one moves the important fix first: changes %d, more %+v, omitted %v", len(b.Changes), b.ChangesMore, b.ChangesOmitted)
+	}
+	f.set(6)
+	if len(b.Changes) != 0 || len(b.ChangesMore) != 6 || b.ChangesMore[0].Affects == nil {
+		t.Errorf("after step one every entry is a line with affects: %+v", b.ChangesMore)
+	}
+	f.set(7)
+	for _, l := range b.ChangesMore {
+		if (l.ID == "ifx") != (l.Affects == nil) {
+			t.Errorf("step two starts with the important fix: %+v", l)
+		}
+	}
+	f.set(6 + 6 + 3)
+	if len(b.ChangesMore) != 3 || !maps.Equal(b.ChangesUnlisted, map[string]int{"important_fixes": 1, "deprecations": 1, "breaking": 1}) {
+		t.Errorf("step three drops in give-way order: %+v unlisted %v", b.ChangesMore, b.ChangesUnlisted)
+	}
+	f.set(f.maxK())
+	if len(b.ChangesMore) != 0 || b.ChangesUnlisted["security"] != 2 || f.sizes[f.maxK()] != 0 {
+		t.Errorf("at the end every line is counted: %+v %v", b.ChangesMore, b.ChangesUnlisted)
+	}
+	for k := 1; k <= f.maxK(); k++ {
+		if f.sizes[k] > f.sizes[k-1] {
+			t.Errorf("step %d makes the lists longer: %d → %d", k, f.sizes[k-1], f.sizes[k])
+		}
 	}
 }
 
@@ -297,29 +382,60 @@ func TestEvenShares(t *testing.T) {
 }
 
 // Two components share the budget: one long range does not leave the other
-// without its important-fix lines.
+// without its lines, and only the one that dropped lines is named in hint.
 func TestBudgetIsSharedBetweenComponents(t *testing.T) {
-	mk := func(n int) *briefing {
-		b := &briefing{}
+	mk := func(name string, n int) *briefing {
+		d := &v2Release{Version: "v1.0.0"}
 		for i := 0; i < n; i++ {
-			b.ChangesMore = append(b.ChangesMore, moreLine{Version: "v1", ID: fmt.Sprint("x#", i), Kind: "important_fixes", Title: strings.Repeat("t", 150)})
+			d.Changes = append(d.Changes, v2Change{ID: fmt.Sprint(name, "#", i), Kind: "important_fixes", Title: strings.Repeat("t", 150)})
 		}
-		return b
+		b, _ := buildBriefing([]*v2Release{d}, nil, nil)
+		return &b
 	}
-	long, short := mk(1000), mk(40)
-	bs := []*briefing{long, short}
-	text, err := fitBriefings(bs, func() ([]byte, error) { return json.Marshal(bs) })
+	long, short := mk("long", 1000), mk("short", 40)
+	out := map[string]any{"components": []*briefing{long, short}}
+	call := func(name string) func(map[string]int) string {
+		return func(u map[string]int) string {
+			return unlistedSentence(name, u, nil, false, func(k string) string { return "check_stack with only " + name }, "")
+		}
+	}
+	text, err := fitBriefings([]*fitComp{newFitComp(long, call("long")), newFitComp(short, call("short"))}, stackHint,
+		func(h string) { out["hint"] = h }, func() ([]byte, error) { return json.Marshal(out) })
 	if err != nil {
 		t.Fatal(err)
 	}
 	if utf8.RuneCount(text) > briefCharBudget {
 		t.Fatalf("%d characters", utf8.RuneCount(text))
 	}
-	if len(short.ChangesMore) != 40 || short.ChangesUnlisted != nil {
-		t.Errorf("the short component lost lines to the long one: %d listed, %v", len(short.ChangesMore), short.ChangesUnlisted)
+	if len(short.Changes)+len(short.ChangesMore) != 40 || short.ChangesUnlisted != nil {
+		t.Errorf("the short component lost lines to the long one: %d + %d listed, %v", len(short.Changes), len(short.ChangesMore), short.ChangesUnlisted)
 	}
-	if len(long.ChangesMore)+long.ChangesUnlisted["important_fixes"] != 1000 || len(long.ChangesMore) == 0 {
-		t.Errorf("long: %d listed, %v", len(long.ChangesMore), long.ChangesUnlisted)
+	if n := len(long.Changes) + len(long.ChangesMore) + long.ChangesUnlisted["important_fixes"]; n != 1000 || long.ChangesUnlisted == nil {
+		t.Errorf("long: %d accounted for, unlisted %v", n, long.ChangesUnlisted)
+	}
+	h := out["hint"].(string)
+	if !strings.Contains(h, "long: not listed, counted in changes_unlisted: important_fixes") || strings.Contains(h, "short:") {
+		t.Errorf("hint %s", h[len(stackHint):])
+	}
+}
+
+// check_upgrade reads an image build suffix off from as check_stack does;
+// /v2/upgrade answered such a from with a 404.
+func TestCheckUpgradeReadsABuildSuffixOffFrom(t *testing.T) {
+	f := newFakeEtcd()
+	swapAPI(t, httptest.NewServer(f.handler(t)))
+	tag := "v3.5.30-1789133542-cbec91f666af0bf742da986d43832932dbb26b82"
+	res, _, _ := checkUpgradeTool(context.Background(), nil, checkUpgradeArgs{Project: "etcd", From: tag})
+	text := res.Content[0].(*mcp.TextContent).Text
+	if res.IsError || !strings.Contains(text, `"version_read_as":"v3.5.30"`) || !strings.Contains(text, `"from":"`+tag+`"`) {
+		t.Errorf("isError=%v %.300s", res.IsError, text)
+	}
+	if reqs := strings.Join(f.requests(), " "); !strings.Contains(reqs, "/v2/upgrade/etcd?from=v3.5.30 ") && !strings.HasSuffix(reqs, "/v2/upgrade/etcd?from=v3.5.30") {
+		t.Errorf("from sent upstream: %s", reqs)
+	}
+	res, _, _ = checkUpgradeTool(context.Background(), nil, checkUpgradeArgs{Project: "etcd", From: tag, Detail: "full"})
+	if text := res.Content[0].(*mcp.TextContent).Text; res.IsError || !strings.Contains(text, `"version_read_as":"v3.5.30"`) {
+		t.Errorf("full: %.300s", text)
 	}
 }
 
@@ -491,9 +607,23 @@ func TestDescriptionsSayWhatALineIsAndWhereEvidenceIs(t *testing.T) {
 			t.Errorf("%s still says \"the latest on the same release line\" without saying what a line is", name)
 		}
 	}
-	for _, want := range []string{"changes_more", "changes_unlisted", "get_release(project, version, changes:[id, …])", "no evidence", "later_in_range", "excluded_on_branch", "version_read_as", "also_in naming the others"} {
+	// hint keeps what reading the answer needs, within 2,000 characters; the
+	// meanings it dropped are in the description (spec revised 2026-11-20:
+	// 4,429 characters on every briefing were 11% of the budget).
+	if n := utf8.RuneCountInString(stackHint); n > 2000 {
+		t.Errorf("hint is %d characters, at most 2,000", n)
+	}
+	for _, want := range []string{"ONLY IF", "What is not listed is not absent", "changes_more", "changes_unlisted", "the calls that list it end this hint",
+		"get_release(project, version, changes:[id, …])", "no evidence", "does not mean the release is vulnerable", "later_in_range"} {
 		if !strings.Contains(stackHint, want) {
 			t.Errorf("hint does not say %q", want)
+		}
+	}
+	for _, want := range []string{"excluded_on_branch", "version_read_as", "also_in naming the others", "security_unclear", "no_downgrade means",
+		"removed_in is when", "also_required (security) are what the notes say to do", "at most 40,000 characters", "changes_unlisted",
+		"Security changes citing no advisory id are not in distinct_advisories", "recorded on that version, not here", "null when no grade was found"} {
+		if !strings.Contains(d["check_stack"], want) {
+			t.Errorf("check_stack description does not say %q", want)
 		}
 	}
 	if strings.Contains(stackHint, "never read an omitted count as nothing to do") {
