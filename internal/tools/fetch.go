@@ -117,9 +117,13 @@ func (h *handlers) fetchDocs(ctx context.Context, rows []release.Row, lang strin
 }
 
 // fixedOnBranch reads the advisory ids from's own branch carries at or below
-// from — the alreadyFixed set check_stack builds from its fetch set. The rows
-// come newest first, so the newest fetchSetSize releases of the branch are
-// read, the same bound check_stack's fetch set puts on what it reads.
+// from — what check_stack reads off its fetch set. The rows come newest first,
+// so the newest fetchSetSize releases of the branch at or below from are read;
+// older ones are not, and nothing says so. check_stack reads the project's
+// newest fetchSetSize releases instead, whatever the branch, as what it sends
+// must not depend on the running version: when the branch's releases at or
+// below the running version reach past those, it settles less than this does
+// and says so in note. Otherwise the two settle the same.
 func (h *handlers) fixedOnBranch(ctx context.Context, rows []release.Row, from, lang string) (map[string]bool, error) {
 	fromKey := version.NormalizeVersion(from)
 	if len(fromKey) < 2 {

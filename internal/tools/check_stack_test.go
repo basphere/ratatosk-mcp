@@ -7,6 +7,7 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -17,6 +18,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/basphere/ratatosk-mcp/internal/briefing"
+	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/releaseline"
 	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
@@ -462,5 +464,48 @@ func TestKindsNarrowABriefing(t *testing.T) {
 	res, _, _ = h.checkStackTool(context.Background(), nil, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}, Kinds: stringList{"enhancements"}})
 	if !res.IsError {
 		t.Error("a briefing asked for a counted kind must say where to read it")
+	}
+}
+
+// check_stack reads a project's newest releases, whatever the branch, and
+// cannot read more without telling the server the running version. When a
+// release of the running branch at or below the running version is older
+// than those, what it fixed is unknown here: check_upgrade left the change
+// out and check_stack listed it without a word (independent review,
+// 2026-11-21). It now says so in note; the change stays listed.
+func TestCheckStackSaysWhenItsBranchReachesPastWhatWasRead(t *testing.T) {
+	f := upstreamtest.NewEtcd()
+	crit := func(ver string) string {
+		return upstreamtest.Doc(ver, `{"security":1,"breaking":0,"deprecations":0,"important_fixes":0,"enhancements":0,"dependency_updates":0,"other":0}`, "",
+			`[{"id":"etcd@`+ver+`#a","kind":"security","title":"fix","body":null,"severity":"critical","advisories":["GHSA-2222-3333-4444"],"affects":{"text":"","status":"not_stated"}}]`, "")
+	}
+	f.Rows = []release.Row{{Project: "etcd", Version: "v3.6.0"}}
+	for i := 0; i < 58; i++ {
+		f.Rows = append(f.Rows, release.Row{Project: "etcd", Version: fmt.Sprintf("api/v3.6.%d", 100-i)})
+	}
+	f.Rows = append(f.Rows, release.Row{Project: "etcd", Version: "v3.5.1"}, release.Row{Project: "etcd", Version: "v3.5.0"})
+	f.Docs = map[string]string{"v3.6.0": crit("v3.6.0"), "v3.5.1": upstreamtest.Doc("v3.5.1", "", "", "", ""), "v3.5.0": crit("v3.5.0")}
+	h := withAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v2/releases/etcd/api") {
+			http.NotFound(w, r)
+			return
+		}
+		f.Handler(t)(w, r)
+	})))
+
+	out := runStack(t, h, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.1"}}})
+	c := out.Components[0]
+	want := "1 release(s) at or below v3.5.1 on your branch were not read"
+	if !strings.Contains(c.Note, want) || !strings.Contains(c.Note, "security changes your branch already fixed there are not left out") {
+		t.Errorf("note %q, want it to say %q and what follows from it", c.Note, want)
+	}
+	if len(c.Changes) != 1 || c.Changes[0].Version != "v3.6.0" {
+		t.Errorf("changes %+v: the change stays listed", c.Changes)
+	}
+
+	// The whole branch read: no such sentence.
+	g := upstreamtest.NewEtcd()
+	if n := runStack(t, withAPI(t, httptest.NewServer(g.Handler(t))), checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.31"}}}).Components[0].Note; strings.Contains(n, "on your branch were not read") {
+		t.Errorf("note %q on a branch read whole", n)
 	}
 }

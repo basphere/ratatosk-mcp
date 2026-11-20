@@ -391,6 +391,24 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 		if len(rep.NotRead) > 0 {
 			notes = append(notes, fmt.Sprintf("%d release(s) in range were not read (only the newest %d releases of a project are read per call, or the release was not available): see releases_not_read and check them with get_release", len(rep.NotRead), fetchSetSize))
 		}
+		// What the running branch fixed is read from the releases read above,
+		// and reading further down the branch would tell the server the running
+		// version. A release of the branch at or below it that was not read may
+		// have fixed what a change in range cites: that change stays listed,
+		// where check_upgrade, which reads from's branch itself, leaves it out —
+		// and the answer says so (independent review, 2026-11-21).
+		if !full {
+			unread := 0
+			for _, r := range onLine {
+				k := version.NormalizeVersion(r.Version)
+				if _, read := docs[r.Version]; !read && releaseline.SameBranch(k, currentKey) && version.Compare(k, currentKey) <= 0 {
+					unread++
+				}
+			}
+			if unread > 0 {
+				notes = append(notes, fmt.Sprintf("%d release(s) at or below %s on your branch were not read (only the newest %d releases of a project are read per call, or the release was not available), so security changes your branch already fixed there are not left out", unread, running, fetchSetSize))
+			}
+		}
 
 		points := []string{running}
 		for _, r := range inRange {
