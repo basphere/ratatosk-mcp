@@ -1,25 +1,21 @@
 package briefing
 
-// buildBriefing (now Build) as released in 1.0.0 (ff60e46), kept as the
-// reference the 1.1.0 regression harness (ranges_test.go) compares against.
+// The briefing as 1.0.0 (ff60e46) built it, kept as the reference the 1.x
+// regression harness compares today's briefing against.
 //
 // Why a frozen copy and not two binaries: the rule for 1.x is that a 1.0.0
 // client never gets a poorer answer, and the harness has to see both answers
 // change by change, which a copy in the same package can do with no build
-// step, no process and no network. Only the four functions whose 1.0.0 body
-// differs from today's are copied; the helpers they call (attrOf, briefText,
-// branchOf, advisoryKey, carriesAStep, releaseline.DescCmp, kindRank,
-// releaseline.SameBranch, strOf) are unchanged since 1.0.0 — if one of them
-// changes, copy its 1.0.0 body here under a 100 name first, or the reference
-// moves with the code under test. Do not "fix" anything in this file: it is a
-// record, not a briefing. (When the packages were split on 2026-11-21 only
-// names changed here: the types and helpers it calls took their package's
-// names.)
+// step, no process and no network. Only the functions whose 1.0.0 body
+// differs from today's are copied; the helpers they call are the live ones,
+// unchanged since 1.0.0. Before changing a helper this file calls, copy its
+// 1.0.0 body here under a 100 name, or the reference moves with the code
+// under test. Do not "fix" anything in this file: it is a record, not a
+// briefing. It is edited only to follow a rename.
 //
-// When 2.0 ships, delete this file together with testdata/ranges and the
-// harness that reads them (ranges_test.go, and the assertSameAs100 calls in
-// distinct_advisories_test.go): the 1.0.0 promise ends there. The test data
-// table (testdata/README.md at the repository root) lists it.
+// When 2.0 ships the 1.0.0 promise ends, and this file goes with the recorded
+// ranges and the harness that reads them; the test data table at the
+// repository root lists what goes together.
 
 import (
 	"encoding/json"
