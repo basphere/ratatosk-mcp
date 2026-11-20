@@ -89,8 +89,8 @@ func TestToolCallEndsOnItsDeadlineWithAnAnswer(t *testing.T) {
 
 // startAuditedSession wires a real client/server pair over in-memory
 // transports with the audit middleware installed, api pointed at a stub. The
-// server is the whole server (until 2026-11-21 a bare one with list_projects
-// alone); the record is the audit middleware's either way.
+// server is the whole server; the record it checks is the audit middleware's
+// alone.
 func startAuditedSession(t *testing.T, a *audit.Auditor) *mcp.ClientSession {
 	t.Helper()
 	api := upstreamtest.Client(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -9,7 +9,7 @@ package mcpserver
 // it sends where it was, with the same type.
 // testdata/release-snapshot/tools-list-1.1.0.json is tools/list as 2613481
 // (the 1.1.0 tag) answers it, dumped through an in-memory client from that
-// commit's newServer; 1.1.0 was held to 1.0.0's snapshot the same way. Only
+// commit's server; 1.1.0 was held to 1.0.0's snapshot the same way. Only
 // the latest release's snapshot is kept: the rule is additions only, so
 // holding each release to the one before chains back to 1.0.0. How to dump the
 // next one is in testdata/README.md at the repository root.

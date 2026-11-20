@@ -3,11 +3,11 @@
 // items and its changes in seven kinds. It holds the shapes and nothing that
 // fetches them.
 //
-// Why a package of its own: the code that decides on releases — the version
-// ranges (releaseline), the briefing (briefing), the advisory count (advisory)
-// — reads these shapes, and none of it may reach the network. A briefing is a
-// function of the documents it is given; the client that fetches them
-// (upstream) is a separate package those three do not import.
+// Why a package of its own: the code that decides on releases reads these
+// shapes and must not be able to reach the network, so the shapes live apart
+// from the client that fetches them (internal/upstream); a test at the
+// repository root holds those packages to it. A briefing is a function of the
+// documents it is given.
 //
 // v2 returns the same shape the website shows, so the tools mostly pass it
 // through; only the fields the briefing reads are spelled out here, and

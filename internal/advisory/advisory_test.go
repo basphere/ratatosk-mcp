@@ -2,8 +2,7 @@ package advisory
 
 // Which values in a change's advisories are advisory ids, and when the ids of
 // one change name one advisory. The counting itself is tested through the
-// briefing (internal/briefing, distinct_advisories_test.go), which is where
-// the count is answered.
+// briefing (internal/briefing), which is where the count is answered.
 
 import (
 	"slices"

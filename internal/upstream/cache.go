@@ -9,10 +9,10 @@ import (
 // project's release list and single releases, keyed by their public path. Every
 // key is something anyone can fetch, and none of them is derived from a
 // caller's running version — check_stack reads a project's releases whatever
-// version it was asked about (see fetchSet in internal/tools), so the cache
-// cannot hold one either. It exists because that design reads more than one call strictly
-// needs, and agents re-run check_stack within minutes: the second run should
-// cost nothing upstream. /v2/upgrade and /v2/search, which carry what a
+// version it was asked about, so the cache cannot hold one either. It exists
+// because that design reads more than one call strictly needs, and agents
+// re-run check_stack within minutes: the second run should cost nothing
+// upstream. /v2/upgrade and /v2/search, which carry what a
 // caller typed, never go through it.
 //
 // It is bounded in bytes as well as entries. An entry count alone let one

@@ -99,7 +99,7 @@ type componentReport struct {
 	Project        string `json:"project"`
 	RunningVersion string `json:"running_version"`
 	// VersionReadAs (1.2.0) is the version checked when it is not the one
-	// passed: an image build suffix was dropped (releaseline.StripBuildTail).
+	// passed: an image build suffix was dropped.
 	VersionReadAs string `json:"version_read_as,omitempty"`
 	VersionSource string `json:"version_source,omitempty"`
 	TargetVersion string `json:"target_version,omitempty"`
@@ -247,9 +247,8 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 			continue
 		}
 		// An image tag can carry a build suffix after the version it was built
-		// from (releaseline.ReadBuildTail): dropped when the tag as passed is no release on
-		// record and the version without it is, and the answer says what was
-		// read.
+		// from: dropped when the tag as passed is no release on record and the
+		// version without it is, and the answer says what was read.
 		running := comp.Version
 		if v, ok := releaseline.ReadBuildTail(rows, running); ok {
 			running = v

@@ -1,8 +1,5 @@
 package tools
 
-// The argument forms several tools share: a list that also arrives as a
-// string, the schema that admits both, kinds and detail.
-
 import (
 	"bytes"
 	"encoding/json"

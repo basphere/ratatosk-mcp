@@ -2,8 +2,8 @@ package upstream_test
 
 // The client's guards and what it counts. Its answers are tested through the
 // tools that read them (internal/tools). An external test package: the fake
-// /v2 it reads (upstreamtest) imports this package; the one internal it sets
-// (the HTTP timeout) is exported to it by export_test.go.
+// /v2 it reads (upstreamtest) imports this package; the internals it needs are
+// exported to it for tests only.
 
 import (
 	"context"
@@ -88,7 +88,7 @@ func TestMetricsUpstreamOutcomes(t *testing.T) {
 
 // The error body /v2 answers with is echoed to the caller, bounded at 400
 // bytes, and the bound could fall inside a multi-byte character (found
-// 2026-11-21). The cut now ends before that character.
+// 2026-11-21). The cut ends before that character.
 func TestHTTPErrorBodyKeepsWholeCharacters(t *testing.T) {
 	const n = 400
 	errorBody := func(body string) (string, *upstream.HTTPError) {

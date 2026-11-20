@@ -1,8 +1,5 @@
 package metrics
 
-// Counting at the HTTP layer: every POST the MCP server did not run, and the
-// tally that settles which layer counts a POST.
-
 import (
 	"context"
 	"io"

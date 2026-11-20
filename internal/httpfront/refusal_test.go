@@ -1,9 +1,9 @@
 package httpfront_test
 
 // A refusal with metrics off is the 1.0.0 refusal. How refusals are counted
-// with metrics on is in internal/metrics (counting_test.go). An external test
-// package, so it shares the refusal set-up of httpfronttest with those; the
-// chain and the in-flight cap are exported to it by export_test.go.
+// with metrics on is tested in internal/metrics. An external test package, so
+// it shares the refusal set-up of httpfronttest with those; the chain and the
+// in-flight cap are exported to it for tests only.
 
 import (
 	"net/http"

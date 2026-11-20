@@ -9,9 +9,9 @@
 //
 // It is the one package that talks to the network. What leaves the process is
 // what its callers ask it to fetch, so check_stack's privacy property — the
-// requests depend on project slugs only — is kept by the tool (fetchSet in
-// internal/tools), and the packages that decide on releases (briefing,
-// releaseline, advisory) do not import this one.
+// requests depend on project slugs only — is kept by the tool that chooses the
+// requests, and the packages that decide on releases must not import this one
+// (a test at the repository root holds them to it).
 package upstream
 
 import (
@@ -72,7 +72,7 @@ type Project struct {
 }
 
 // ---------------------------------------------------------------------------
-// transport (the response cache is in cache.go)
+// transport
 // ---------------------------------------------------------------------------
 
 // getRaw fetches one /v2 resource. endpoint is the log-safe route PATTERN
@@ -110,10 +110,10 @@ func (c *Client) getRaw(ctx context.Context, endpoint, path string, q url.Values
 		c.mx.CountUpstream(logging.ToolFrom(ctx), metrics.UpstreamOutcome(err))
 		slog.ErrorContext(ctx, "upstream fetch failed", "upstream", endpoint, "kind", logging.ErrKind(err))
 		// Transport errors carry the full request URL and the resolved address
-		// ("dial tcp 172.x.x.x:3000: ..."). That string is returned to the
-		// caller verbatim by the tools' errResult, so on the hosted endpoint an anonymous
-		// internet caller could read our internal topology off a failed
-		// request. The detail stays in the log line above; the caller gets the
+		// ("dial tcp 172.x.x.x:3000: ..."). That string reaches the caller
+		// verbatim in the tool's error answer, so on the hosted endpoint an
+		// anonymous internet caller could read our internal topology off a
+		// failed request. The detail stays in the log line above; the caller gets the
 		// class, which is all an agent can act on anyway.
 		return nil, fmt.Errorf("upstream request failed (%s)", logging.ErrKind(err))
 	}
@@ -169,8 +169,7 @@ func (e *HTTPError) Error() string {
 
 // truncate bounds s to n bytes, with "…" when it cut something, and never
 // splits a character: when byte n falls inside a multi-byte one, it backs off
-// to where that character starts (2026-11-21). internal/tools has the same
-// function for the caller's text it echoes; see there.
+// to where that character starts (2026-11-21).
 func truncate(s string, n int) string {
 	if len(s) > n {
 		for n > 0 && !utf8.RuneStart(s[n]) {

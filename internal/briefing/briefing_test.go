@@ -2,8 +2,8 @@ package briefing
 
 // The briefing on hand-made ranges: what it lists, in which order, under which
 // caps, and what it folds into an entry. Most cases replay a measured answer or
-// a reviewed failure; the anchor sits on the case. The same rules on recorded
-// live ranges, beside the frozen 1.0.0 code, are in ranges_test.go.
+// a reviewed failure; the anchor sits on the case. The same rules are also run
+// on recorded live ranges, against the frozen 1.0.0 code.
 
 import (
 	"encoding/json"

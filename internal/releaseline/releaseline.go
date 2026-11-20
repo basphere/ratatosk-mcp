@@ -19,7 +19,7 @@ import (
 )
 
 // DescCmp orders two tags of the SAME release line the way the website does
-// (apps/web/src/lib/version.ts compareVersionsDesc): higher key first, and on an
+// (apps/web/src/lib in the ratatosk app repository): higher key first, and on an
 // equal key the raw tag ascending, so a finished release ranks above its own
 // pre-releases (1.24.3 above 1.24.3-rc1). Negative = a is higher.
 func DescCmp(a, b string) int {

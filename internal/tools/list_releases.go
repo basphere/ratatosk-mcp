@@ -1,7 +1,5 @@
 package tools
 
-// list_releases: recent releases as one-line rows, by release date.
-
 import (
 	"context"
 	"fmt"

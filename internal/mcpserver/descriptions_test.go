@@ -61,7 +61,7 @@ func TestDescriptionsSayWhatSeverityNullMeans(t *testing.T) {
 }
 
 // The text an agent reads says what a release line is, and where to read
-// evidence now that a briefing has none.
+// evidence, which a briefing does not carry.
 // (1.2.0; measured answers of 2026-11-19 and 11-20 — docs/design/mcp-answer-shape.md
 // in the ratatosk app repository.)
 func TestDescriptionsSayWhatALineIsAndWhereEvidenceIs(t *testing.T) {

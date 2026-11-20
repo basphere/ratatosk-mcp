@@ -1,7 +1,5 @@
 package tools
 
-// list_projects: the roster, as /v2/projects answers it.
-
 import (
 	"context"
 

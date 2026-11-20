@@ -2,10 +2,9 @@ package tools
 
 // Handler-level tests of the tools, with the fake /v2 of
 // internal/upstream/upstreamtest. Calls through the SDK — schema validation,
-// descriptions as a client lists them, the server's middleware — are in
-// internal/mcpserver. This file holds the helpers the tool tests share and
-// what every tool does alike: slugs read without case, dot segments refused,
-// an answer that is not an API answer refused.
+// descriptions as a client lists them, the server's middleware — are tested in
+// internal/mcpserver. Here: the helpers the tool tests share, and what every
+// tool does alike.
 
 import (
 	"context"
@@ -264,8 +263,8 @@ func TestAnswersThatAreNotAPIAnswersAreErrors(t *testing.T) {
 
 // The bounds on echoed text are byte counts, and a bound could fall inside a
 // multi-byte character: the answer carried half a character, which a client
-// received as U+FFFD (found 2026-11-21). The cut now ends before that
-// character; ASCII is cut where it always was.
+// received as U+FFFD (found 2026-11-21). The cut ends before that character;
+// ASCII is cut where it always was.
 func TestTruncateKeepsWholeCharacters(t *testing.T) {
 	const n = 80
 	for _, ch := range []string{"가", "あ", "😀"} {

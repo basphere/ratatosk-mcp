@@ -5,7 +5,7 @@ package metrics_test
 // counted exactly once, every outcome, every refusal, and nothing a caller sent
 // in the exposition. An external test package, because it needs the packages
 // that import this one; the closed label lists and the body scanner it checks
-// against are exported to it by export_test.go.
+// against are exported to it for tests only.
 
 import (
 	"bytes"
@@ -455,8 +455,7 @@ func TestMetricsCountPostsTheSDKNeverRan(t *testing.T) {
 	}
 	// One metrics for both modes, read as deltas: the SDK handles a
 	// notification after it answers 202, so a notification of the first mode
-	// can still be counted while the second runs. (While the metrics were a
-	// global, swapping it between modes raced with that.)
+	// can still be counted while the second runs.
 	m := metrics.New("test-1.1")
 	api := upstreamtest.Client(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)), m)
 	for _, stateless := range []bool{true, false} {

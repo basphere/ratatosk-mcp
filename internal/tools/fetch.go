@@ -1,7 +1,5 @@
 package tools
 
-// What check_stack reads upstream, and how much of it one call may read.
-
 import (
 	"context"
 	"errors"

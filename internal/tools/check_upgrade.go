@@ -75,9 +75,8 @@ func (h *handlers) checkUpgradeTool(ctx context.Context, req *mcp.CallToolReques
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	// "." and ".." are refused before any request, as UpgradeRaw refuses them
-	// (upstream.PathSegment): the release list below would otherwise ask for
-	// them first.
+	// "." and ".." are refused before any request, as the client refuses them
+	// in a path: the release list below would otherwise ask for them first.
 	if _, err := upstream.PathSegment("project", args.Project); err != nil {
 		return errResult(err), nil, nil
 	}
@@ -103,8 +102,8 @@ func (h *handlers) checkUpgradeTool(ctx context.Context, req *mcp.CallToolReques
 		return errResult(fmt.Errorf("could not read the release list to find the newest release of from's minor (same_minor): %w", listErr)), nil, nil
 	}
 	var notes []string
-	// The build suffix of an image tag (releaseline.StripBuildTail), as check_stack reads
-	// it: /v2/upgrade answered cilium-envoy's v1.37.6-1789133542-<commit> with
+	// The build suffix of an image tag, read off as check_stack reads it:
+	// /v2/upgrade answered cilium-envoy's v1.37.6-1789133542-<commit> with
 	// a 404 (2026-11-20).
 	from, readAs := args.From, ""
 	if v, ok := releaseline.ReadBuildTail(rows, from); ok {

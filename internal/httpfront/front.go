@@ -71,10 +71,10 @@ func MCPHandler(server *mcp.Server, stateless bool) http.Handler {
 //
 // Per-caller limiting sits in front of the MCP handler, not upstream: this
 // process is the one that can tell hosted callers apart, and the upstream API
-// deliberately cannot (see ratelimit.go). The in-flight cap sits behind the
-// rate limiter: an over-limit caller is turned away without taking a slot
-// (see inflight.go). A batch is refused behind the limiter (the attempt counts
-// as a request) and before it can take a slot (see batch.go).
+// deliberately cannot. The in-flight cap sits behind the rate limiter: an
+// over-limit caller is turned away without taking a slot. A batch is refused
+// behind the limiter (the attempt counts as a request) and before it can take
+// a slot.
 func Handler(mcpHandler http.Handler, o Options) http.Handler {
 	if o.InflightWait == 0 {
 		o.InflightWait = inflightWait
@@ -95,7 +95,7 @@ func chain(o Options, handler http.Handler) http.Handler {
 }
 
 // mux is everything the MCP listener serves: /mcp and /healthz. Metrics are
-// not here — they have a listener of their own (metrics.Server).
+// not here — they have a listener of their own.
 func mux(mcpHandler http.Handler) *http.ServeMux {
 	m := http.NewServeMux()
 	m.Handle("/mcp", mcpHandler)

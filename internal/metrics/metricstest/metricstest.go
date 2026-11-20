@@ -1,11 +1,9 @@
 // Package metricstest reads the /metrics exposition and builds the request
-// bodies the counting tests send. It is imported by tests only: the counter
-// tests of internal/metrics itself, its end-to-end tests, and the client's
-// tests in internal/upstream.
+// bodies the counting tests send. It is imported by tests only.
 //
 // It imports nothing from this module, so the metrics package's own tests can
 // use it: it reads the exposition through the http.Handler that serves it
-// rather than from a *metrics.Metrics.
+// rather than from the metrics themselves.
 package metricstest
 
 import (

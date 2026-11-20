@@ -1,5 +1,6 @@
-// Package audit is the audit stream (P3 of docs/logging-design.md). The operational log answers
-// "is the system sick"; this answers "who did what" — and its whole point is
+// Package audit is the audit stream (P3 of docs/logging-design.md). The
+// operational log answers "is the system sick"; this answers "who did what"
+// — and its whole point is
 // request content, which is why it exists only behind an explicit opt-in
 // (MCP_AUDIT=metadata|full, default off). In the installed deployment the
 // stream is emitted inside the operator's cluster and lands in the operator's

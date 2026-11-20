@@ -1,8 +1,6 @@
 // Package mcpservertest connects a client to an MCP server in memory, so a
 // test lists and calls tools exactly as a client on the wire does: through
-// schema validation and every middleware. It is imported by tests only — the
-// server's own tests, the counting tests of internal/metrics and the docs
-// tests at the repository root.
+// schema validation and every middleware. It is imported by tests only.
 //
 // It takes the server built, rather than building it, and imports nothing
 // from this module, so the server package's own tests can use it.
@@ -15,8 +13,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// Connect connects client to server over in-memory transports. The session
-// is closed when the test ends.
+// Connect returns client's session with server over in-memory transports;
+// the session is closed when the test ends.
 func Connect(t testing.TB, server *mcp.Server, client *mcp.Implementation) *mcp.ClientSession {
 	t.Helper()
 	ctx := context.Background()

@@ -11,9 +11,6 @@ import (
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
-// The entries of a briefing — a change with its body, a change in one line,
-// the advisories left out — and the rules that pick and order them.
-
 type Change struct {
 	Version string `json:"version"`
 	ID      string `json:"id"`

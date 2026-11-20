@@ -12,7 +12,7 @@ import (
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
-// Same cases as the web's versionGaps test (apps/web/src/lib/v2-shape.test.ts):
+// Same cases as the web's version-gap test (apps/web/src/server/agent):
 // the server's /v2/upgrade and check_stack must flag the same places.
 func TestVersionGaps(t *testing.T) {
 	cases := []struct {

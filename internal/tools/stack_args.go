@@ -1,7 +1,5 @@
 package tools
 
-// check_stack's arguments: the components, read in the shapes models send.
-
 import (
 	"encoding/json"
 	"fmt"

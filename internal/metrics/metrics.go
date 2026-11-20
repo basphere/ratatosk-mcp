@@ -1,6 +1,7 @@
 // Package metrics is the request counters for the HTTP transport, served on a
-// listener of their own (1.1.0). Off unless MCP_METRICS_ADDR is set: the same binary is what people
-// self-host, and a self-hosted install that did not ask for a port gets none.
+// listener of their own (1.1.0). Off unless MCP_METRICS_ADDR is set: the same
+// binary is what people self-host, and a self-hosted install that did not ask
+// for a port gets none.
 //
 // Why they exist: the hosted endpoint's upstream (the web /v2 counter) sees
 // tool calls only as the /v2 requests they turn into, and nothing at all of a
@@ -12,28 +13,27 @@
 // day).
 //
 // The privacy line is the one the README draws: nothing a caller sends
-// becomes a label. Every label value comes from a closed list — the six tool
-// names and "unknown", four methods, four outcomes, and self as one bit, the
+// becomes a label. Every label value comes from a closed list — the tool
+// names and "unknown", the methods, the outcomes, and self as one bit, the
 // same judgement X-Ratatosk-Caller carries. No address, user agent, session,
 // argument or project name, so the set of series is fixed at startup and
 // cannot grow with traffic.
 //
 // Where a request is counted: every POST to /mcp exactly once. A request the
-// MCP server ran is counted by Middleware, which sees its result (an
+// MCP server ran is counted by [Metrics.Middleware], which sees its result (an
 // isError answer is an error). Every other POST is counted by
-// HTTPMiddleware: refused by the rate limiter, the in-flight cap or the
-// batch refusal, rejected by the SDK (a bad header, or params it could not
+// [Metrics.HTTPMiddleware]: refused by the rate limiter, the in-flight cap or
+// the batch refusal, rejected by the SDK (a bad header, or params it could not
 // read: answered 200 with a JSON-RPC error and never run), or carrying no
 // request at all (a notification, answered 202). Which layer counts a POST is
-// settled by a claim on its tally (httpTally.claim), so the two never count
+// settled by a claim on its tally ([httpTally.claim]), so the two never count
 // the same POST and neither misses one; status codes are not used to guess
 // (final review, 2026-11-18: three malformed bodies answered 200 went
 // uncounted that way).
 //
 // The two counting layers live here together because they share one tally
-// per POST (http_layer.go). A *Metrics is built once and handed to both — the
-// HTTP chain (internal/httpfront) and the MCP server (internal/mcpserver) —
-// and to the upstream client, which counts what it sends. nil is off.
+// per POST, so the HTTP chain and the MCP server must be built with the same
+// *Metrics: each finds a POST's tally only in its own. nil is off.
 package metrics
 
 import (
@@ -53,8 +53,8 @@ import (
 )
 
 // toolNames is the closed list of tool labels. It must equal the tools the
-// server registers (internal/tools; TestMetricsToolListMatchesServer);
-// anything else a caller names is "unknown".
+// server registers (a test holds it to them); anything else a caller names is
+// "unknown".
 var toolNames = []string{"check_stack", "check_upgrade", "get_release", "list_projects", "list_releases", "search"}
 
 var (
@@ -65,8 +65,8 @@ var (
 )
 
 // Buckets. Duration: 182 normal calls on the hosted endpoint, 2026-11-11 to
-// 11-18, took 1.49 s at most; a call ends at 90 s (toolTimeout,
-// internal/mcpserver). Bytes: agent clients cap a tool answer in the tens to
+// 11-18, took 1.49 s at most; a call ends at 90 s (the server's per-call
+// deadline). Bytes: agent clients cap a tool answer in the tens to
 // low hundreds of KB, so the steps around 64–256 KiB are the ones that say how
 // often an answer goes over.
 var (

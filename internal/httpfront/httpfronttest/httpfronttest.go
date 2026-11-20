@@ -1,12 +1,11 @@
 // Package httpfronttest sets up the refusals of the HTTP front for tests: a
 // rate limiter that refuses, the request body that is cheapest to send and
-// was dearest to label, and a body that counts what is read of it. It is
-// imported by tests only — the refusal tests of internal/httpfront and the
-// counting tests of internal/metrics, which hold a refusal to the same bounds
-// with metrics off and on.
+// was dearest to label, and a body that counts what is read of it — one
+// set-up, so a refusal is held to the same bounds with metrics off and on. It
+// is imported by tests only.
 //
-// It imports internal/httpfront for the limiter, so the front's tests that use
-// it are an external test package (refusal_test.go, package httpfront_test).
+// It imports internal/httpfront for the limiter, so a test of that package
+// that uses it is an external test package (package httpfront_test).
 package httpfronttest
 
 import (

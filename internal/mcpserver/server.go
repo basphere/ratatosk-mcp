@@ -1,8 +1,7 @@
 // Package mcpserver builds the MCP server both transports serve: the
-// instructions every client receives on initialize, the six tools
-// (internal/tools), and the receiving middleware around them — the audit
-// stream, the per-call deadline and the request counters — in the order that
-// decides what each one sees.
+// instructions every client receives on initialize, the tools, and the
+// receiving middleware around them — the audit stream, the per-call deadline
+// and the request counters — in the order that decides what each one sees.
 //
 // It is assembly only: what a tool answers is decided in internal/tools, what
 // an HTTP request meets before it gets here in internal/httpfront.
@@ -23,8 +22,8 @@ import (
 // toolTimeout bounds one tool call. The HTTP server cuts a response at 120 s
 // (WriteTimeout), and before this bound a slow upstream ran a stack check into
 // that cut: the caller got an empty reply instead of an answer saying what was
-// not checked. 90 s leaves room to write the answer. Tests shorten it through
-// Options.timeout.
+// not checked. 90 s leaves room to write the answer. A test shortens it
+// through [Options].
 const toolTimeout = 90 * time.Second
 
 // instructions are what a client receives on initialize.
@@ -41,7 +40,8 @@ const instructions = "Data source: the public ratatosk.io agent API v2 — what 
 
 // Options are what the server is built from.
 type Options struct {
-	// Version is the server's version in serverInfo (main.buildVersion).
+	// Version is the server's version in serverInfo, as the release build
+	// stamps it.
 	Version string
 	// API is the /v2 client the tools read through.
 	API *upstream.Client
@@ -54,10 +54,9 @@ type Options struct {
 	timeout time.Duration
 }
 
-// New builds the server: the six tools and the receiving middleware. The
-// server's tools are what a client lists, so docs_test.go (at the repository
-// root) lists them through it — the docs are checked against this, not
-// against a second hand-kept list.
+// New builds the server: the tools and the receiving middleware. The docs are
+// checked against the tools a client lists from it, not against a second
+// hand-kept list.
 func New(o Options) *mcp.Server {
 	timeout := o.timeout
 	if timeout == 0 {

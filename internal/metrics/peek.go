@@ -1,8 +1,5 @@
 package metrics
 
-// Naming a request from the first bytes of its body, for a POST the server
-// never ran (see metricsPeekBytes for why this is bounded and single-pass).
-
 import (
 	"bytes"
 	"encoding/json"

@@ -2,8 +2,6 @@ package briefing
 
 import "strings"
 
-// The hint every briefing carries: how to read the answer it travels with.
-
 // What hint says about important fixes depends on the call: counted only by
 // default, listed when kinds names them. One sentence for both had agents
 // read "call again with kinds" in the answer to that very call, and take

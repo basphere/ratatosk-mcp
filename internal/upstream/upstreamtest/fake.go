@@ -1,14 +1,11 @@
 // Package upstreamtest is a fake ratatosk /v2 API for tests: a small etcd
 // history served in the /v2 shape, recording every request URL so a test can
-// assert on what left this process.
+// assert on what left this process, and a client of it.
 //
-// It is a package of its own because tests in several packages need the same
-// history — the tools (check_stack, check_upgrade, get_release, search), the
-// server (a tool call through the SDK, with its deadline), the metrics (each
-// POST counted once, end to end) and the client (upstream outcomes) — and the
-// same client of it (Client). It is imported by tests only. It imports
-// internal/upstream for that client, so the client's own tests that use it are
-// an external test package (client_test.go, package upstream_test).
+// It is a package of its own because tests in several packages run on the same
+// history and the same client. It is imported by tests only. It imports
+// internal/upstream for the client, so a test of that package that uses it is
+// an external test package (package upstream_test).
 package upstreamtest
 
 import (
@@ -30,7 +27,7 @@ import (
 
 // Fake serves Projects at /v2/projects, Rows at /v2/releases, Docs (version →
 // release document) at /v2/releases/etcd/{version} and a range cut from them
-// at /v2/upgrade/etcd. A test may change the three before it serves.
+// at /v2/upgrade/etcd. A test may change them before it serves.
 type Fake struct {
 	mu       sync.Mutex
 	seen     []string
@@ -118,10 +115,8 @@ func Doc(ver string, counts string, before string, changes string, later string)
 		ver, ver, counts, before, changes, later)
 }
 
-// NewEtcd is the etcd history most tests run on: two lines (main and api/),
-// v3.5.30 to v3.6.8 on the main one, GHSA-aaaa fixed on 3.5.31 and 3.6.7,
-// GHSA-bbbb on 3.5.30 and 3.6.8, a breaking change with no_downgrade and an
-// upgrade guide on v3.6.7, and a known issue recorded on v3.5.30.
+// NewEtcd is the etcd history most tests run on; its Rows and Docs are the
+// record of what it holds.
 func NewEtcd() *Fake {
 	sec := func(id, adv string) string {
 		return `{"id":"` + id + `","kind":"security","title":"fix ` + adv + `","body":null,"severity":null,"advisories":["` + adv + `"],` +
@@ -150,9 +145,8 @@ func NewEtcd() *Fake {
 	return f
 }
 
-// Client is a client of ts as the server builds one (version "dev", the
-// default 32 MiB cache budget), counting into m (nil: metrics off). ts is
-// closed when the test ends.
+// Client is a client of ts built as the server builds one, counting into m
+// (nil: metrics off); ts is closed when the test ends.
 func Client(t testing.TB, ts *httptest.Server, m *metrics.Metrics) *upstream.Client {
 	t.Helper()
 	t.Cleanup(ts.Close)

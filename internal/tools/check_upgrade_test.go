@@ -158,7 +158,7 @@ func TestCheckUpgradeReadsABuildSuffixOffFrom(t *testing.T) {
 
 // check_upgrade settles what from's branch already fixed, as check_stack does:
 // containerd v2.2.9 → v2.4.2 omitted 42 security changes there and 30 here,
-// with 13 excluded (2026-11-20). The same range now gives the same lists.
+// with 13 excluded (2026-11-20). The same range must give the same lists.
 // (1.2.0; measured answers of 2026-11-19 and 11-20 — docs/design/mcp-answer-shape.md
 // in the ratatosk app repository.)
 func TestCheckUpgradeSettlesWhatFromsBranchFixedLikeCheckStack(t *testing.T) {

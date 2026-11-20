@@ -2,7 +2,7 @@ package metrics
 
 // The counters and their exposition, the body scanner, and the HTTP layer on
 // its own. Counting through the whole HTTP chain and the server — each POST
-// once, every outcome — is in counting_test.go.
+// once, every outcome — is tested end to end from an external test package.
 
 import (
 	"io"

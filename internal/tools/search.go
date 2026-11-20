@@ -108,8 +108,8 @@ const searchMatchReleases = 8
 const maxMatches = 20
 
 // idShapedRe is a complete advisory id, matched whole: the website's search
-// (apps/web/src/server/search.ts, ID_SHAPED) answers CVE-2026-2757 with that id
-// only, never CVE-2026-27571. q arrives lower-cased.
+// (apps/web/src/server) answers CVE-2026-2757 with that id only, never
+// CVE-2026-27571. q arrives lower-cased.
 var idShapedRe = regexp.MustCompile(`^((cve|go)-\d{4}-\d{4,}|rustsec-\d{4}-\d{4}|ghsa(-[0-9a-z]{4}){3})$`)
 
 // searchFinder says whether lowered text matches q as the website's finder
@@ -174,8 +174,7 @@ type matchItem struct {
 }
 
 // hay is the item's text as the website's index holds it (the worker's
-// bake/search.go: title, body, who it applies to, what it requires, advisory
-// ids, evidence quotes), lower-cased, plus the entries folded under a
+// apps/worker/internal/bake), lower-cased, plus the entries folded under a
 // before-upgrade item.
 func (it matchItem) hay() string {
 	parts := []string{it.Title, strOf(it.Body), strOf(it.ActionRequired), strOf(it.AlsoRequired), strOf(it.ToUse)}

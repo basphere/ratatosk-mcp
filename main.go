@@ -4,13 +4,11 @@
 // the website shows: before-upgrade checks plus changes in seven kinds, each
 // with release-note evidence. check_stack is the privacy loop ("notify, don't
 // tell"): the caller's running versions are compared INSIDE this process, and
-// what goes upstream depends only on project slugs — see
-// internal/tools/check_stack.go.
+// what goes upstream depends only on project slugs — see internal/tools.
 //
-// This file reads the configuration, builds the server and serves it; the
-// rest is in internal/ (CONTRIBUTING.md "Code layout"). Config: RATATOSK_URL
-// (default https://ratatosk.io); the rest is listed in docs/install.en.md
-// "Configuration reference" and read in internal/config.
+// This file reads the configuration, builds the server and serves it; each
+// package under internal/ says in its doc comment what it is for. The
+// configuration is listed in docs/install.en.md "Configuration reference".
 package main
 
 import (
@@ -130,8 +128,8 @@ func serveStdio(cfg config.Config, aud *audit.Auditor) {
 }
 
 // newServer is the MCP server both transports serve, reading /v2 at the
-// configured address. docs_test.go lists the tools through it — exactly as a
-// client sees them.
+// configured address. The docs tests list the tools through it, as a client
+// sees them.
 func newServer(cfg config.Config, aud *audit.Auditor, m *metrics.Metrics) *mcp.Server {
 	return mcpserver.New(mcpserver.Options{
 		Version: buildVersion,

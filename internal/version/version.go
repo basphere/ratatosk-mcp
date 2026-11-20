@@ -1,10 +1,11 @@
 // Package version turns a raw release version string into a monotonic,
 // per-project sort key — an int component array — for the agent API's range
-// queries (docs/rfc/agent-api.md §5.7). Comparison is only meaningful WITHIN a
-// single RELEASE LINE: across projects it is nonsense, and across lines of one
-// project (containerd's "api/" beside its main tags, Flatcar's lts beside
-// stable) it is nonsense that succeeds — see SplitLine. Callers that compare
-// must gate on SameLine first; the key alone cannot tell them apart.
+// queries (agent API RFC §5.7, ratatosk app repository). Comparison is only
+// meaningful WITHIN a single RELEASE LINE: across projects it is nonsense, and
+// across lines of one project (containerd's "api/" beside its main tags,
+// Flatcar's lts beside stable) it is nonsense that succeeds — see SplitLine.
+// Callers that compare must gate on SameLine first; the key alone cannot tell
+// them apart.
 //
 // COPY of apps/worker/internal/version (source of truth) — bundled here so the
 // in-cluster MCP server compares versions client-side and never sends them to

@@ -40,7 +40,7 @@ func coverageNote(running string, runningKey, oldest []int, oldestTag string) st
 // was misread, and in both cases nothing was checked against it, so the
 // component goes to could_not_check like a dropped line prefix does — /v2/upgrade
 // answers the same case with a 404. A pre-release of a version not on record
-// counts as that version (NormalizeVersion drops the suffix), so v3.6.9-rc.1
+// counts as that version (its version key drops the suffix), so v3.6.9-rc.1
 // above v3.6.8 is flagged and v3.6.8-rc.1 is not.
 func newerNote(running string, runningKey, newest []int, newestTag string) string {
 	if newest == nil || version.Compare(runningKey, newest) <= 0 {

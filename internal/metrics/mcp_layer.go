@@ -1,7 +1,5 @@
 package metrics
 
-// Counting at the MCP layer: the requests the MCP server runs.
-
 import (
 	"context"
 	"strings"
@@ -23,9 +21,6 @@ func (m *Metrics) Middleware(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		// A notification is passed on before anything else is read: the SDK
 		// runs one after it has answered 202, unordered with anything else.
-		// (While the metrics were a package-level variable, reading it there
-		// was a read nothing synchronised with; since 2026-11-21 m is fixed
-		// when the server is built.)
 		if strings.HasPrefix(method, "notifications/") {
 			return next(ctx, method, req)
 		}

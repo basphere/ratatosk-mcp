@@ -3,7 +3,7 @@ package tools
 // Reading part of an upstream answer and passing the rest on as it came.
 //
 // Why this exists (1.2.0): kinds, changes and search's project filter cut
-// arrays out of answers that were passed through verbatim until now. Decoding
+// arrays out of answers that 1.1.0 passed through verbatim. Decoding
 // them into Go maps and encoding again would sort every key and drop nothing,
 // but it would reorder the server's fields, and a struct would drop the fields
 // the server adds later (internal/release: unknown fields are ignored so the

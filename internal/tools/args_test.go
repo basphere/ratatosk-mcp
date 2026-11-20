@@ -2,7 +2,7 @@ package tools
 
 // The list arguments' accepted forms and kinds (1.2.0). That the schema lets
 // both forms through to a handler is tested through the SDK
-// (internal/mcpserver, schema_test.go).
+// (internal/mcpserver).
 
 import (
 	"encoding/json"

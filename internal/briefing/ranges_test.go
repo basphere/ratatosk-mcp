@@ -16,7 +16,7 @@ package briefing
 // The assertion: for every range, in check_upgrade and check_stack modes,
 // with the production caps and with the caps lifted, Build's result
 // with summary.distinct_advisories zeroed is reflect.DeepEqual to
-// buildBriefing100's (frozen100_test.go, the 1.0.0 code frozen), and the
+// [buildBriefing100]'s (the 1.0.0 code, frozen), and the
 // settled counts are equal: same entries in the same order, same also_in,
 // advisories, changes_omitted, counts, warnings and releases.
 //

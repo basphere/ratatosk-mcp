@@ -7,12 +7,8 @@ import (
 	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
-// before_upgrade: the items an operator reads before upgrading, for every
-// release in range.
-
 // briefItem is a before_upgrade item as 1.0.0 and 1.1.0 answered it. Only the
-// frozen 1.0.0 briefing (frozen100_test.go) still builds it; 1.2.0 answers
-// with UpgradeItem.
+// frozen 1.0.0 briefing builds it; 1.2.0 answers with [UpgradeItem].
 type briefItem struct {
 	Version string `json:"version"`
 	Section string `json:"section"` // prerequisites | known_issues | upgrade_guide

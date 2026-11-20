@@ -4,8 +4,8 @@ Test data lives next to the tests that read it, in a `testdata` folder of
 their package (Go's convention: the `go` command ignores those folders). This
 table lists every bundle in the module: one bundle is one folder and one row.
 
-`TestTestdataTableMatchesTheFiles` (`testdata_test.go` at the repository
-root) fails when the table and the files disagree:
+A test at the repository root (`go test -run TestTestdataTableMatchesTheFiles .`)
+fails when the table and the files disagree:
 
 - a file under a `testdata` folder that no row covers,
 - a row whose folder is missing or empty,
@@ -34,10 +34,8 @@ curl -s 'https://ratatosk.io/v2/upgrade/envoy?from=v1.33.0' > /tmp/ranges/envoy.
 CUT_RANGE_FIXTURES=/tmp/ranges go test -run TestCutRangeFixtures ./internal/briefing
 ```
 
-The committed ones start from argo v3.1.12, cilium v1.16.18, containerd
-v2.0.0, envoy v1.33.0, istio 1.25.0, kubernetes v1.32.11 and kyverno v1.15.2
-(each file names its `from` and `to`). Whole answers can also be run without
-cutting them, before a release:
+Each committed file names its `from` and `to`. Whole answers can also be run
+without cutting them, before a release:
 
 ```bash
 RANGE_FIXTURES=/tmp/ranges go test -run TestRangesAnswerAs100 -v ./internal/briefing

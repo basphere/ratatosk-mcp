@@ -7,9 +7,9 @@
 // said 15 critical where five advisories are critical, and the agent passed 15
 // on. This counts each advisory once. It changes nothing else in a briefing:
 // which changes are listed, and how they are grouped into also_in, is the
-// 1.0.0 rule (whole id sets, briefing.Build) — a draft that also grouped by
-// shared ids answered less than 1.0.0 on live ranges and was taken out
-// (2026-11-18).
+// 1.0.0 rule (whole id sets, as the briefing groups them) — a draft that also
+// grouped by shared ids answered less than 1.0.0 on live ranges and was taken
+// out (2026-11-18).
 //
 // What links ids into one advisory: two ids cited together by a security
 // change that names at most one id per family (one CVE, one GHSA, ...) — an
@@ -54,12 +54,12 @@ import (
 )
 
 // advisoryIDRe is one whole advisory id: GHSA, CVE, GO, RUSTSEC or PYSEC,
-// matched as the worker matches them (apps/worker/internal/reader/refs.go,
-// advisoryPattern).
+// matched as the worker matches them (apps/worker/internal/reader in the
+// ratatosk app repository).
 var advisoryIDRe = regexp.MustCompile(`(?i)^(?:GHSA(?:-[23456789cfghjmpqrvwx]{4}){3}|CVE-\d{4}-\d{4,7}|GO-\d{4}-\d{4,}|RUSTSEC-\d{4}-\d{4,}|PYSEC-\d{4}-\d+)$`)
 
 // NormID is the form ids are compared in: upper case, no surrounding space
-// (the briefing's advisoryKey has always compared this way). Exported for the
+// (the briefing has always compared ids this way). Exported for the
 // briefing's recorded-range tests, which build the running branch's fixed
 // set with it; a copy of the rule in the test would not follow a change here.
 func NormID(id string) string {
@@ -68,8 +68,8 @@ func NormID(id string) string {
 
 // RecognisedIDs returns the advisory ids among ids, normalised, sorted and
 // without repeats. Exported for the briefing's tests, which cut recorded
-// ranges down to the changes this package links (TestCutRangeFixtures); a
-// copy of the families in the test would not follow a change here.
+// ranges down to the changes this package links; a copy of the families in
+// the test would not follow a change here.
 func RecognisedIDs(ids []string) []string {
 	var out []string
 	for _, id := range ids {

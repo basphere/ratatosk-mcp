@@ -5,7 +5,7 @@ package briefing
 // are the live ones of v3.2.11, v3.3.9, v3.3.15, v3.4.10, v3.5.4 and v3.6.0
 // (read from /v2 the same day), including the v3.3.15 card that cites eight
 // GHSAs next to a card for each of them. Every case also checks that the rest
-// of the briefing is the 1.0.0 one (assertSameAs100, ranges_test.go): the
+// of the briefing is the 1.0.0 one ([assertSameAs100]): the
 // count is the only thing 1.1.0 adds to a briefing.
 
 import (

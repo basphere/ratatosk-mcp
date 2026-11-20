@@ -1,17 +1,16 @@
-// Package tools is the six MCP tools this server serves: list_projects,
-// get_release, list_releases, search, check_upgrade and check_stack. Each has
-// a file of its own holding its definition (name, description, input schema),
-// its arguments and its handler; Register adds them to a server.
+// Package tools is the MCP tools this server serves. Each has a file of its
+// own holding its definition (name, description, input schema), its arguments
+// and its handler; [Register] adds them to a server.
 //
 // The tools read the /v2 API through the client they are given
 // (internal/upstream) and build check_stack's and check_upgrade's answer from
 // a briefing (internal/briefing). What check_stack sends upstream depends on
-// project slugs only (check_stack.go, fetch.go): that property is held here,
-// where the requests are chosen.
+// project slugs only: that property is held here, where the requests are
+// chosen.
 //
 // A tool description is what an agent actually reads when it calls the tool,
-// so the descriptions are behaviour, not documentation; docs_test.go (at the
-// repository root) checks the docs against them as a client lists them.
+// so the descriptions are behaviour, not documentation; the docs tests at the
+// repository root check the docs against them as a client lists them.
 package tools
 
 import (
@@ -53,7 +52,7 @@ type handlers struct {
 	api *upstream.Client
 }
 
-// Register adds the six tools to s, reading /v2 through api. (A client lists
+// Register adds the tools to s, reading /v2 through api. (A client lists
 // them sorted by name, whatever the order here.)
 func Register(s *mcp.Server, api *upstream.Client) {
 	h := &handlers{api: api}
@@ -111,8 +110,7 @@ func slugArg(s string) string {
 // splits a character: when byte n falls inside a multi-byte one, it backs off
 // to where that character starts. Cut at n itself, a Korean or Japanese slug
 // came back with half a character, which a client received as U+FFFD
-// (2026-11-21). ASCII is cut where it always was. internal/upstream has the
-// same function for the error bodies it bounds.
+// (2026-11-21). Text that is all ASCII is cut at n.
 func truncate(s string, n int) string {
 	if len(s) > n {
 		for n > 0 && !utf8.RuneStart(s[n]) {

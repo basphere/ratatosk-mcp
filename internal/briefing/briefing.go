@@ -10,8 +10,7 @@
 // must not import internal/upstream — a briefing that could fetch would make
 // what goes upstream depend on the running version, which is what check_stack
 // exists to prevent. Being pure is also what lets the 1.x regression harness
-// (ranges_test.go) run the frozen 1.0.0 code (frozen100_test.go) beside it on
-// recorded ranges, change by change.
+// run the frozen 1.0.0 code beside it on recorded ranges, change by change.
 package briefing
 
 import (
@@ -104,8 +103,8 @@ type Briefing struct {
 	// Releases is a pointer so "[]" (checked, already on the newest) and
 	// absent (not checked at all — see could_not_check) stay distinguishable.
 	Releases *[]RangeRelease `json:"releases,omitempty"`
-	// BeforeUpgrade is the 1.0.0 list: only the frozen 1.0.0 briefing fills it
-	// (frozen100_test.go), and it is never answered. 1.2.0 answers Upgrade.
+	// BeforeUpgrade is the 1.0.0 list: only the frozen 1.0.0 briefing fills
+	// it, and it is never answered. 1.2.0 answers Upgrade.
 	BeforeUpgrade []briefItem `json:"-"`
 	// Upgrade is a pointer for the same reason as Releases: "[]" is checked
 	// and empty, absent is not checked. 1.1.0 left an empty list out, and four
@@ -141,7 +140,8 @@ type Briefing struct {
 // branches' backports are settled. nil settles nothing.
 //
 // What 1.2.0 adds leaves summary, releases, changes, changes_omitted and the
-// settled count as 1.1.0 answered them (ranges_test.go holds it to that):
+// settled count as 1.1.0 answered them (the 1.x regression harness holds it
+// to that):
 //   - changes_more: every change cut by the per-kind caps, one line each, in
 //     the order of changes. In 1.1.0 they were a count only; on 62 ranges of
 //     three releases behind (2026-11-19), 20 cut breaking changes and 12 cut
