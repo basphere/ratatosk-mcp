@@ -5,6 +5,115 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+### Added
+
+- **`changes_more` in `check_stack` and `check_upgrade`: what does not fit in
+  `changes`, one line each.** `changes_omitted` was a count only, so a cut
+  breaking change or advisory was invisible: containerd v2.2.9 to v2.4.2 cut
+  22 breaking changes, among them the removal of `enable_cdi`. A line carries
+  `version`, `id`, `kind`, `title`, `severity` (security only), `affects`
+  (`text`, `status`) and `action_required: true` when the change has one.
+  Every security, breaking and deprecation change is listed; important fixes
+  are listed as far as the answer's size allows (below). `changes` and
+  `changes_omitted` keep their values.
+- **A briefing answer is fitted to 40,000 characters**, about what an agent
+  client shows as text before it hands the answer over as a file. Only the
+  important-fix lines of `changes_more` give way, and
+  **`changes_unlisted`** counts them (`{"important_fixes": N}`); several
+  components share the room evenly. A security, breaking or deprecation line
+  is never left out to fit, so a long range or a large stack can still be
+  longer, and then `hint` ends by saying how to narrow the call.
+- **`later_in_range` in `check_stack` and `check_upgrade`**: what was learned
+  after release about every release in range, in the form of
+  `later_for_running`. cilium v1.20.2 to v1.20.5 now says that v1.20.3's
+  BackendTLSPolicy regression was fixed in v1.20.4.
+- **`excluded_on_branch` in `check_stack` and `check_upgrade`**: the security
+  changes left out because the running version's branch already fixed their
+  advisories (`security`, how many) and those advisories with their grade
+  (`advisories: [{id, severity}]`). `summary.warnings` still counts them,
+  which is why containerd's briefing said `critical: 1` beside
+  `distinct_advisories.critical: 0`; `note` keeps its sentence.
+- **`version_read_as` on a `check_stack` component**: an image tag with a
+  build suffix after the version (cilium-envoy's
+  `v1.37.6-1789133542-<commit>`) is checked as the version and says so. A
+  release-line prefix (`flagd/`, `lts-`) is never touched.
+- **`kinds` on `check_stack`, `check_upgrade` and `get_release`**: only
+  changes of those kinds. In a briefing, any of `security`, `breaking`,
+  `deprecations`, `important_fixes` (the other three are counted only, and
+  asking for them is an error that says where to read them); with
+  `detail: "full"` and in `get_release`, any of the seven, and `folded` is
+  then left out. cilium v1.20.0 is 758,000 characters whole and 252,000 with
+  the four kinds that ask for a decision. An unknown kind is an error listing
+  the kinds.
+- **`changes` on `get_release`**: up to 50 change or before-upgrade item ids,
+  as a briefing names them; the answer carries only those, with body and
+  evidence, and `not_found` lists ids the release does not have. Without
+  `version`, the release the ids name is read. One change of cilium v1.20.0 is
+  1,600 characters.
+- **`same_minor` on a `check_stack` component and on `check_upgrade`**: stop
+  at the newest release of the running minor (kubernetes v1.36.5 to v1.36.6,
+  not v1.37.2). Not together with `target_version` or `to`. When nothing newer
+  is on that minor, the range is empty and the component's `note` (in
+  `check_upgrade`, a top-level **`note`**) says so and names the newest on the
+  line.
+- **`project` on `search`**: only that project's releases, in all three
+  arrays; an unknown slug is an error. And **`matches`** on an `in_analysis`
+  release matched through an item: every item of that release that matches
+  `q` (`id`, `kind`, `title`), up to 20, with **`matches_omitted`** counting
+  the rest, on the first 20 such releases of the answer. `matched` stays the
+  first one: cilium v1.20.0 had one for "BackendTLSPolicy", and has seven
+  matches.
+- The list arguments (`kinds`, `changes`) also take the list as a string,
+  JSON-encoded or comma-separated, as `components` does; the schema documents
+  the array.
+
+### Changed
+
+- **`before_upgrade` in a briefing carries each item whole**: its `body`
+  (no longer cut to 160 characters; `null` when the item has none) and the
+  entries folded under it (`folded`). cilium v1.19.9 to v1.20.5 carried only
+  a title for its prerequisite, and lost the warning folded under it: upgrade
+  Gateway API to v1.6.1 before Cilium, or `TLSRoute` objects are lost. An
+  item whose text recurs on several releases (the same id after `#`, in the
+  same section) is listed once, at the newest release, with **`also_in`**
+  naming the others: containerd v2.2.9 to v2.4.2 lists 8 items where it
+  listed 17. In `check_stack`, `before_upgrade` is `[]` on a checked
+  component with no item; it was left out.
+- `hint` and the tool descriptions: what does not fit is read from
+  `changes_more`, and a briefing has no evidence quotes, so the body and
+  evidence of what you report come from `get_release(changes: [...])`. They no
+  longer send the agent to read whole releases for what was omitted.
+
+### Fixed
+
+- **`check_upgrade` leaves out what `from`'s branch already fixed, as
+  `check_stack` does.** It used to list every security change in range, so
+  the same upgrade got two answers: containerd v2.2.9 to v2.4.2 omitted 42
+  security changes in `check_upgrade` and 30 in `check_stack`, which left out
+  13. Now both leave out the same 13, count them in `excluded_on_branch`, and
+  list and omit the same changes; `summary.distinct_advisories` no longer
+  counts them in `check_upgrade` either. To tell, `check_upgrade` reads the
+  project's release list and the releases of `from`'s branch at or below
+  `from` (up to 60), through the same cache; nothing about the call is sent
+  that `from` did not already say.
+- **A security change folded into an entry of its own release is listed.**
+  A change citing exactly the advisories of an entry of the same release, and
+  asking nothing of its own, stood under that entry without a trace:
+  coredns v1.14.7 to v1.15.0 counted 8 security changes, listed 5 and omitted
+  none. The three Go fixes it folded (an HTTP/2 crash, trailer memory
+  exhaustion, untrusted x509 intermediates) are now lines in
+  `changes_more`. The entry in `changes` is as it was.
+- **`check_stack` checks an image tag with a build suffix.**
+  `v1.37.6-1789133542-<commit>` was read as release line `v1.37.6` and
+  refused with "the release-line prefix was probably dropped", the wrong
+  advice. It is now checked as `v1.37.6` (see `version_read_as`). A suffix
+  that cannot be read off is refused with a reason that names it, instead of
+  a dropped prefix.
+- The tool descriptions said a range defaults to "the latest on the same
+  release line", which 7 of 8 agent runs read as the same minor version. They
+  now say a release line is a tag prefix (`flagd/`, `lts-`), not a minor, so
+  v1.36.5 is checked up to v1.37.x, and point to `same_minor`.
+
 ## [1.1.0] — 2026-11-19
 
 ### Added
