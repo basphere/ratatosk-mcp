@@ -17,7 +17,7 @@ import (
 
 // Every known combination is there at zero before the first request.
 func TestMetricsStartAtZero(t *testing.T) {
-	s := metricstest.Series(t, Handler(New("test-1.1")))
+	s := metricstest.Series(t, handler(New("test-1.1")))
 	var reqs, ups, buckets int
 	for k, v := range s {
 		switch {
@@ -54,7 +54,7 @@ func TestMetricsHistograms(t *testing.T) {
 	m.observeTool("check_stack", 300*time.Millisecond, 200<<10)
 	m.observeTool("check_stack", 100*time.Second, 5<<20)
 	m.observeTool("no_such_tool", time.Second, -1)
-	s := metricstest.Series(t, Handler(m))
+	s := metricstest.Series(t, handler(m))
 	d := func(le string) float64 {
 		return s[`ratatosk_mcp_request_duration_seconds_bucket{tool="check_stack",le="`+le+`"}`]
 	}
@@ -79,7 +79,7 @@ func TestMetricsHistograms(t *testing.T) {
 }
 
 func TestMetricsEndpoint(t *testing.T) {
-	ts := httptest.NewServer(Handler(New("test-1.1")))
+	ts := httptest.NewServer(handler(New("test-1.1")))
 	defer ts.Close()
 	resp, err := http.Get(ts.URL + "/metrics")
 	if err != nil {
@@ -129,7 +129,7 @@ func TestMetricsDoNotWaitForABodyBehindExpect(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the HTTP layer waited for a body the client holds back until 100 Continue")
 	}
-	if got := metricstest.Series(t, Handler(m))[metricstest.Requests("other", "", "error", "false")]; got != 1 {
+	if got := metricstest.Series(t, handler(m))[metricstest.Requests("other", "", "error", "false")]; got != 1 {
 		t.Errorf("other/error = %v, want 1", got)
 	}
 }

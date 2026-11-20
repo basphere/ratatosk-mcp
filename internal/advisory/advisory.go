@@ -59,13 +59,17 @@ import (
 var advisoryIDRe = regexp.MustCompile(`(?i)^(?:GHSA(?:-[23456789cfghjmpqrvwx]{4}){3}|CVE-\d{4}-\d{4,7}|GO-\d{4}-\d{4,}|RUSTSEC-\d{4}-\d{4,}|PYSEC-\d{4}-\d+)$`)
 
 // NormID is the form ids are compared in: upper case, no surrounding space
-// (the briefing's advisoryKey has always compared this way).
+// (the briefing's advisoryKey has always compared this way). Exported for the
+// briefing's recorded-range tests, which build the running branch's fixed
+// set with it; a copy of the rule in the test would not follow a change here.
 func NormID(id string) string {
 	return strings.ToUpper(strings.TrimSpace(id))
 }
 
 // RecognisedIDs returns the advisory ids among ids, normalised, sorted and
-// without repeats.
+// without repeats. Exported for the briefing's tests, which cut recorded
+// ranges down to the changes this package links (TestCutRangeFixtures); a
+// copy of the families in the test would not follow a change here.
 func RecognisedIDs(ids []string) []string {
 	var out []string
 	for _, id := range ids {

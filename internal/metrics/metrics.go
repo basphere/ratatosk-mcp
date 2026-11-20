@@ -325,10 +325,10 @@ func writeHistograms(b *bytes.Buffer, name, help string, hs map[string]*histogra
 	}
 }
 
-// Handler serves GET /metrics and nothing else. It is mounted on its own
-// listener (Server), never on the /mcp mux, so a proxy that forwards /mcp
+// handler serves GET /metrics and nothing else. It is mounted on its own
+// listener ([Server]), never on the /mcp mux, so a proxy that forwards /mcp
 // cannot expose it.
-func Handler(m *Metrics) http.Handler {
+func handler(m *Metrics) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /metrics", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
@@ -337,10 +337,11 @@ func Handler(m *Metrics) http.Handler {
 	return mux
 }
 
-// Server is the metrics listener's server, with its own timeouts.
+// Server is the metrics listener's server, with its own timeouts. Its Handler
+// is the one that serves GET /metrics; tests read the exposition through it.
 func Server(m *Metrics) *http.Server {
 	return &http.Server{
-		Handler:           Handler(m),
+		Handler:           handler(m),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,

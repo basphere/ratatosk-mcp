@@ -118,7 +118,7 @@ func TestMetricsCountEveryOutcomeOnce(t *testing.T) {
 	// The limit of 9 is spent; the 10th is refused before it is read.
 	send(metricstest.ToolCall(9, "check_stack", `{"components":[{"project":"secret-project-xyz","version":"v9.9.9-secret"}]}`), nil, 429)
 
-	s := metricstest.Series(t, metrics.Handler(m))
+	s := metricstest.Series(t, metrics.Server(m).Handler)
 	for k, want := range map[string]float64{
 		metricstest.Requests("initialize", "", "ok", "false"):                      1,
 		metricstest.Requests("other", "", "ok", "false"):                           2, // notifications/initialized (202) and ping
@@ -162,7 +162,7 @@ var labelRE = regexp.MustCompile(`([a-z_]+)="((?:[^"\\]|\\.)*)"`)
 func assertClosedLabels(t *testing.T, m *metrics.Metrics) {
 	t.Helper()
 	rec := httptest.NewRecorder()
-	metrics.Handler(m).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	metrics.Server(m).Handler.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 	text := rec.Body.String()
 	for _, leak := range []string{"secret", "127.0.0.1", "no_such_tool", "v9.9.9", "Mcp-Session"} {
 		if strings.Contains(text, leak) {
@@ -223,7 +223,7 @@ func TestMetricsCountBusy(t *testing.T) {
 	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(metricstest.ToolCall(3, "search", `{}`))).WithContext(ctx))
 	close(release)
 	<-done
-	s := metricstest.Series(t, metrics.Handler(m))
+	s := metricstest.Series(t, metrics.Server(m).Handler)
 	if got := s[metricstest.Requests("tools/call", "search", "busy", "false")]; got != 2 {
 		t.Errorf("busy for search = %v, want 2", got)
 	}
@@ -257,7 +257,7 @@ func TestMetricsStatefulSessionCountsOnce(t *testing.T) {
 			t.Fatalf("%s: %d %s", b, code, resp)
 		}
 	}
-	s := metricstest.Series(t, metrics.Handler(m))
+	s := metricstest.Series(t, metrics.Server(m).Handler)
 	for _, k := range []string{
 		metricstest.Requests("initialize", "", "ok", "true"), metricstest.Requests("other", "", "ok", "true"),
 		metricstest.Requests("tools/list", "", "ok", "true"), metricstest.Requests("tools/call", "list_projects", "ok", "true"),
@@ -334,7 +334,7 @@ func TestRefusalLabellingIsBounded(t *testing.T) {
 	if body.N > 4<<10+512 {
 		t.Errorf("read %d bytes of a refused request's body; the bound is about 4 KiB", body.N)
 	}
-	if got := metricstest.Series(t, metrics.Handler(m))[metricstest.Requests("tools/call", "unknown", "rate_limited", "false")]; got != 1 {
+	if got := metricstest.Series(t, metrics.Server(m).Handler)[metricstest.Requests("tools/call", "unknown", "rate_limited", "false")]; got != 1 {
 		t.Errorf("tools/call unknown rate_limited = %v, want 1", got)
 	}
 	if meth, tool := metrics.PeekLabels([]byte(httpfronttest.ZerosCall(3 << 10))); meth != "tools/call" || tool != "check_stack" {
@@ -404,11 +404,11 @@ func TestRefusalBehindExpectSendsNoMoreThan100(t *testing.T) {
 		if outcome == "rate_limited" && (onStatus != http.StatusTooManyRequests || onSent != 0) {
 			t.Errorf("rate limit behind Expect: %d, %d body bytes sent; want 429 before any body", onStatus, onSent)
 		}
-		if outcome == "rate_limited" && metricstest.Series(t, metrics.Handler(m))[metricstest.Requests("other", "", "rate_limited", "false")] != 1 {
+		if outcome == "rate_limited" && metricstest.Series(t, metrics.Server(m).Handler)[metricstest.Requests("other", "", "rate_limited", "false")] != 1 {
 			t.Errorf("rate limit behind Expect: want it counted once as other (nothing read)")
 		}
 		refusals := 0.0
-		for k, v := range metricstest.Series(t, metrics.Handler(m)) {
+		for k, v := range metricstest.Series(t, metrics.Server(m).Handler) {
 			if strings.HasPrefix(k, "ratatosk_mcp_requests_total{") && strings.Contains(k, `outcome="`+outcome+`"`) {
 				refusals += v
 			}
@@ -471,11 +471,11 @@ func TestMetricsCountPostsTheSDKNeverRan(t *testing.T) {
 			hdr = map[string]string{"Mcp-Session-Id": sid, "Mcp-Protocol-Version": "2025-06-18"}
 			mcpPost(t, u, notified, hdr)
 		}
-		before := metricstest.Sum(metricstest.Series(t, metrics.Handler(m)), "ratatosk_mcp_requests_total{")
+		before := metricstest.Sum(metricstest.Series(t, metrics.Server(m).Handler), "ratatosk_mcp_requests_total{")
 		for _, b := range bodies {
-			was := metricstest.Series(t, metrics.Handler(m))
+			was := metricstest.Series(t, metrics.Server(m).Handler)
 			code, resp := mcpPost(t, u, b.body, hdr)
-			now := metricstest.Series(t, metrics.Handler(m))
+			now := metricstest.Series(t, metrics.Server(m).Handler)
 			if got := metricstest.Sum(now, "ratatosk_mcp_requests_total{") - metricstest.Sum(was, "ratatosk_mcp_requests_total{"); got != 1 {
 				t.Errorf("stateless=%v %s (answered %d %.120s): counted %v times, want once", stateless, b.body, code, resp, got)
 			}
@@ -483,7 +483,7 @@ func TestMetricsCountPostsTheSDKNeverRan(t *testing.T) {
 				t.Errorf("stateless=%v %s: %s did not move", stateless, b.body, b.key)
 			}
 		}
-		if got := metricstest.Sum(metricstest.Series(t, metrics.Handler(m)), "ratatosk_mcp_requests_total{") - before; got != float64(len(bodies)) {
+		if got := metricstest.Sum(metricstest.Series(t, metrics.Server(m).Handler), "ratatosk_mcp_requests_total{") - before; got != float64(len(bodies)) {
 			t.Errorf("stateless=%v: %v counted for %d POSTs", stateless, got, len(bodies))
 		}
 	}
@@ -510,11 +510,11 @@ func TestMetricsCount202AsNoCall(t *testing.T) {
 			`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"check_stack"},"method":"notifications/initialized"}`,
 			`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"check_stack"},"\u006dethod":"notifications/initialized"}`,
 		} {
-			was := metricstest.Series(t, metrics.Handler(m))
+			was := metricstest.Series(t, metrics.Server(m).Handler)
 			if code, resp := mcpPost(t, u, body, hdr); code != http.StatusAccepted {
 				t.Fatalf("stateless=%v %s: %d %s, want 202", stateless, body, code, resp)
 			}
-			now := metricstest.Series(t, metrics.Handler(m))
+			now := metricstest.Series(t, metrics.Server(m).Handler)
 			if d := now[metricstest.Requests("other", "", "ok", "false")] - was[metricstest.Requests("other", "", "ok", "false")]; d != 1 {
 				t.Errorf("stateless=%v %s: other/ok moved by %v, want 1", stateless, body, d)
 			}

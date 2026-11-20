@@ -16,7 +16,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"os"
 	"regexp"
 	"syscall"
 
@@ -103,19 +102,20 @@ func (h ctxHandler) WithGroup(name string) slog.Handler {
 	return ctxHandler{h.Handler.WithGroup(name)}
 }
 
-// NewLogger builds the house-schema JSON logger (time, level, msg,
+// newLogger builds the house-schema JSON logger (time, level, msg,
 // service:"mcp", plus event fields) — the same shape the ratatosk worker
 // emits, so a collector lifts level into a severity label with no config.
-func NewLogger(w io.Writer, level slog.Level) *slog.Logger {
+func newLogger(w io.Writer, level slog.Level) *slog.Logger {
 	h := slog.NewJSONHandler(w, &slog.HandlerOptions{Level: level})
 	return slog.New(ctxHandler{h}).With("service", "mcp")
 }
 
-// Setup wires the default logger to stderr — stdout belongs to the stdio
-// transport — at the level MCP_LOG selects (default info; "debug" adds
-// per-call timing, still argument-free; see internal/config).
-func Setup(level slog.Level) {
-	slog.SetDefault(NewLogger(os.Stderr, level))
+// Setup makes the default logger write the house schema to w at level. The
+// server passes stderr — stdout belongs to the stdio transport — and the
+// level MCP_LOG selects (default info; "debug" adds per-call timing, still
+// argument-free); a test passes a buffer.
+func Setup(w io.Writer, level slog.Level) {
+	slog.SetDefault(newLogger(w, level))
 }
 
 // ErrKind classifies a transport error without quoting it: the error string

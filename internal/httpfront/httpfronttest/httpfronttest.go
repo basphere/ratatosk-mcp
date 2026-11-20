@@ -11,8 +11,9 @@ package httpfronttest
 
 import (
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
-	"time"
 
 	"github.com/basphere/ratatosk-mcp/internal/httpfront"
 )
@@ -21,10 +22,13 @@ import (
 const RefusedCaller = "192.0.2.1"
 
 // RefusingLimiter refuses every request after its first: a limit of 1 a
-// minute, already spent for RefusedCaller.
+// minute, already spent for RefusedCaller — by one request through the front,
+// the way a caller spends it.
 func RefusingLimiter() *httpfront.RateLimiter {
 	rl := httpfront.NewRateLimiter(1)
-	rl.Allow(RefusedCaller, time.Now())
+	r := httptest.NewRequest(http.MethodGet, "/mcp", nil)
+	r.RemoteAddr = RefusedCaller + ":1"
+	httpfront.Handler(http.NotFoundHandler(), httpfront.Options{RateLimiter: rl}).ServeHTTP(httptest.NewRecorder(), r)
 	return rl
 }
 

@@ -60,10 +60,10 @@ func NewRateLimiter(limit int) *RateLimiter {
 	return &RateLimiter{limit: limit, seen: map[string]*rateBucket{}}
 }
 
-// Allow reports whether this caller may proceed, and how many seconds remain
+// allow reports whether this caller may proceed, and how many seconds remain
 // in the window if it may not — counted from now, the time the window is
 // judged by, not from the wall clock.
-func (r *RateLimiter) Allow(key string, now time.Time) (bool, int) {
+func (r *RateLimiter) allow(key string, now time.Time) (bool, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if len(r.seen) > maxTrackedCallers {
@@ -161,7 +161,7 @@ func rateLimitMiddleware(rl *RateLimiter, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ok, retry := rl.Allow(callerKey(req), time.Now())
+		ok, retry := rl.allow(callerKey(req), time.Now())
 		if !ok {
 			metrics.RefusedFor(req, "rate_limited") // before the answer; with metrics on it may read up to 4 KiB of the body (internal/metrics)
 			w.Header().Set("Retry-After", strconv.Itoa(retry))

@@ -46,6 +46,9 @@ var kindCaps = map[string]int{"security": 20, "breaking": 20, "deprecations": 10
 
 // Cap is how many changes of kind a briefing lists with their body; the rest
 // are counted in changes_omitted. 0 for a kind a briefing only counts.
+// Exported for check_upgrade's test, which holds a whole answer's entries to
+// these caps: a test in another package cannot read kindCaps, and caps copied
+// into it would stop checking the code once the caps changed.
 func Cap(kind string) int { return kindCaps[kind] }
 
 // briefTextChars bounds body, workaround and regression_since text in a

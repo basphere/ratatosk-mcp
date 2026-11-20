@@ -68,7 +68,7 @@ func TestMetricsUpstreamOutcomes(t *testing.T) {
 	cancel()
 	_, _ = api.ProjectsRaw(cctx, false)
 
-	s := metricstest.Series(t, metrics.Handler(m))
+	s := metricstest.Series(t, metrics.Server(m).Handler)
 	for k, want := range map[string]float64{
 		`ratatosk_mcp_upstream_requests_total{outcome="ok",tool="get_release"}`:       1,
 		`ratatosk_mcp_upstream_requests_total{outcome="error",tool="get_release"}`:    1,
@@ -108,13 +108,13 @@ func TestHTTPErrorBodyKeepsWholeCharacters(t *testing.T) {
 		for k := 1; k < len(ch); k++ { // the bound falls k bytes into the character
 			body := strings.Repeat("a", n-k) + strings.Repeat(ch, 10)
 			msg, he := errorBody(body)
-			if kept := strings.TrimSuffix(he.Body, "…"); !utf8.ValidString(msg) || len(kept) > n || kept != body[:n-k] || kept == he.Body {
-				t.Errorf("error body cut %d bytes into %q: %q", k, ch, he.Body[len(he.Body)-12:])
+			if kept := strings.TrimSuffix(upstream.ErrorBody(he), "…"); !utf8.ValidString(msg) || len(kept) > n || kept != body[:n-k] || kept == upstream.ErrorBody(he) {
+				t.Errorf("error body cut %d bytes into %q: %q", k, ch, upstream.ErrorBody(he)[len(upstream.ErrorBody(he))-12:])
 			}
 		}
 	}
 	// A body that is not UTF-8 at all is out of scope; the cut still ends, in bounds.
-	if _, he := errorBody(strings.Repeat("\x80", 500)); len(he.Body) > n+len("…") {
-		t.Errorf("not UTF-8: %d bytes", len(he.Body))
+	if _, he := errorBody(strings.Repeat("\x80", 500)); len(upstream.ErrorBody(he)) > n+len("…") {
+		t.Errorf("not UTF-8: %d bytes", len(upstream.ErrorBody(he)))
 	}
 }

@@ -16,11 +16,11 @@ func TestRateLimiterAllowsUpToLimitThenBlocks(t *testing.T) {
 	rl := NewRateLimiter(3)
 	now := time.Now()
 	for i := 1; i <= 3; i++ {
-		if ok, _ := rl.Allow("1.2.3.4", now); !ok {
+		if ok, _ := rl.allow("1.2.3.4", now); !ok {
 			t.Fatalf("request %d should be allowed", i)
 		}
 	}
-	ok, retry := rl.Allow("1.2.3.4", now)
+	ok, retry := rl.allow("1.2.3.4", now)
 	if ok {
 		t.Fatal("the 4th request should be blocked")
 	}
@@ -34,13 +34,13 @@ func TestRateLimiterAllowsUpToLimitThenBlocks(t *testing.T) {
 func TestRateLimiterIsolatesCallers(t *testing.T) {
 	rl := NewRateLimiter(1)
 	now := time.Now()
-	if ok, _ := rl.Allow("1.2.3.4", now); !ok {
+	if ok, _ := rl.allow("1.2.3.4", now); !ok {
 		t.Fatal("first caller's first request should be allowed")
 	}
-	if ok, _ := rl.Allow("1.2.3.4", now); ok {
+	if ok, _ := rl.allow("1.2.3.4", now); ok {
 		t.Fatal("first caller's second request should be blocked")
 	}
-	if ok, _ := rl.Allow("5.6.7.8", now); !ok {
+	if ok, _ := rl.allow("5.6.7.8", now); !ok {
 		t.Fatal("a different caller must have its own budget")
 	}
 }
@@ -48,27 +48,27 @@ func TestRateLimiterIsolatesCallers(t *testing.T) {
 func TestRateLimiterWindowResets(t *testing.T) {
 	rl := NewRateLimiter(1)
 	now := time.Now()
-	rl.Allow("1.2.3.4", now)
-	if ok, _ := rl.Allow("1.2.3.4", now); ok {
+	rl.allow("1.2.3.4", now)
+	if ok, _ := rl.allow("1.2.3.4", now); ok {
 		t.Fatal("second request inside the window should be blocked")
 	}
-	if ok, _ := rl.Allow("1.2.3.4", now.Add(rateWindow+time.Second)); !ok {
+	if ok, _ := rl.allow("1.2.3.4", now.Add(rateWindow+time.Second)); !ok {
 		t.Fatal("a new window should start fresh")
 	}
 }
 
-// Retry-After counts the seconds left in the window from the time Allow is
+// Retry-After counts the seconds left in the window from the time allow is
 // given, as the window itself is decided. It used to count from the wall
 // clock, so a test with its own clock could not hold the value to account
 // (2026-11-21); the server passes the wall clock, so its answers are the same.
 func TestRateLimiterRetryAfterCountsFromTheGivenTime(t *testing.T) {
 	opened := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
 	rl := NewRateLimiter(1)
-	rl.Allow("1.2.3.4", opened)
-	if ok, retry := rl.Allow("1.2.3.4", opened.Add(20*time.Second)); ok || retry != 40 {
+	rl.allow("1.2.3.4", opened)
+	if ok, retry := rl.allow("1.2.3.4", opened.Add(20*time.Second)); ok || retry != 40 {
 		t.Errorf("over the limit 20 s into the window: allowed=%v retry-after %d, want refused and 40", ok, retry)
 	}
-	if ok, retry := rl.Allow("1.2.3.4", opened.Add(rateWindow-500*time.Millisecond)); ok || retry != 1 {
+	if ok, retry := rl.allow("1.2.3.4", opened.Add(rateWindow-500*time.Millisecond)); ok || retry != 1 {
 		t.Errorf("over the limit 0.5 s before the window ends: allowed=%v retry-after %d, want refused and 1", ok, retry)
 	}
 }

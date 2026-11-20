@@ -24,7 +24,7 @@ import (
 // (WriteTimeout), and before this bound a slow upstream ran a stack check into
 // that cut: the caller got an empty reply instead of an answer saying what was
 // not checked. 90 s leaves room to write the answer. Tests shorten it through
-// Options.ToolTimeout.
+// Options.timeout.
 const toolTimeout = 90 * time.Second
 
 // instructions are what a client receives on initialize.
@@ -49,8 +49,9 @@ type Options struct {
 	Audit *audit.Auditor
 	// Metrics counts the requests the server runs; nil is off.
 	Metrics *metrics.Metrics
-	// ToolTimeout bounds one tool call; 0 is toolTimeout (90 s).
-	ToolTimeout time.Duration
+	// timeout bounds one tool call; 0 is toolTimeout (90 s). Only a test
+	// sets it.
+	timeout time.Duration
 }
 
 // New builds the server: the six tools and the receiving middleware. The
@@ -58,7 +59,7 @@ type Options struct {
 // root) lists them through it — the docs are checked against this, not
 // against a second hand-kept list.
 func New(o Options) *mcp.Server {
-	timeout := o.ToolTimeout
+	timeout := o.timeout
 	if timeout == 0 {
 		timeout = toolTimeout
 	}

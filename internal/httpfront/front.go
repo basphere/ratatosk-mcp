@@ -31,7 +31,10 @@ type Options struct {
 	// MaxInflight caps the requests worked on at once (MCP_MAX_INFLIGHT); 0
 	// is off.
 	MaxInflight int
-	// InflightWait is how long an over-cap request waits; 0 is 10 s.
+	// InflightWait is how long an over-cap request waits; 0 is 10 s. The
+	// server leaves it 0. It is exported for the counting tests in
+	// internal/metrics, which need an in-flight refusal within a test's
+	// time (one asserts an answer within 2 s).
 	InflightWait time.Duration
 	// SelfCallers are the operator's own addresses (MCP_SELF_CALLERS).
 	SelfCallers []string

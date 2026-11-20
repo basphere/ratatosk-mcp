@@ -147,7 +147,7 @@ func (c *Client) getRaw(ctx context.Context, endpoint, path string, q url.Values
 	if resp.StatusCode != http.StatusOK {
 		// 400 chars so self-correcting errors survive intact — the /v2 404 carries
 		// the project's recent versions for the agent to retry with.
-		return nil, &HTTPError{Path: path, Status: resp.StatusCode, Body: truncate(string(body), 400)}
+		return nil, &HTTPError{path: path, Status: resp.StatusCode, body: truncate(string(body), 400)}
 	}
 	if cached {
 		c.cache.put(u, body)
@@ -158,13 +158,13 @@ func (c *Client) getRaw(ctx context.Context, endpoint, path string, q url.Values
 // HTTPError keeps the status inspectable: check_stack reads a 404 on a single
 // release as "not on record", not as a failed call.
 type HTTPError struct {
-	Path   string
+	path   string
 	Status int
-	Body   string
+	body   string
 }
 
 func (e *HTTPError) Error() string {
-	return fmt.Sprintf("%s: HTTP %d: %s", e.Path, e.Status, e.Body)
+	return fmt.Sprintf("%s: HTTP %d: %s", e.path, e.Status, e.body)
 }
 
 // truncate bounds s to n bytes, with "…" when it cut something, and never

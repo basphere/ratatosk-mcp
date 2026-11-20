@@ -74,7 +74,7 @@ func TestToolCallEndsOnItsDeadlineWithAnAnswer(t *testing.T) {
 		}
 		inner(w, r)
 	})), nil)
-	cs := sdkSession(t, Options{API: api, ToolTimeout: 200 * time.Millisecond})
+	cs := sdkSession(t, Options{API: api, timeout: 200 * time.Millisecond})
 	start := time.Now()
 	text, isErr := sdkText(t, cs, "check_stack", map[string]any{
 		"components": []any{map[string]any{"project": "etcd", "version": "v3.5.30"}},

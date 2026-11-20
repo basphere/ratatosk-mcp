@@ -41,7 +41,7 @@ var buildVersion = "dev"
 
 func main() {
 	cfg := config.Read(os.Getenv)
-	logging.Setup(cfg.LogLevel)
+	logging.Setup(os.Stderr, cfg.LogLevel)
 	aud := audit.New(cfg.AuditMode, os.Stderr)
 	// Two transports, one binary: stdio for local agents (Claude Code, MCP
 	// inspector), streamable HTTP for the in-cluster Service the Helm chart
