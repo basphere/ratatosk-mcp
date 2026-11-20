@@ -13,16 +13,22 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   22 breaking changes, among them the removal of `enable_cdi`. A line carries
   `version`, `id`, `kind`, `title`, `severity` (security only), `affects`
   (`text`, `status`) and `action_required: true` when the change has one.
-  Every security, breaking and deprecation change is listed; important fixes
-  are listed as far as the answer's size allows (below). `changes` and
-  `changes_omitted` keep their values.
-- **A briefing answer is fitted to 40,000 characters**, about what an agent
-  client shows as text before it hands the answer over as a file. Only the
-  important-fix lines of `changes_more` give way, and
-  **`changes_unlisted`** counts them (`{"important_fixes": N}`); several
-  components share the room evenly. A security, breaking or deprecation line
-  is never left out to fit, so a long range or a large stack can still be
-  longer, and then `hint` ends by saying how to narrow the call.
+- **A briefing answer is at most 40,000 characters, `hint` included**, about
+  what an agent client shows as text before it hands the answer over as a
+  file (Claude Code does that past 50,000). Several components share it
+  evenly, and what one does not need goes to the others. A component over its
+  share moves its entries from `changes` into `changes_more`, then takes
+  `affects` off the lines, then drops lines and counts them per kind in
+  **`changes_unlisted`**, each step starting with important fixes, then
+  deprecations, breaking changes that ask nothing, security changes from the
+  lowest grade up, and breaking changes that say what to do last. For each
+  component that dropped lines, `hint` ends with the calls that list them
+  (the component alone, one kind per call). Asked alone, a component keeps the
+  id and title of every security, breaking and deprecation change unless
+  those alone are over the budget. Five components checked to their newest
+  (kubernetes v1.36.5, containerd v2.2.9, coredns v1.14.7, cilium v1.20.2,
+  envoy v1.37.6) answer in 39,796 characters; 1.1.0 answered the same stack in
+  119,756.
 - **`later_in_range` in `check_stack` and `check_upgrade`**: what was learned
   after release about every release in range, in the form of
   `later_for_running`. cilium v1.20.2 to v1.20.5 now says that v1.20.3's
@@ -33,10 +39,11 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   (`advisories: [{id, severity}]`). `summary.warnings` still counts them,
   which is why containerd's briefing said `critical: 1` beside
   `distinct_advisories.critical: 0`; `note` keeps its sentence.
-- **`version_read_as` on a `check_stack` component**: an image tag with a
-  build suffix after the version (cilium-envoy's
-  `v1.37.6-1789133542-<commit>`) is checked as the version and says so. A
-  release-line prefix (`flagd/`, `lts-`) is never touched.
+- **`version_read_as` on a `check_stack` component and in `check_upgrade`**:
+  an image tag with a build suffix after the version (cilium-envoy's
+  `v1.37.6-1789133542-<commit>`) is checked as the version and says so; in
+  `check_upgrade`, `from` is read the same way and the answer's `from` stays as
+  passed. A release-line prefix (`flagd/`, `lts-`) is never touched.
 - **`kinds` on `check_stack`, `check_upgrade` and `get_release`**: only
   changes of those kinds. In a briefing, any of `security`, `breaking`,
   `deprecations`, `important_fixes` (the other three are counted only, and
@@ -60,9 +67,11 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   arrays; an unknown slug is an error. And **`matches`** on an `in_analysis`
   release matched through an item: every item of that release that matches
   `q` (`id`, `kind`, `title`), up to 20, with **`matches_omitted`** counting
-  the rest, on the first 20 such releases of the answer. `matched` stays the
-  first one: cilium v1.20.0 had one for "BackendTLSPolicy", and has seven
-  matches.
+  the rest. `matched` stays the first one: cilium v1.20.0 had one for
+  "BackendTLSPolicy", and has seven matches. One call reads at most 8
+  releases for this, each in `lang`, and **`matches_not_computed`**, first in
+  the answer, counts the releases matched through an item that carry no
+  `matches`.
 - The list arguments (`kinds`, `changes`) also take the list as a string,
   JSON-encoded or comma-separated, as `components` does; the schema documents
   the array.
@@ -79,10 +88,16 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   naming the others: containerd v2.2.9 to v2.4.2 lists 8 items where it
   listed 17. In `check_stack`, `before_upgrade` is `[]` on a checked
   component with no item; it was left out.
-- `hint` and the tool descriptions: what does not fit is read from
-  `changes_more`, and a briefing has no evidence quotes, so the body and
-  evidence of what you report come from `get_release(changes: [...])`. They no
-  longer send the agent to read whole releases for what was omitted.
+- **In a large briefing, `changes` can hold fewer entries with a body than
+  the per-kind caps (20, 20, 10, 10), or none**: to stay within 40,000
+  characters, entries move to `changes_more` first, and `changes_omitted`
+  counts them with the rest. An answer that fits is as in 1.1.0.
+- `hint` is 1,457 characters instead of 3,226 and keeps what reading the
+  answer needs; what each field means moved to the tool descriptions. It and
+  the descriptions say what does not fit is in `changes_more` or counted in
+  `changes_unlisted`, and that a briefing has no evidence quotes, so the body
+  and evidence of what you report come from `get_release(changes: [...])`.
+  They no longer send the agent to read whole releases for what was omitted.
 
 ### Fixed
 
