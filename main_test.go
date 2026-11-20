@@ -58,6 +58,15 @@ func (f *fakeV2) handler(t *testing.T) http.HandlerFunc {
 				return
 			}
 			w.Write([]byte(d))
+		case r.URL.Path == "/v2/upgrade/etcd":
+			// The server's range, cut the way check_stack cuts it (1.2.0 tests).
+			from, to := r.URL.Query().Get("from"), r.URL.Query().Get("to")
+			inRange, target := upgradeRange(f.rows, from, to)
+			var rels []string
+			for _, x := range inRange {
+				rels = append(rels, f.docs[x.Version])
+			}
+			fmt.Fprintf(w, `{"project":"etcd","from":%q,"to":%q,"releases":[%s],"gaps":[],"later_for_from":[]}`, from, target, strings.Join(rels, ","))
 		default:
 			t.Errorf("unexpected upstream request %s", r.URL.RequestURI())
 			http.NotFound(w, r)
@@ -133,7 +142,7 @@ type stackOut struct {
 		Releases []struct {
 			Version string `json:"version"`
 		} `json:"releases"`
-		BeforeUpgrade []briefItem `json:"before_upgrade"`
+		BeforeUpgrade []upgradeItem `json:"before_upgrade"`
 		Changes       []struct {
 			Version     string          `json:"version"`
 			ID          string          `json:"id"`
@@ -617,6 +626,10 @@ func TestGetReleaseWithoutVersionReadsTheLatest(t *testing.T) {
 func TestCheckUpgradeComputesGapsAnOlderServerOmits(t *testing.T) {
 	var seen string
 	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/releases" { // the releases at or below from (1.2.0: what from's branch already fixed)
+			w.Write([]byte(`{"releases":[],"next_before":null}`))
+			return
+		}
 		seen = r.URL.RequestURI()
 		fmt.Fprintf(w, `{"project":"etcd","from":"v3.5.30","to":"v3.6.7","releases":[%s,%s],"later_for_from":[]}`,
 			doc("v3.5.31", "", "", "", ""), doc("v3.6.7", "", "", "", ""))

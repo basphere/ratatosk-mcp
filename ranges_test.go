@@ -1,8 +1,9 @@
 package main
 
-// The 1.1.0 regression harness: on real /v2/upgrade ranges, the 1.1.0
-// briefing is the 1.0.0 briefing plus summary.distinct_advisories, and
-// nothing else.
+// The 1.x regression harness: on real /v2/upgrade ranges, the briefing is the
+// 1.0.0 briefing plus summary.distinct_advisories (1.1.0) and what 1.2.0 adds
+// beside the 1.0.0 fields (changes_more, changes_unlisted, later_in_range,
+// excluded_on_branch, and before_upgrade in its 1.2.0 form), and nothing else.
 //
 // Why it exists: the rule for 1.x is additive only — a 1.0.0 client must
 // never get a silently wrong or poorer answer. A 1.1.0 draft that also grouped
@@ -38,6 +39,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 
@@ -108,13 +111,17 @@ func withCaps(n int) (restore func()) {
 }
 
 // diffFrom100 compares buildBriefing with the frozen 1.0.0 one on one input
-// and says where they differ, "" when they do not (distinct_advisories aside).
+// and says where they differ, "" when they do not (distinct_advisories and the
+// 1.2.0 fields aside). before_upgrade is set aside on both sides: 1.2.0
+// answers it in a new form (upgradeItem), and the fixtures carry none.
 func diffFrom100(docs []*v2Release, fixed map[string]bool, running []int) string {
 	old, oldSettled := buildBriefing100(docs, fixed, running)
 	cur, curSettled := buildBriefing(docs, fixed, running)
 	sum := *cur.Summary
 	sum.DistinctAdvisories = distinctAdvisories{}
 	cur.Summary = &sum
+	old.BeforeUpgrade = nil
+	cur.Upgrade, cur.ChangesMore, cur.ChangesUnlisted, cur.LaterInRange, cur.ExcludedOnBranch = nil, nil, nil, nil, nil
 	if oldSettled != curSettled {
 		return fmt.Sprintf("settled %d, 1.0.0 %d", curSettled, oldSettled)
 	}
@@ -128,12 +135,12 @@ func diffFrom100(docs []*v2Release, fixed map[string]bool, running []int) string
 		if !reflect.DeepEqual(old.Changes[i], cur.Changes[i]) {
 			a, _ := json.Marshal(old.Changes[i])
 			b, _ := json.Marshal(cur.Changes[i])
-			return fmt.Sprintf("entry %d:\n  1.0.0 %.400s\n  1.1.0 %.400s", i, a, b)
+			return fmt.Sprintf("entry %d:\n  1.0.0 %.400s\n  now   %.400s", i, a, b)
 		}
 	}
 	a, _ := json.Marshal(old)
 	b, _ := json.Marshal(cur)
-	return fmt.Sprintf("briefing:\n  1.0.0 %.600s\n  1.1.0 %.600s", a, b)
+	return fmt.Sprintf("briefing:\n  1.0.0 %.600s\n  now   %.600s", a, b)
 }
 
 // assertSameAs100 fails the test unless buildBriefing answers docs as 1.0.0
@@ -341,5 +348,93 @@ func TestCutRangeFixtures(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Logf("%s: %d releases, %d security changes kept → %s (%d bytes)", up.Project, len(up.Releases), kept, out, b.Len())
+	}
+}
+
+// TestRangesLeaveNoSecurityChangeUnaccounted (1.2.0): on the live ranges,
+// every security change is an entry, a line of changes_more, a release named in
+// an entry's also_in, or settled — never gone without a trace, as three of
+// coredns v1.14.7 → v1.15.0's eight were (2026-11-20). And the caps move
+// entries to changes_more without losing one: listed with the production
+// caps or with none, the same ids come back, and each kind has one line per
+// omitted change (security: plus the folded siblings).
+func TestRangesLeaveNoSecurityChangeUnaccounted(t *testing.T) {
+	for _, r := range loadRanges(t) {
+		for _, m := range rangeModes(r.docs) {
+			t.Run(r.name+" "+m.name, func(t *testing.T) {
+				restore := withCaps(1 << 30)
+				all, settled := buildBriefing(m.docs, m.fixed, m.running)
+				restore()
+				capped, _ := buildBriefing(m.docs, m.fixed, m.running)
+
+				listed := map[string]bool{}
+				for _, c := range all.Changes {
+					listed[c.ID] = true
+				}
+				folded := map[string]int{}
+				for _, l := range all.ChangesMore {
+					listed[l.ID] = true
+					folded[l.Kind]++
+				}
+				seenSettled := 0
+				for _, d := range m.docs {
+					onRunning := false
+					if k := version.NormalizeVersion(d.Version); k != nil && m.running != nil {
+						onRunning = sameBranch(k, m.running)
+					}
+					for _, c := range d.Changes {
+						if c.Kind != "security" || listed[c.ID] {
+							continue
+						}
+						key := advisoryKey(c.Advisories)
+						covered := key != ""
+						for _, id := range strings.Split(key, ",") {
+							covered = covered && m.fixed[id]
+						}
+						if covered && !onRunning {
+							seenSettled++
+							continue
+						}
+						backport := false
+						for _, e := range all.Changes {
+							if e.advKey == key && slices.Contains(e.AlsoIn, d.Version) {
+								backport = true
+								break
+							}
+						}
+						if !backport {
+							t.Errorf("%s %s is in no list, no also_in and not settled", d.Version, c.ID)
+						}
+					}
+				}
+				if seenSettled != settled {
+					t.Errorf("settled %d, counted %d", settled, seenSettled)
+				}
+
+				ids := func(b briefing) []string {
+					var out []string
+					for _, c := range b.Changes {
+						out = append(out, c.ID)
+					}
+					for _, l := range b.ChangesMore {
+						out = append(out, l.ID)
+					}
+					sort.Strings(out)
+					return out
+				}
+				if a, b := ids(all), ids(capped); !slices.Equal(a, b) {
+					t.Errorf("the caps lost or added ids: %d without caps, %d with", len(a), len(b))
+				}
+				lines := map[string]int{}
+				for _, l := range capped.ChangesMore {
+					lines[l.Kind]++
+				}
+				for _, k := range decisionKinds {
+					if lines[k] != capped.ChangesOmitted[k]+folded[k] {
+						t.Errorf("%s: %d lines for %d omitted and %d folded", k, lines[k], capped.ChangesOmitted[k], folded[k])
+					}
+				}
+			})
+		}
 	}
 }

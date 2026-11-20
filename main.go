@@ -242,7 +242,13 @@ func newServer() *mcp.Server {
 			"highest version, which is not always the most recently published one (a patch on an older branch can " +
 			"ship later). " +
 			"version is accepted with or without the leading 'v'; a wrong one returns an error listing the project's " +
-			"recent versions — retry with one of those. " + dataNote,
+			"recent versions — retry with one of those. A whole release can run to hundreds of thousands of characters " +
+			"(cilium v1.20.0: 758,000), so read part of it: kinds keeps the changes of those kinds (security, breaking, " +
+			"deprecations, important_fixes is what asks for a decision); changes:[id, …] returns only the changes and " +
+			"before_upgrade items named — the ids a briefing's changes, changes_more and before_upgrade carry — with body " +
+			"and evidence, and lists the ids this release does not have in not_found (without version, the release the " +
+			"ids name is read). Both leave the folded lines out. " + dataNote,
+		InputSchema: toolSchema[getReleaseArgs]("kinds", "changes"),
 	}, getReleaseTool)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -260,13 +266,21 @@ func newServer() *mcp.Server {
 		Name:        "check_upgrade",
 		Annotations: &mcp.ToolAnnotations{Title: "What one upgrade brings", ReadOnlyHint: true},
 		Description: "Everything between the version you run (from, exclusive) and a target (to, inclusive; default " +
-			"the latest) on the same release line, computed BY THE SERVER: from and to are sent upstream. To keep " +
+			"the newest release on from's release line — a release line is a tag prefix such as flagd/ or lts-, not a " +
+			"minor version, so from v1.36.5 the default reaches v1.37.x; same_minor:true stops at the newest patch of " +
+			"from's minor), computed BY THE SERVER: from and to are sent upstream. To keep " +
 			"running versions on your side, use check_stack instead — it compares locally and sends only project " +
 			"slugs. Returns a briefing (detail:\"brief\", default) in the same form as one check_stack component, or " +
-			"every release in range verbatim (detail:\"full\"). Read before_upgrade of every release in range — " +
-			"prerequisites and upgrade guides usually sit on the release that starts a new minor. gaps lists " +
+			"every release in range verbatim (detail:\"full\"); kinds keeps the changes of those kinds. Read before_upgrade of every release in range — " +
+			"prerequisites and upgrade guides usually sit on the release that starts a new minor. What does not fit in " +
+			"changes is listed one line each in changes_more; the briefing carries no evidence quotes, so read the body " +
+			"and evidence of the entries you report with get_release(project, version, changes:[id, …]). A security " +
+			"change whose advisories from's own branch already fixed at or below from is left out and counted in " +
+			"excluded_on_branch, as check_stack does. gaps lists " +
 			"neighbouring versions whose numbers skip (e.g. v3.5.32 then v3.6.7): releases in between may exist that " +
-			"were not analyzed, so check their release notes yourself. later_for_from is " + laterNote("the from version") + " " + dataNote,
+			"were not analyzed, so check their release notes yourself. later_for_from is " + laterNote("the from version") +
+			" later_in_range lists the same for every release in range. " + dataNote,
+		InputSchema: toolSchema[checkUpgradeArgs]("kinds"),
 	}, checkUpgradeTool)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -277,22 +291,30 @@ func newServer() *mcp.Server {
 			"version you run — so running versions are never sent upstream. Run the server yourself and they never " +
 			"leave your infrastructure; on the hosted endpoint they transit server memory only and are not logged. " +
 			"Returns, per component, the releases NEWER than the running version up to target_version (default the " +
-			"latest on the same release line), oldest first: before_upgrade items of every release in range, and the " +
+			"newest release on the running version's release line — a release line is a tag prefix such as flagd/ or " +
+			"lts-, not a minor version, so v1.36.5 is checked up to v1.37.x; same_minor:true stops at the newest patch " +
+			"of the running minor), oldest first: before_upgrade items of every release in range, and the " +
 			"changes that need a decision — security, breaking, deprecations, important_fixes — with affects, " +
 			"required actions, no_downgrade and removed_in; enhancements, dependency_updates and other are counted " +
-			"in summary only. summary.counts and summary.warnings add up every release in range (one fix on several " +
+			"in summary only. What does not fit in changes is listed one line each in changes_more (every security, " +
+			"breaking and deprecation change; important fixes as the answer's size allows, the rest counted in " +
+			"changes_unlisted). The briefing carries no evidence quotes: read the body and evidence of the entries you " +
+			"report with get_release(project, version, changes:[id, …]). kinds keeps the changes of those kinds. " +
+			"summary.counts and summary.warnings add up every release in range (one fix on several " +
 			"release lines counts once per release); summary.distinct_advisories counts each advisory once. " +
 			"affects decides who a change touches: status stated or inferred means it applies ONLY " +
 			"IF that holds in this setup — check before you report it; not_stated means the release notes name no " +
 			"narrower scope. gaps lists where version numbers skip (releases in between may be unanalyzed); " +
-			"later_for_running is " + laterNote("the running version") + " A security change whose " +
+			"later_for_running is " + laterNote("the running version") + " later_in_range lists the same for every " +
+			"release in range. A security change whose " +
 			"advisories the running version's own branch already fixed at or below it is excluded and counted in " +
-			"note; the same advisories fixed on several branches inside the range collapse into the earliest, with " +
+			"note and excluded_on_branch; the same advisories fixed on several branches inside the range collapse into the earliest, with " +
 			"also_in naming the rest. A later release of a branch that cites them again is a follow-up fix and is " +
 			"listed on its own. Line-aware: a repository can publish separate products or channels " +
 			"(containerd api/, Flatcar lts vs stable, openfeature flagd vs core) with NO version order between " +
 			"lines, so only the running version's line is compared — pass the tag as published, prefix included " +
-			"(\"flagd/v0.16.1\", \"lts-4081.3.9\"). Pass version_source per component (where you read the version, " +
+			"(\"flagd/v0.16.1\", \"lts-4081.3.9\"); an image build suffix after the version (v1.37.6-1789133542-<commit>) " +
+			"is read without it, and version_read_as says so. Pass version_source per component (where you read the version, " +
 			"e.g. a daemonset image tag, or that the user stated it): it is echoed back as an audit trail. This " +
 			"server cannot see your environment, so it cannot verify a version; a running version older than every " +
 			"release on record is flagged in note. Components it could not check (unknown project, unparseable " +
@@ -314,7 +336,11 @@ func newServer() *mcp.Server {
 			"in_linked_documents (a document the notes link matched). in_analysis lists releases matched by project name " +
 			"or version first, then releases matched through a change item, each set newest first; the other two groups " +
 			"list releases newest first. The groups are capped at 200, 100 and 100 results, respectively. Truncation is not marked, so narrow q if a group reaches " +
-			"its limit. q is 2–200 characters. Drill in with get_release(project, version). " + dataNote,
+			"its limit. project keeps one project's releases; the caps apply before it, so narrow q as well when a group is long. " +
+			"An in_analysis release matched through an item also carries matches: every item of that release that " +
+			"matches q (id, kind, title; up to 20, matches_omitted counts the rest), on the first 20 such releases — " +
+			"narrow with project for the others. q is 2–200 characters. Drill in with get_release(project, version, " +
+			"changes:[id, …]) for the matched items' body and evidence. " + dataNote,
 	}, searchTool)
 
 	// Audit stream (P3): observes tools/call when MCP_AUDIT is set; the
@@ -416,9 +442,11 @@ func listProjectsTool(ctx context.Context, req *mcp.CallToolRequest, args listPr
 // ---------------------------------------------------------------------------
 
 type getReleaseArgs struct {
-	Project string `json:"project" jsonschema:"project slug, e.g. envoy"`
-	Version string `json:"version,omitempty" jsonschema:"release version as published, e.g. v1.38.3; omit for the latest release"`
-	Lang    string `json:"lang,omitempty" jsonschema:"en (default), ko or ja — language of title, body and attribute text; evidence quotes stay verbatim"`
+	Project string     `json:"project" jsonschema:"project slug, e.g. envoy"`
+	Version string     `json:"version,omitempty" jsonschema:"release version as published, e.g. v1.38.3; omit for the latest release (or, with changes, for the release the ids name)"`
+	Lang    string     `json:"lang,omitempty" jsonschema:"en (default), ko or ja — language of title, body and attribute text; evidence quotes stay verbatim"`
+	Kinds   stringList `json:"kinds,omitempty" jsonschema:"only changes of these kinds (any of security, breaking, deprecations, important_fixes, enhancements, dependency_updates, other); folded lines are then left out. [security, breaking, deprecations, important_fixes] reads what asks for a decision. Omit for the whole release"`
+	Changes stringList `json:"changes,omitempty" jsonschema:"ids of changes or before_upgrade items (from a briefing's changes, changes_more or before_upgrade), up to 50: only those, with body and evidence; ids the release does not have are listed in not_found. Other before_upgrade items and folded lines are then left out"`
 }
 
 func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getReleaseArgs) (*mcp.CallToolResult, any, error) {
@@ -431,7 +459,23 @@ func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getRelea
 	if err != nil {
 		return errResult(err), nil, nil
 	}
+	kindSet, err := kindsArg(args.Kinds, false)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
+	ids, err := changesArg(args.Changes)
+	if err != nil {
+		return errResult(err), nil, nil
+	}
 	ver := args.Version
+	// Ids name their release (project@version#…). Without a version, the latest
+	// would be read and every id answered as not found — when they all name one
+	// release of this project, that release is read.
+	if ver == "" && len(ids) > 0 {
+		if p, v, ok := releaseOfIDs(ids); ok && p == project {
+			ver = v
+		}
+	}
 	if ver == "" {
 		// "Latest" is decided in one place, the API: /v2/projects carries each
 		// project's latest release, which is its highest version. This used to
@@ -465,7 +509,38 @@ func getReleaseTool(ctx context.Context, req *mcp.CallToolRequest, args getRelea
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	return rawResult(raw), nil, nil
+	if kindSet == nil && ids == nil {
+		return rawResult(raw), nil, nil
+	}
+	if !isJSONObject(raw) {
+		return rawResult(raw), nil, nil // the same refusal as an unfiltered answer
+	}
+	f := &docFilter{kinds: kindSet}
+	if ids != nil {
+		f.ids, f.found = map[string]bool{}, map[string]bool{}
+		for _, id := range ids {
+			f.ids[id] = true
+		}
+	}
+	b, err := filterRelease(raw, f)
+	if err != nil {
+		return errResult(fmt.Errorf("/v2/releases/{project}/{version}: %w", err)), nil, nil
+	}
+	if ids != nil {
+		missing := []string{}
+		for _, id := range ids {
+			if !f.found[id] {
+				missing = append(missing, truncate(id, 120))
+			}
+		}
+		fields, err := readObject(b)
+		if err != nil {
+			return errResult(err), nil, nil
+		}
+		nf, _ := json.Marshal(missing)
+		b = writeObject(append(fields, objField{Key: "not_found", Val: nf}))
+	}
+	return rawResult(b), nil, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -540,8 +615,9 @@ func containsStr(xs []string, s string) bool {
 // ---------------------------------------------------------------------------
 
 type searchArgs struct {
-	Q    string `json:"q" jsonschema:"advisory id (CVE-…, GHSA-…), configuration flag, project, version or text; 2–200 characters"`
-	Lang string `json:"lang,omitempty" jsonschema:"en (default), ko or ja"`
+	Q       string `json:"q" jsonschema:"advisory id (CVE-…, GHSA-…), configuration flag, project, version or text; 2–200 characters"`
+	Lang    string `json:"lang,omitempty" jsonschema:"en (default), ko or ja"`
+	Project string `json:"project,omitempty" jsonschema:"project slug, e.g. cilium: only that project's releases; omit for every project"`
 }
 
 func searchTool(ctx context.Context, req *mcp.CallToolRequest, args searchArgs) (*mcp.CallToolResult, any, error) {
@@ -554,9 +630,28 @@ func searchTool(ctx context.Context, req *mcp.CallToolRequest, args searchArgs) 
 	if err != nil {
 		return errResult(err), nil, nil
 	}
+	// An unknown slug is an error, as in list_releases: no results for a name
+	// spelled differently reads as "nothing matched".
+	project := slugArg(args.Project)
+	if project != "" {
+		roster, err := api.projects(ctx)
+		if err != nil {
+			return errResult(fmt.Errorf("could not read the project list: %w", err)), nil, nil
+		}
+		if !slices.ContainsFunc(roster, func(p v2Project) bool { return p.Slug == project }) {
+			return errResult(unknownProject(project)), nil, nil
+		}
+	}
 	raw, err := api.searchRaw(ctx, q, lang)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	return rawResult(raw), nil, nil
+	if !isJSONObject(raw) {
+		return rawResult(raw), nil, nil
+	}
+	b, err := searchAnswer(ctx, raw, project, q, lang)
+	if err != nil {
+		return errResult(fmt.Errorf("/v2/search: %w", err)), nil, nil
+	}
+	return rawResult(b), nil, nil
 }

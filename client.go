@@ -75,6 +75,9 @@ type v2Item struct {
 	ID    string  `json:"id"`
 	Title string  `json:"title"`
 	Body  *string `json:"body"`
+	// Folded holds entries kept under the item ({title, body}); passed on as
+	// received (a briefing's before_upgrade carries them since 1.2.0).
+	Folded []json.RawMessage `json:"folded"`
 }
 
 type v2Change struct {

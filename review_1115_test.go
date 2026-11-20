@@ -157,6 +157,10 @@ func TestSlugsAreMatchedWithoutCaseOrSurroundingSpace(t *testing.T) {
 
 	var seen string
 	swapAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v2/releases" { // the releases at or below from (1.2.0)
+			w.Write([]byte(`{"releases":[],"next_before":null}`))
+			return
+		}
 		seen = r.URL.Path
 		w.Write([]byte(`{"project":"etcd","from":"v3.6.7","to":"v3.6.8","releases":[],"gaps":[],"later_for_from":[]}`))
 	})))
