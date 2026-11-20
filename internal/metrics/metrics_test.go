@@ -5,55 +5,19 @@ package metrics
 // once, every outcome — is in counting_test.go.
 
 import (
-	"bufio"
-	"bytes"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/basphere/ratatosk-mcp/internal/metrics/metricstest"
 )
-
-// series parses an exposition into "name{labels}" → value.
-func series(t *testing.T, m *Metrics) map[string]float64 {
-	t.Helper()
-	var b bytes.Buffer
-	if err := m.writeTo(&b); err != nil {
-		t.Fatal(err)
-	}
-	out := map[string]float64{}
-	sc := bufio.NewScanner(&b)
-	for sc.Scan() {
-		line := sc.Text()
-		if strings.HasPrefix(line, "#") || line == "" {
-			continue
-		}
-		i := strings.LastIndexByte(line, ' ')
-		v, err := strconv.ParseFloat(line[i+1:], 64)
-		if err != nil {
-			t.Fatalf("bad sample %q", line)
-		}
-		if _, dup := out[line[:i]]; dup {
-			t.Fatalf("series written twice: %s", line[:i])
-		}
-		out[line[:i]] = v
-	}
-	return out
-}
-
-func req(method, tool, outcome, self string) string {
-	return `ratatosk_mcp_requests_total{method="` + method + `",outcome="` + outcome + `",self="` + self + `",tool="` + tool + `"}`
-}
-
-func toolCall(id int, name, args string) string {
-	return `{"jsonrpc":"2.0","id":` + strconv.Itoa(id) + `,"method":"tools/call","params":{"name":"` + name + `","arguments":` + args + `}}`
-}
 
 // Every known combination is there at zero before the first request.
 func TestMetricsStartAtZero(t *testing.T) {
-	s := series(t, New("test-1.1"))
+	s := metricstest.Series(t, Handler(New("test-1.1")))
 	var reqs, ups, buckets int
 	for k, v := range s {
 		switch {
@@ -76,7 +40,7 @@ func TestMetricsStartAtZero(t *testing.T) {
 	if s[`ratatosk_mcp_build_info{version="test-1.1"}`] != 1 {
 		t.Errorf("build_info missing: %v", s)
 	}
-	for _, k := range []string{req("tools/call", "check_stack", "busy", "true"), req("initialize", "", "rate_limited", "false"),
+	for _, k := range []string{metricstest.Requests("tools/call", "check_stack", "busy", "true"), metricstest.Requests("initialize", "", "rate_limited", "false"),
 		`ratatosk_mcp_request_duration_seconds_count{tool="search"}`, `ratatosk_mcp_response_bytes_bucket{tool="unknown",le="+Inf"}`} {
 		if _, ok := s[k]; !ok {
 			t.Errorf("%s not laid down at zero", k)
@@ -90,7 +54,7 @@ func TestMetricsHistograms(t *testing.T) {
 	m.observeTool("check_stack", 300*time.Millisecond, 200<<10)
 	m.observeTool("check_stack", 100*time.Second, 5<<20)
 	m.observeTool("no_such_tool", time.Second, -1)
-	s := series(t, m)
+	s := metricstest.Series(t, Handler(m))
 	d := func(le string) float64 {
 		return s[`ratatosk_mcp_request_duration_seconds_bucket{tool="check_stack",le="`+le+`"}`]
 	}
@@ -165,7 +129,7 @@ func TestMetricsDoNotWaitForABodyBehindExpect(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("the HTTP layer waited for a body the client holds back until 100 Continue")
 	}
-	if got := series(t, m)[req("other", "", "error", "false")]; got != 1 {
+	if got := metricstest.Series(t, Handler(m))[metricstest.Requests("other", "", "error", "false")]; got != 1 {
 		t.Errorf("other/error = %v, want 1", got)
 	}
 }
@@ -173,7 +137,7 @@ func TestMetricsDoNotWaitForABodyBehindExpect(t *testing.T) {
 func TestPeekLabels(t *testing.T) {
 	big := `{"components":[` + strings.Repeat(`{"project":"x","version":"v1"},`, 3000) + `{}]}`
 	cases := []struct{ body, method, tool string }{
-		{toolCall(1, "check_stack", `{}`), "tools/call", "check_stack"},
+		{metricstest.ToolCall(1, "check_stack", `{}`), "tools/call", "check_stack"},
 		{`{"id":1,"jsonrpc":"2.0","method":"tools/call","params":{"arguments":{"q":"x"},"name":"search"}}`, "tools/call", "search"},
 		{`{"params":{"name":"get_release","_meta":{"a":[1,{"b":2}]}},"method":"tools/call","id":1}`, "tools/call", "get_release"},
 		{`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":` + big + `,"name":"check_stack"}}`, "tools/call", ""}, // name past the prefix

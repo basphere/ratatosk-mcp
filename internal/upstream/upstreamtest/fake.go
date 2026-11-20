@@ -5,22 +5,27 @@
 // It is a package of its own because tests in several packages need the same
 // history — the tools (check_stack, check_upgrade, get_release, search), the
 // server (a tool call through the SDK, with its deadline), the metrics (each
-// POST counted once, end to end) and the client (upstream outcomes). It is
-// imported by tests only.
+// POST counted once, end to end) and the client (upstream outcomes) — and the
+// same client of it (Client). It is imported by tests only. It imports
+// internal/upstream for that client, so the client's own tests that use it are
+// an external test package (client_test.go, package upstream_test).
 package upstreamtest
 
 import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"slices"
 	"sort"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/basphere/ratatosk-mcp/internal/metrics"
 	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/releaseline"
+	"github.com/basphere/ratatosk-mcp/internal/upstream"
 )
 
 // Fake serves Projects at /v2/projects, Rows at /v2/releases, Docs (version →
@@ -143,4 +148,13 @@ func NewEtcd() *Fake {
 		},
 	}
 	return f
+}
+
+// Client is a client of ts as the server builds one (version "dev", the
+// default 32 MiB cache budget), counting into m (nil: metrics off). ts is
+// closed when the test ends.
+func Client(t testing.TB, ts *httptest.Server, m *metrics.Metrics) *upstream.Client {
+	t.Helper()
+	t.Cleanup(ts.Close)
+	return upstream.New(ts.URL, "dev", 32<<20, m)
 }

@@ -34,7 +34,10 @@ nothing outside this module can import; the repository offers no Go API.
 | `internal/mcpserver` | Builds the MCP server: instructions, the tools, and the audit, deadline and metrics middleware in their order |
 | `internal/tools` | The six tools, one file each: definition (name, description, input schema), arguments, handler |
 | `internal/upstream` | The read-only client of the ratatosk `/v2` API and its response cache, the only package that talks to the network |
-| `internal/upstream/upstreamtest` | A fake `/v2` API, imported by tests only |
+| `internal/upstream/upstreamtest` | Tests only: a fake `/v2` API, and a client of it built as the server builds one |
+| `internal/metrics/metricstest` | Tests only: reads the `/metrics` exposition, builds tools/call bodies |
+| `internal/httpfront/httpfronttest` | Tests only: the refusal set-up (a limiter that refuses, the bodies refusals are measured with) |
+| `internal/mcpserver/mcpservertest` | Tests only: connects a client to an MCP server in memory |
 | `internal/briefing` | Turns the release documents of an upgrade range into the briefing check_stack and check_upgrade answer |
 | `internal/releaseline` | Release lines, version ranges, version gaps and image build suffixes |
 | `internal/advisory` | Counts the distinct advisories of a range |
@@ -57,6 +60,14 @@ Imports point one way:
   `advisory` imports `release`.
 - `config`, `logging`, `release` and `version` import nothing from this
   module.
+- The four `…test` packages are imported by `_test.go` files only, so none
+  of them is in the binary (`go list -deps .`). Each sits beside the package
+  it helps test. `metricstest` and `mcpservertest` import nothing from this
+  module, so the metrics and server packages' own tests can use them;
+  `httpfronttest` imports `httpfront` and `upstreamtest` imports `upstream`,
+  so the tests of those two packages that use them are external test
+  packages (`package httpfront_test`, `package upstream_test`), with what
+  they need of the internals in `export_test.go`.
 
 Each package starts with a comment that says why it exists and what it must
 not depend on. No package keeps state in package-level variables: what a
@@ -80,6 +91,10 @@ that the regression harness can lift them in a test.)
   is in `internal/metrics/counting_test.go`. `docs_test.go` and
   `docs_live_test.go` at the root check the docs against the tools as a
   client lists them.
+- A helper used by the tests of more than one package lives once, in the
+  `…test` package beside the package it helps test, not copied into each.
+  A helper used by one package's tests stays in that package's `_test.go`
+  files.
 - Test data lives in the `testdata` folder of the package whose tests read
   it. Each bundle is one folder and one row of
   [`testdata/README.md`](testdata/README.md): what it is, how and when it was

@@ -29,6 +29,8 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/mcpserver/mcpservertest"
 )
 
 // added12 are the arguments 1.2.0 adds, by tool; "components" names the keys
@@ -65,17 +67,8 @@ func stripDescriptions(v any) any {
 
 func currentToolsList(t *testing.T) []map[string]any {
 	t.Helper()
-	ctx := context.Background()
-	ct, st := mcp.NewInMemoryTransports()
-	if _, err := New(Options{}).Connect(ctx, st, nil); err != nil {
-		t.Fatal(err)
-	}
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "tools110-test"}, nil).Connect(ctx, ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cs.Close()
-	res, err := cs.ListTools(ctx, nil)
+	cs := mcpservertest.Connect(t, New(Options{}), &mcp.Implementation{Name: "tools110-test"})
+	res, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -23,6 +23,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/basphere/ratatosk-mcp/internal/config"
+	"github.com/basphere/ratatosk-mcp/internal/mcpserver/mcpservertest"
 )
 
 var (
@@ -73,16 +74,7 @@ func TestDocsExamplesAgainstLive(t *testing.T) {
 	}
 	cfg := config.Read(os.Getenv)
 	cfg.UpstreamURL = base
-	ctx := context.Background()
-	ct, st := mcp.NewInMemoryTransports()
-	if _, err := newServer(cfg, nil, nil).Connect(ctx, st, nil); err != nil {
-		t.Fatal(err)
-	}
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "docs-live"}, nil).Connect(ctx, ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cs.Close()
+	cs := mcpservertest.Connect(t, newServer(cfg, nil, nil), &mcp.Implementation{Name: "docs-live"})
 
 	tools := serverTools(t)
 	for name, sec := range toolSections(t, "docs/tools.en.md", tools) {

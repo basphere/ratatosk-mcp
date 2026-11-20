@@ -20,31 +20,15 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/basphere/ratatosk-mcp/internal/audit"
-	"github.com/basphere/ratatosk-mcp/internal/upstream"
+	"github.com/basphere/ratatosk-mcp/internal/mcpserver/mcpservertest"
 	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
-
-// withAPI is a client of ts, which is closed when the test ends.
-func withAPI(t *testing.T, ts *httptest.Server) *upstream.Client {
-	t.Helper()
-	t.Cleanup(ts.Close)
-	return upstream.New(ts.URL, "dev", 32<<20, nil) // 32 MiB: the default cache budget
-}
 
 // sdkSession connects an in-memory client to the real server, so a call passes
 // schema validation and every middleware exactly as it does on the wire.
 func sdkSession(t *testing.T, o Options) *mcp.ClientSession {
 	t.Helper()
-	st, ct := mcp.NewInMemoryTransports()
-	if _, err := New(o).Connect(context.Background(), st, nil); err != nil {
-		t.Fatal(err)
-	}
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "review-test", Version: "0"}, nil).Connect(context.Background(), ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { cs.Close() })
-	return cs
+	return mcpservertest.Connect(t, New(o), &mcp.Implementation{Name: "review-test", Version: "0"})
 }
 
 func sdkText(t *testing.T, cs *mcp.ClientSession, tool string, args map[string]any) (string, bool) {
@@ -80,7 +64,7 @@ func toolDescriptions(t *testing.T) map[string]string {
 func TestToolCallEndsOnItsDeadlineWithAnAnswer(t *testing.T) {
 	f := upstreamtest.NewEtcd()
 	inner := f.Handler(t)
-	api := withAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	api := upstreamtest.Client(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/v2/releases/etcd/") {
 			select {
 			case <-r.Context().Done():
@@ -89,7 +73,7 @@ func TestToolCallEndsOnItsDeadlineWithAnAnswer(t *testing.T) {
 			return
 		}
 		inner(w, r)
-	})))
+	})), nil)
 	cs := sdkSession(t, Options{API: api, ToolTimeout: 200 * time.Millisecond})
 	start := time.Now()
 	text, isErr := sdkText(t, cs, "check_stack", map[string]any{
@@ -109,21 +93,11 @@ func TestToolCallEndsOnItsDeadlineWithAnAnswer(t *testing.T) {
 // alone); the record is the audit middleware's either way.
 func startAuditedSession(t *testing.T, a *audit.Auditor) *mcp.ClientSession {
 	t.Helper()
-	api := withAPI(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	api := upstreamtest.Client(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"projects":[]}`))
-	})))
+	})), nil)
 	server := New(Options{Version: "test", API: api, Audit: a})
-	st, ct := mcp.NewInMemoryTransports()
-	if _, err := server.Connect(context.Background(), st, nil); err != nil {
-		t.Fatal(err)
-	}
-	client := mcp.NewClient(&mcp.Implementation{Name: "audit-probe", Version: "7"}, nil)
-	cs, err := client.Connect(context.Background(), ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { cs.Close() })
-	return cs
+	return mcpservertest.Connect(t, server, &mcp.Implementation{Name: "audit-probe", Version: "7"})
 }
 
 func TestAuditWireRoundTrip(t *testing.T) {

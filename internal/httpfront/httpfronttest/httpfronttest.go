@@ -1,0 +1,49 @@
+// Package httpfronttest sets up the refusals of the HTTP front for tests: a
+// rate limiter that refuses, the request body that is cheapest to send and
+// was dearest to label, and a body that counts what is read of it. It is
+// imported by tests only — the refusal tests of internal/httpfront and the
+// counting tests of internal/metrics, which hold a refusal to the same bounds
+// with metrics off and on.
+//
+// It imports internal/httpfront for the limiter, so the front's tests that use
+// it are an external test package (refusal_test.go, package httpfront_test).
+package httpfronttest
+
+import (
+	"io"
+	"strings"
+	"time"
+
+	"github.com/basphere/ratatosk-mcp/internal/httpfront"
+)
+
+// RefusedCaller is the address RefusingLimiter has spent its budget for.
+const RefusedCaller = "192.0.2.1"
+
+// RefusingLimiter refuses every request after its first: a limit of 1 a
+// minute, already spent for RefusedCaller.
+func RefusingLimiter() *httpfront.RateLimiter {
+	rl := httpfront.NewRateLimiter(1)
+	rl.Allow(RefusedCaller, time.Now())
+	return rl
+}
+
+// CountingBody counts in N what is read of a request body R.
+type CountingBody struct {
+	R io.Reader
+	N int
+}
+
+func (c *CountingBody) Read(b []byte) (int, error) {
+	n, err := c.R.Read(b)
+	c.N += n
+	return n, err
+}
+
+// ZerosCall is a tools/call whose arguments are n bytes of "0," tokens before
+// the tool name: the cheapest body to send and, before 1.1.0's bounds, the
+// dearest to label (independent review, 2026-11-18: 25.7 ms and 3.4 MB of
+// allocations per refusal at 64 KiB).
+func ZerosCall(n int) string {
+	return `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"arguments":[` + strings.Repeat("0,", n/2) + `0],"name":"check_stack"}}`
+}

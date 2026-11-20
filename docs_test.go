@@ -25,6 +25,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/basphere/ratatosk-mcp/internal/config"
+	"github.com/basphere/ratatosk-mcp/internal/mcpserver/mcpservertest"
 )
 
 // docTrios are the documents published in English, Korean and Japanese. Their
@@ -107,17 +108,8 @@ func parseMD(path, text string) mdDoc {
 // schemas as an agent receives them, not as the source spells them.
 func serverTools(t *testing.T) map[string][]string {
 	t.Helper()
-	ctx := context.Background()
-	ct, st := mcp.NewInMemoryTransports()
-	if _, err := newServer(config.Read(func(string) string { return "" }), nil, nil).Connect(ctx, st, nil); err != nil {
-		t.Fatal(err)
-	}
-	cs, err := mcp.NewClient(&mcp.Implementation{Name: "docs-test"}, nil).Connect(ctx, ct, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cs.Close()
-	res, err := cs.ListTools(ctx, nil)
+	cs := mcpservertest.Connect(t, newServer(config.Read(func(string) string { return "" }), nil, nil), &mcp.Implementation{Name: "docs-test"})
+	res, err := cs.ListTools(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

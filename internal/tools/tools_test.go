@@ -21,15 +21,13 @@ import (
 	"github.com/basphere/ratatosk-mcp/internal/briefing"
 	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/releaseline"
-	"github.com/basphere/ratatosk-mcp/internal/upstream"
 	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
 
 // withAPI points the tool handlers at ts, which is closed when the test ends.
 func withAPI(t *testing.T, ts *httptest.Server) *handlers {
 	t.Helper()
-	t.Cleanup(ts.Close)
-	return &handlers{api: upstream.New(ts.URL, "dev", 32<<20, nil)} // 32 MiB: the default cache budget
+	return &handlers{api: upstreamtest.Client(t, ts, nil)}
 }
 
 type stackOut struct {

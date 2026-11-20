@@ -16,7 +16,7 @@ import (
 // read "name" or name the keys it received.
 // (Independent review, 2026-11-11.)
 func TestArrayFormReachesTheHandlerThroughTheSDK(t *testing.T) {
-	cs := sdkSession(t, Options{API: withAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))})
+	cs := sdkSession(t, Options{API: upstreamtest.Client(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)), nil)})
 
 	text, isErr := sdkText(t, cs, "check_stack", map[string]any{
 		"components": []any{map[string]any{"name": "etcd", "version": "v3.5.31"}},
@@ -39,7 +39,7 @@ func TestArrayFormReachesTheHandlerThroughTheSDK(t *testing.T) {
 // A component without a version is answered per component, not by the schema.
 // (Independent review, 2026-11-11.)
 func TestUnreadKeysAndMissingVersionAreAnswered(t *testing.T) {
-	cs := sdkSession(t, Options{API: withAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))})
+	cs := sdkSession(t, Options{API: upstreamtest.Client(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)), nil)})
 
 	text, isErr := sdkText(t, cs, "check_stack", map[string]any{
 		"components": []any{map[string]any{"project": "etcd", "version": "v3.5.30", "target": "v3.5.31", "extra": 1}},
@@ -60,7 +60,7 @@ func TestUnreadKeysAndMissingVersionAreAnswered(t *testing.T) {
 // passes either reaches the handler.
 // (1.2.0: get_release's kinds and changes, kinds on the briefing tools.)
 func TestListArgumentsPassTheSchema(t *testing.T) {
-	cs := sdkSession(t, Options{API: withAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))})
+	cs := sdkSession(t, Options{API: upstreamtest.Client(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)), nil)})
 	for _, kinds := range []any{[]any{"security", "breaking"}, "security,breaking", `["security"]`} {
 		text, isErr := sdkText(t, cs, "check_stack", map[string]any{
 			"components": []any{map[string]any{"project": "etcd", "version": "v3.5.30", "same_minor": true}},
