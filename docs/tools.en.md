@@ -117,7 +117,7 @@ of `later_for_running`.
 | `releases_not_read` | component | `array` | Versions in range whose documents were not read; the newest 60 releases of a project are read per call |
 | `later_for_running` | component | `array` | What was learned about the running version after it shipped, as recorded on that release: `advisory_after_release` is an advisory published later for a vulnerability it already fixes (not a sign that it is vulnerable); `known_issue_fixed` and `regression_fixed` are problems it has, fixed in `fixed_in`. A defect that started in an earlier version is recorded on that version, not here, so an empty list does not mean no known defect |
 | `later_in_range` | component | `array` | The same events for every release in range: a `regression_fixed` here is a defect that release has, fixed in `fixed_in` (for example a regression in one patch fixed in the next). `[]` when none is recorded |
-| `excluded_on_branch` | component | `object` | The security changes left out because the running version's branch already fixed their advisories at or below it: `security` (how many) and `advisories` (each id once, with the highest `severity` a left-out change gave it). `summary.counts` and `summary.warnings` still include them. Present only when something was left out |
+| `excluded_on_branch` | component | `object` | The security changes left out because the running version's branch already fixed their advisories at or below it: `security` (how many) and `advisories` (each id once, with the highest `severity` a left-out change gave it; up to 20, the most severe, with `advisories_omitted` counting the rest). `summary.counts` and `summary.warnings` still include them. Present only when something was left out |
 | `running_version` | component | `string` | The running version as passed in the call |
 | `version_read_as` | component | `string` | The version that was checked, when the one passed carried an image build suffix after the version (`v1.37.6-1789133542-<commit>` is read as `v1.37.6`). Absent otherwise. `check_upgrade` reads `from` the same way |
 | `target_version` | component | `string` | Where the range ends: the target passed, with `same_minor` the newest release of the running minor, otherwise the newest release on the running version's release line. A release line is a tag prefix (`flagd/`, `lts-`), not a minor version: v1.36.5 is checked up to v1.37.x |
@@ -139,13 +139,16 @@ evidence of the entries you report.
 about what an agent client shows as text before it hands the answer over as a
 file (Claude Code does that past 50,000). Several components share that evenly,
 and what one does not need goes to the others. A component over its share
-takes three steps in order: its entries in `changes` become lines in
-`changes_more` (`changes_omitted` grows with them), then the lines lose
-`affects`, then lines are dropped and counted per kind in `changes_unlisted`.
-Each step starts with important fixes, then deprecations, breaking changes that
-ask nothing, security changes from the lowest grade up, and breaking changes
-that say what to do last. Nothing is dropped without a count, and `hint` names
-the calls that list what was dropped: the component alone, one kind per call.
+gives way layer by layer, from the layer kept least to the one kept longest:
+important fixes, deprecations, other breaking changes, security changes of
+medium, low or no grade, breaking changes with `action_required` or
+`no_downgrade`, and security changes of critical or high grade. A layer's
+entries in `changes` become lines in `changes_more` (`changes_omitted` grows
+with them) and its lines lose `affects` before the layer above gives up
+anything. Only when every layer is down to ids and titles are lines dropped,
+lowest layer first, and counted per kind in `changes_unlisted`. Nothing is
+dropped without a count, and `hint` names the calls that list what was dropped:
+the component alone, one kind per call.
 Asked alone, a component keeps the id and title of every security, breaking
 and deprecation change unless those alone are over the budget (envoy across
 twenty-five releases is); then one kind per call lists them. The parts the

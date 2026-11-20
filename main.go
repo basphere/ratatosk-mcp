@@ -307,10 +307,13 @@ func newServer() *mcp.Server {
 			"20 security (most severe first), 20 breaking, 10 deprecations and 10 important_fixes with their body " +
 			"(inside a kind, the ones that say what to do first); changes_omitted counts per kind what is not in " +
 			"changes, and changes_more lists each of those in one line. A briefing answer is at most 40,000 " +
-			"characters, hint included: a component over its share of that first moves its entries into " +
-			"changes_more, then drops affects from the lines, then drops lines and counts them per kind in " +
-			"changes_unlisted — important fixes first, then deprecations, breaking changes that ask nothing, security " +
-			"from the lowest grade — and hint ends with the calls that list what was dropped (asked alone, a " +
+			"characters, hint included: a component over its share of that moves its entries into " +
+			"changes_more, takes affects off the lines, and last drops lines and counts them per kind in " +
+			"changes_unlisted. Layers keep their place in this order, the last kept longest: important fixes, " +
+			"deprecations, other breaking changes, security of medium, low or no grade, breaking changes with " +
+			"action_required or no_downgrade, security of critical or high grade; each layer goes down to ids and titles " +
+			"(entries to lines, then lines without affects) before the layer above gives anything up, and lines are " +
+			"dropped only after that, lowest layer first. hint ends with the calls that list what was dropped (asked alone, a " +
 			"component keeps the id and title of every security, breaking and deprecation change unless those alone " +
 			"are over the budget; then one kind per call lists them). The briefing carries no evidence quotes: read " +
 			"the body and evidence of the entries you report with get_release(project, version, changes:[id, …]). " +
@@ -318,7 +321,8 @@ func newServer() *mcp.Server {
 			"summary.counts and summary.warnings add up every release in range (one fix on several " +
 			"release lines counts once per release); summary.distinct_advisories counts each advisory once. " +
 			"Security changes citing no advisory id are not in distinct_advisories (summary.counts.security has them), " +
-			"and summary.counts and summary.warnings include the changes excluded_on_branch names. " +
+			"and summary.counts and summary.warnings include the changes excluded_on_branch counts (it names up to 20 " +
+			"advisories, the most severe, and counts the rest in advisories_omitted). " +
 			"affects decides who a change touches: status stated or inferred means it applies ONLY " +
 			"IF that holds in this setup — check before you report it; not_stated means the release notes name no " +
 			"narrower scope. gaps lists where version numbers skip (releases in between may be unanalyzed); " +

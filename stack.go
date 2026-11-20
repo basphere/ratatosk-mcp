@@ -853,7 +853,16 @@ func lineOf(c briefChange) moreLine {
 type excludedOnBranch struct {
 	Security   int                `json:"security"`
 	Advisories []excludedAdvisory `json:"advisories"`
+	// AdvisoriesOmitted counts the ids past maxExcludedAdvisories, the least
+	// severe: envoy v1.37.6 → v1.40.2 named 63, about 2,800 characters of a
+	// component's share of the budget (2026-11-20). security still counts every
+	// change left out.
+	AdvisoriesOmitted int `json:"advisories_omitted,omitempty"`
 }
+
+// maxExcludedAdvisories bounds excluded_on_branch.advisories (the main
+// session's decision, 2026-11-20).
+const maxExcludedAdvisories = 20
 
 type excludedAdvisory struct {
 	ID       string          `json:"id"`
@@ -1232,6 +1241,9 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 			}
 			return ex.Advisories[i].ID < ex.Advisories[j].ID
 		})
+		if n := len(ex.Advisories); n > maxExcludedAdvisories {
+			ex.Advisories, ex.AdvisoriesOmitted = ex.Advisories[:maxExcludedAdvisories], n-maxExcludedAdvisories
+		}
 		b.ExcludedOnBranch = ex
 	}
 	return b, settled
@@ -1350,12 +1362,20 @@ type fitItem struct {
 	sEntry, sLine, sBare int
 }
 
-// giveWayTier says how early a change gives way when an answer is over the
-// budget: lower goes first. The order is the spec's (important fixes →
-// deprecations → breaking changes that ask nothing → security from the lowest
-// grade up); a breaking change that carries a step (action_required, a stated
-// or inferred no_downgrade or removed_in) goes last, as the step is what the
-// operator must do and the spec names only the breaking changes without one.
+// giveWayTier is the layer a change keeps its place in when an answer is over
+// the budget: lower gives way first. Kept to the end (the main session's
+// decision, 2026-11-20, after the first fitting answered envoy's 103 security
+// changes, critical advisories among them, with a count while 15 breaking lines
+// stayed):
+//
+//	5  security critical or high
+//	4  breaking that says what to do (action_required, or a stated or inferred no_downgrade)
+//	3  other security (medium, low, no grade found)
+//	2  other breaking
+//	1  deprecations
+//	0  important fixes
+//
+// "Which upgrade first" is answered by the severe advisories first.
 func giveWayTier(c briefChange) int {
 	switch c.Kind {
 	case "important_fixes":
@@ -1363,27 +1383,45 @@ func giveWayTier(c briefChange) int {
 	case "deprecations":
 		return 1
 	case "breaking":
-		if carriesAStep(c) {
-			return 8
+		if c.ActionRequired != "" || (c.NoDowngrade != nil && (c.NoDowngrade.Status == "stated" || c.NoDowngrade.Status == "inferred")) {
+			return 4
 		}
 		return 2
 	case "security":
-		return 3 + gradeRank(c.Severity) // ungraded 3 … critical 7
+		if gradeRank(c.Severity) >= 3 {
+			return 5
+		}
+		return 3
 	}
 	return 0
 }
 
-// fitComp is one briefing being fitted. Its states run from k = 0 (as built)
-// through the three steps, each taken in give-way order: k ≤ len(ents)
-// moves that many entries of changes into changes_more; the next len(all)
-// steps take affects off that many lines; the last len(all) drop that many
-// lines into changes_unlisted. sizes[k] is the briefing's change lists at k.
+// fitStep is one step a briefing takes to get smaller.
+type fitStep struct {
+	it *fitItem
+	do int // stepDemote, stepBare or stepDrop
+}
+
+const (
+	stepDemote = iota // an entry of changes becomes a line of changes_more
+	stepBare          // a line loses affects
+	stepDrop          // a line goes, counted in changes_unlisted
+)
+
+// fitComp is one briefing being fitted. Its steps, in order (the main
+// session's decision, 2026-11-20): from the lowest layer up, each layer to the
+// end — its entries become lines, then its lines lose affects — so that every
+// id and title is listed before a layer above gives up anything; then, once
+// every layer is down to ids and titles, lines are dropped, lowest layer
+// first. Inside a layer the end of the briefing's own order goes first. The
+// first fitting moved every body down before any affects came off, and
+// containerd alone kept 101 important-fix lines while its 20 security entries
+// lost their bodies. sizes[k] is the length of the change lists after k steps.
 type fitComp struct {
 	b       *briefing
 	omitted map[string]int // changes_omitted as built
 	shown   []*fitItem     // briefing order
-	ents    []*fitItem     // entries, in give-way order
-	all     []*fitItem     // every item, in give-way order
+	steps   []fitStep
 	sizes   []int
 	k       int
 	// call names, for hint, the calls that list what this briefing left out.
@@ -1415,18 +1453,30 @@ func newFitComp(b *briefing, call func(map[string]int) string) *fitComp {
 		add(c, false)
 	}
 	sort.SliceStable(f.shown, func(i, j int) bool { return briefLess(f.shown[i].c, f.shown[j].c) })
-	f.all = slices.Clone(f.shown)
-	// Give-way order: lower tier first; inside a tier, the end of the
-	// briefing's own order first.
-	slices.Reverse(f.all)
-	sort.SliceStable(f.all, func(i, j int) bool { return giveWayTier(f.all[i].c) < giveWayTier(f.all[j].c) })
-	for _, it := range f.all {
-		if it.wasEntry {
-			f.ents = append(f.ents, it)
+	// Each layer, the end of the briefing's order first.
+	layers := make([][]*fitItem, 6)
+	for i := len(f.shown) - 1; i >= 0; i-- {
+		it := f.shown[i]
+		t := giveWayTier(it.c)
+		layers[t] = append(layers[t], it)
+	}
+	for _, layer := range layers {
+		for _, it := range layer {
+			if it.wasEntry {
+				f.steps = append(f.steps, fitStep{it, stepDemote})
+			}
+		}
+		for _, it := range layer {
+			f.steps = append(f.steps, fitStep{it, stepBare})
+		}
+	}
+	for _, layer := range layers {
+		for _, it := range layer {
+			f.steps = append(f.steps, fitStep{it, stepDrop})
 		}
 	}
 	size := 0
-	for _, it := range f.all {
+	for _, it := range f.shown {
 		if it.wasEntry {
 			size += it.sEntry
 		} else {
@@ -1434,16 +1484,15 @@ func newFitComp(b *briefing, call func(map[string]int) string) *fitComp {
 		}
 	}
 	f.sizes = []int{size}
-	for _, it := range f.ents {
-		size += it.sLine - it.sEntry
-		f.sizes = append(f.sizes, size)
-	}
-	for _, it := range f.all {
-		size += it.sBare - it.sLine
-		f.sizes = append(f.sizes, size)
-	}
-	for _, it := range f.all {
-		size -= it.sBare
+	for _, st := range f.steps {
+		switch st.do {
+		case stepDemote:
+			size += st.it.sLine - st.it.sEntry
+		case stepBare:
+			size += st.it.sBare - st.it.sLine
+		case stepDrop:
+			size -= st.it.sBare
+		}
 		f.sizes = append(f.sizes, size)
 	}
 	return f
@@ -1451,27 +1500,20 @@ func newFitComp(b *briefing, call func(map[string]int) string) *fitComp {
 
 func (f *fitComp) maxK() int { return len(f.sizes) - 1 }
 
-// set puts the briefing in state k.
+// set puts the briefing in state k: the first k steps taken.
 func (f *fitComp) set(k int) {
 	f.k = k
-	for _, it := range f.all {
+	for _, it := range f.shown {
 		it.demoted, it.bare, it.dropped = false, false, false
 	}
-	n := k
-	for _, it := range f.ents {
-		if n == 0 {
-			break
-		}
-		it.demoted = true
-		n--
-	}
-	for _, step := range []func(*fitItem){func(it *fitItem) { it.bare = true }, func(it *fitItem) { it.dropped = true }} {
-		for _, it := range f.all {
-			if n == 0 {
-				break
-			}
-			step(it)
-			n--
+	for _, st := range f.steps[:k] {
+		switch st.do {
+		case stepDemote:
+			st.it.demoted = true
+		case stepBare:
+			st.it.bare = true
+		case stepDrop:
+			st.it.dropped = true
 		}
 	}
 	var changes []briefChange
@@ -1523,14 +1565,15 @@ const maxCallsHint = 1500
 // components at 201,537 characters and containerd v2.2.9 → v2.4.2 at 47,957).
 //
 // The budget is shared evenly over the components; what one does not need goes
-// to the others. A component over its share takes the three steps in order,
-// each in give-way order (giveWayTier): its entries of changes become lines of
-// changes_more (changes_omitted grows with them); the lines lose affects; then
-// lines are dropped and counted per kind in changes_unlisted. A component that
-// drops lines gets a sentence at the end of hint naming the calls that list
-// them. Nothing goes without a count, and a component asked alone keeps every
-// security, breaking and deprecation id and title unless those alone are over
-// the budget — then one kind per call lists them.
+// to the others. A component over its share takes its steps (fitComp) until it
+// fits: layer by layer from the lowest (giveWayTier), entries of changes become
+// lines of changes_more (changes_omitted grows with them) and the lines lose
+// affects; only then are lines dropped, lowest layer first, and counted per
+// kind in changes_unlisted. A component that drops lines gets a sentence at the
+// end of hint naming the calls that list them. Nothing goes without a count,
+// and a component asked alone keeps the id and title of every security,
+// breaking and deprecation change unless those alone are over the budget —
+// then one kind per call lists them.
 //
 // What the steps do not touch (summary, releases, before_upgrade, later events,
 // the hint itself) can on its own be over the budget for a stack of many

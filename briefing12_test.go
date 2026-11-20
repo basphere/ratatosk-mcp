@@ -313,45 +313,54 @@ func TestBudgetOneKindOverTheBudgetSaysNarrow(t *testing.T) {
 	assertNothingSilent(t, n, out, "narrow the range (a nearer to, or same_minor)")
 }
 
-// The three steps in order, each in give-way order: entries become lines
-// (important fixes first), then lines lose affects, then lines are dropped.
-func TestFitStepsAndGiveWayOrder(t *testing.T) {
+// The steps, layer by layer from the lowest: a layer's entries become lines
+// and its lines lose affects before the layer above gives up anything; lines
+// are dropped only once every layer is down to ids and titles, lowest first
+// (the main session's decision, 2026-11-20).
+func TestFitStepsGoLayerByLayer(t *testing.T) {
 	crit, low := "critical", "low"
 	ar := "migrate"
+	aff := func() *v2Attr { return &v2Attr{Text: "a", Status: "stated"} }
 	d := &v2Release{Version: "v1.0.0", Changes: []v2Change{
-		{ID: "s-crit", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-1"}, Affects: &v2Attr{Text: "a", Status: "stated"}},
-		{ID: "s-low", Kind: "security", Severity: &low, Advisories: []string{"CVE-2026-2"}, Affects: &v2Attr{Text: "a", Status: "stated"}},
-		{ID: "b-step", Kind: "breaking", ActionRequired: &ar, Affects: &v2Attr{Text: "a", Status: "stated"}},
-		{ID: "b-plain", Kind: "breaking", Affects: &v2Attr{Text: "a", Status: "stated"}},
-		{ID: "dep", Kind: "deprecations", Affects: &v2Attr{Text: "a", Status: "stated"}},
-		{ID: "ifx", Kind: "important_fixes", Affects: &v2Attr{Text: "a", Status: "stated"}},
+		{ID: "s-crit", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-1"}, Affects: aff()},
+		{ID: "s-low", Kind: "security", Severity: &low, Advisories: []string{"CVE-2026-2"}, Affects: aff()},
+		{ID: "b-step", Kind: "breaking", ActionRequired: &ar, Affects: aff()},
+		{ID: "b-nodown", Kind: "breaking", NoDowngrade: &v2Attr{Status: "stated"}, Affects: aff()},
+		{ID: "b-plain", Kind: "breaking", Affects: aff()},
+		{ID: "dep", Kind: "deprecations", Affects: aff()},
+		{ID: "ifx", Kind: "important_fixes", Affects: aff()},
 	}}
 	b, _ := buildBriefing([]*v2Release{d}, nil, nil)
 	f := newFitComp(&b, func(map[string]int) string { return "" })
-	var order []string
-	for _, it := range f.all {
-		order = append(order, it.c.ID)
+	var steps []string
+	for _, st := range f.steps {
+		steps = append(steps, fmt.Sprint([]string{"demote", "bare", "drop"}[st.do], " ", st.it.c.ID))
 	}
-	if want := []string{"ifx", "dep", "b-plain", "s-low", "s-crit", "b-step"}; !slices.Equal(order, want) {
-		t.Fatalf("give-way order %v, want %v", order, want)
+	want := []string{
+		"demote ifx", "bare ifx", "demote dep", "bare dep", "demote b-plain", "bare b-plain",
+		"demote s-low", "bare s-low", "demote b-nodown", "demote b-step", "bare b-nodown", "bare b-step",
+		"demote s-crit", "bare s-crit",
+		"drop ifx", "drop dep", "drop b-plain", "drop s-low", "drop b-nodown", "drop b-step", "drop s-crit",
 	}
-	f.set(1)
-	if len(b.Changes) != 5 || b.ChangesMore[0].ID != "ifx" || b.ChangesOmitted["important_fixes"] != 1 {
-		t.Errorf("step one moves the important fix first: changes %d, more %+v, omitted %v", len(b.Changes), b.ChangesMore, b.ChangesOmitted)
+	if !slices.Equal(steps, want) {
+		t.Fatalf("steps\n%v\nwant\n%v", steps, want)
 	}
-	f.set(6)
-	if len(b.Changes) != 0 || len(b.ChangesMore) != 6 || b.ChangesMore[0].Affects == nil {
-		t.Errorf("after step one every entry is a line with affects: %+v", b.ChangesMore)
+	f.set(2)
+	if len(b.Changes) != 6 || len(b.ChangesMore) != 1 || b.ChangesMore[0].Affects != nil || b.ChangesOmitted["important_fixes"] != 1 {
+		t.Errorf("the lowest layer goes to an id and a title first: changes %d, more %+v, omitted %v", len(b.Changes), b.ChangesMore, b.ChangesOmitted)
 	}
-	f.set(7)
+	f.set(14)
 	for _, l := range b.ChangesMore {
-		if (l.ID == "ifx") != (l.Affects == nil) {
-			t.Errorf("step two starts with the important fix: %+v", l)
+		if l.Affects != nil {
+			t.Errorf("every layer is down to ids and titles before a line goes: %+v", l)
 		}
 	}
-	f.set(6 + 6 + 3)
-	if len(b.ChangesMore) != 3 || !maps.Equal(b.ChangesUnlisted, map[string]int{"important_fixes": 1, "deprecations": 1, "breaking": 1}) {
-		t.Errorf("step three drops in give-way order: %+v unlisted %v", b.ChangesMore, b.ChangesUnlisted)
+	if len(b.Changes) != 0 || len(b.ChangesMore) != 7 || b.ChangesUnlisted != nil {
+		t.Errorf("changes %d, more %d, unlisted %v", len(b.Changes), len(b.ChangesMore), b.ChangesUnlisted)
+	}
+	f.set(17)
+	if !maps.Equal(b.ChangesUnlisted, map[string]int{"important_fixes": 1, "deprecations": 1, "breaking": 1}) {
+		t.Errorf("lines go lowest layer first: %v", b.ChangesUnlisted)
 	}
 	f.set(f.maxK())
 	if len(b.ChangesMore) != 0 || b.ChangesUnlisted["security"] != 2 || f.sizes[f.maxK()] != 0 {
@@ -361,6 +370,34 @@ func TestFitStepsAndGiveWayOrder(t *testing.T) {
 		if f.sizes[k] > f.sizes[k-1] {
 			t.Errorf("step %d makes the lists longer: %d → %d", k, f.sizes[k-1], f.sizes[k])
 		}
+	}
+}
+
+// excluded_on_branch names at most 20 advisories, the most severe; security
+// still counts every change left out.
+func TestExcludedOnBranchNamesTwentyAdvisories(t *testing.T) {
+	high := "high"
+	var past, cur []v2Change
+	for i := 0; i < 30; i++ {
+		id := fmt.Sprintf("CVE-2026-%d", 100+i)
+		c := v2Change{ID: fmt.Sprint("s", i), Kind: "security", Advisories: []string{id}}
+		if i >= 25 {
+			c.Severity = &high
+		}
+		cur = append(cur, c)
+		past = append(past, c)
+	}
+	fixed := map[string]bool{}
+	for _, c := range past {
+		fixed[c.Advisories[0]] = true
+	}
+	b, settled := buildBriefing([]*v2Release{{Version: "v2.0.0", Changes: cur}}, fixed, []int{1, 0, 0})
+	ex := b.ExcludedOnBranch
+	if settled != 30 || ex == nil || ex.Security != 30 || len(ex.Advisories) != maxExcludedAdvisories || ex.AdvisoriesOmitted != 10 {
+		t.Fatalf("excluded %+v", ex)
+	}
+	if string(ex.Advisories[0].Severity) != `"high"` || string(ex.Advisories[4].Severity) != `"high"` || string(ex.Advisories[5].Severity) != "null" {
+		t.Errorf("the most severe are kept: %+v", ex.Advisories[:6])
 	}
 }
 

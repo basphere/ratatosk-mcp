@@ -17,11 +17,14 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   what an agent client shows as text before it hands the answer over as a
   file (Claude Code does that past 50,000). Several components share it
   evenly, and what one does not need goes to the others. A component over its
-  share moves its entries from `changes` into `changes_more`, then takes
-  `affects` off the lines, then drops lines and counts them per kind in
-  **`changes_unlisted`**, each step starting with important fixes, then
-  deprecations, breaking changes that ask nothing, security changes from the
-  lowest grade up, and breaking changes that say what to do last. For each
+  share gives way layer by layer, from the layer kept least: important fixes,
+  deprecations, other breaking changes, security of medium, low or no grade,
+  breaking changes with `action_required` or `no_downgrade`, and security of
+  critical or high grade. A layer's entries in `changes` become lines in
+  `changes_more` and its lines lose `affects` before the layer above gives up
+  anything; only when every layer is down to ids and titles are lines
+  dropped, lowest layer first, and counted per kind in
+  **`changes_unlisted`**. For each
   component that dropped lines, `hint` ends with the calls that list them
   (the component alone, one kind per call). Asked alone, a component keeps the
   id and title of every security, breaking and deprecation change unless
@@ -36,7 +39,8 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 - **`excluded_on_branch` in `check_stack` and `check_upgrade`**: the security
   changes left out because the running version's branch already fixed their
   advisories (`security`, how many) and those advisories with their grade
-  (`advisories: [{id, severity}]`). `summary.warnings` still counts them,
+  (`advisories: [{id, severity}]`, up to 20, the most severe, with
+  `advisories_omitted` counting the rest). `summary.warnings` still counts them,
   which is why containerd's briefing said `critical: 1` beside
   `distinct_advisories.critical: 0`; `note` keeps its sentence.
 - **`version_read_as` on a `check_stack` component and in `check_upgrade`**:
