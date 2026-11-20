@@ -227,9 +227,10 @@ You triage CNCF component upgrades for this cluster using ratatosk tools.
 {{- end }}
 
 {{/*
-Every tool main.go registers. kagent shows an agent only the tools named here,
-and a misspelled or missing name fails silently (kagent 1.x compiles it into a
-ready revision), so CI compares this list with main.go on every push.
+Every tool the server registers (internal/tools). kagent shows an agent only
+the tools named here, and a misspelled or missing name fails silently (kagent
+1.x compiles it into a ready revision), so CI compares this list with the
+registered tools on every push.
 */}}
 {{- define "ratatosk-mcp.agentToolNames" -}}
 - list_projects

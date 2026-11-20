@@ -26,17 +26,19 @@ existing — operating a public endpoint without an error log is not on the
 table — and makes P4 more valuable, but nothing here waits for it.
 
 **Status (2026-07-31): P0–P3 are implemented on main; P0–P2 shipped in
-v0.5.0.** P3 = `audit.go`, a receiving middleware observing `tools/call`
+v0.5.0.** P3 = `internal/audit`, a receiving middleware observing `tools/call`
 (`MCP_AUDIT=metadata|full`, chart `auditMode`, default off — the off path is
 tested to emit zero bytes; `TestAuditWireRoundTrip` covers a real session).
 Remaining: P4 (needs an OTLP backend to test against — hub asked), P5 beyond
 phase 0 (web-internal propagation, bundled with app observability phase 2).
 
 **Status (2026-07-30): P0, P1 and P2 are implemented on main, unreleased.**
-P1 = `log.go` + classified logging at the `apiClient` choke points (levels as
+P1 = `internal/logging` + classified logging at the choke points of the `/v2`
+client, `internal/upstream` (levels as
 specced; the marker probe and the client-mistake discipline are tests:
 `TestLogInvariantMarkerProbe`, `TestClientMistakeIsNotError`). P2 =
-`requestContext` reads `_meta["traceparent"]` (W3C-validated, malformed
+the request context of `internal/logging` reads `_meta["traceparent"]`
+(W3C-validated, malformed
 dropped), stamps `tool`/`trace_id` on every log line via the context handler,
 and forwards the header on upstream `/v1` calls (`TestTracePropagation`).
 Chart knobs: `statelessHttp`, `logLevel`. Defaults: everything inert.
