@@ -61,7 +61,8 @@ func NewRateLimiter(limit int) *RateLimiter {
 }
 
 // Allow reports whether this caller may proceed, and how many seconds remain
-// in the window if it may not.
+// in the window if it may not — counted from now, the time the window is
+// judged by, not from the wall clock.
 func (r *RateLimiter) Allow(key string, now time.Time) (bool, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -79,7 +80,7 @@ func (r *RateLimiter) Allow(key string, now time.Time) (bool, int) {
 	}
 	b.count++
 	if b.count > r.limit {
-		retry := int(time.Until(b.resetAt).Seconds())
+		retry := int(b.resetAt.Sub(now).Seconds())
 		if retry < 1 {
 			retry = 1
 		}

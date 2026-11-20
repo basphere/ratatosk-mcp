@@ -57,6 +57,22 @@ func TestRateLimiterWindowResets(t *testing.T) {
 	}
 }
 
+// Retry-After counts the seconds left in the window from the time Allow is
+// given, as the window itself is decided. It used to count from the wall
+// clock, so a test with its own clock could not hold the value to account
+// (2026-11-21); the server passes the wall clock, so its answers are the same.
+func TestRateLimiterRetryAfterCountsFromTheGivenTime(t *testing.T) {
+	opened := time.Date(2026, 1, 1, 9, 0, 0, 0, time.UTC)
+	rl := NewRateLimiter(1)
+	rl.Allow("1.2.3.4", opened)
+	if ok, retry := rl.Allow("1.2.3.4", opened.Add(20*time.Second)); ok || retry != 40 {
+		t.Errorf("over the limit 20 s into the window: allowed=%v retry-after %d, want refused and 40", ok, retry)
+	}
+	if ok, retry := rl.Allow("1.2.3.4", opened.Add(rateWindow-500*time.Millisecond)); ok || retry != 1 {
+		t.Errorf("over the limit 0.5 s before the window ends: allowed=%v retry-after %d, want refused and 1", ok, retry)
+	}
+}
+
 func TestRateLimitMiddlewareNilIsIdentity(t *testing.T) {
 	called := 0
 	h := rateLimitMiddleware(nil, http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called++ }))
