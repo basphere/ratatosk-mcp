@@ -169,6 +169,17 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   release line", which 7 of 8 agent runs read as the same minor version. They
   now say a release line is a tag prefix (`flagd/`, `lts-`), not a minor, so
   v1.36.5 is checked up to v1.37.x, and point to `same_minor`.
+- **Text that an answer repeats, cut at a byte bound, no longer ends in half
+  a character.** Answers repeat some of what the caller sent or `/v2`
+  answered, bounded in bytes: an unknown project name (80), a change id in
+  `not_found` (120), an unknown kind (40), a version or the part read after it
+  (80, 60), a list argument that is not a list (80), a `version_source`
+  quoted in a component's `note` (80) and the body of an error from `/v2`
+  (400). When the bound fell inside a Korean, Japanese or other multi-byte
+  character, the answer carried part of it, which a client received as
+  U+FFFD (`�`), or in the `version_source` note as escape codes such as
+  `\xea\xb0`. The cut now ends before that character, so up to three bytes
+  fewer are kept; ASCII text is cut where it was.
 
 ## [1.1.0] — 2026-11-19
 

@@ -70,9 +70,7 @@ func confessionNote(src string) string {
 	if src == "" || !confessionRe.MatchString(src) {
 		return ""
 	}
-	if len(src) > 80 {
-		src = src[:80] + "…"
-	}
+	src = truncate(src, 80)
 	return fmt.Sprintf("version_source reads as an inference, not a live read (%q) — treat the "+
 		"running version as unverified and re-read it off a live resource; in measurement, every "+
 		"self-described inferred version was wrong", src)

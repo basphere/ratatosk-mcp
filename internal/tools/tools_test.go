@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -258,5 +259,40 @@ func TestAnswersThatAreNotAPIAnswersAreErrors(t *testing.T) {
 	}
 	if !isJSONObject([]byte(" \n{\"a\":1}")) || isJSONObject([]byte(`[1]`)) || isJSONObject([]byte(`{"a":`)) || isJSONObject(nil) {
 		t.Error("isJSONObject")
+	}
+}
+
+// The bounds on echoed text are byte counts, and a bound could fall inside a
+// multi-byte character: the answer carried half a character, which a client
+// received as U+FFFD (found 2026-11-21). The cut now ends before that
+// character; ASCII is cut where it always was.
+func TestTruncateKeepsWholeCharacters(t *testing.T) {
+	const n = 80
+	for _, ch := range []string{"가", "あ", "😀"} {
+		for k := 1; k < len(ch); k++ { // the bound falls k bytes into the character
+			in := strings.Repeat("a", n-k) + strings.Repeat(ch, 10)
+			got := truncate(in, n)
+			if kept := strings.TrimSuffix(got, "…"); !utf8.ValidString(got) || len(kept) > n || kept != in[:n-k] || kept == got {
+				t.Errorf("truncate(%d×a + %q…, %d) = %q, want the %d bytes before %q and …", n-k, ch, n, got, n-k, ch)
+			}
+		}
+	}
+	if got := truncate(strings.Repeat("a", 100), n); got != strings.Repeat("a", n)+"…" {
+		t.Errorf("ASCII is cut at %d bytes as before: %q", n, got)
+	}
+	if got := truncate("가나다", n); got != "가나다" {
+		t.Errorf("text within the bound is left alone: %q", got)
+	}
+	// Text that is not UTF-8 at all is out of scope; the cut still ends, in bounds.
+	if got := truncate(strings.Repeat("\x80", 100), n); len(got) > n+len("…") {
+		t.Errorf("not UTF-8: %d bytes", len(got))
+	}
+
+	// Through an answer: get_release echoes an unknown project in its refusal.
+	h := withAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
+	res, _, _ := h.getReleaseTool(context.Background(), nil, getReleaseArgs{Project: strings.Repeat("a", 79) + "가나다"})
+	if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !utf8.ValidString(text) ||
+		!strings.Contains(text, "unknown project "+strings.Repeat("a", 79)+"… — ") {
+		t.Errorf("get_release on an unknown project cut inside 가: isError=%v %q", res.IsError, text)
 	}
 }

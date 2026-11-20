@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -105,8 +106,18 @@ func slugArg(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
+// truncate bounds s to n bytes, with "…" when it cut something. The bound is
+// a byte count — it limits the size of what is echoed — and the cut never
+// splits a character: when byte n falls inside a multi-byte one, it backs off
+// to where that character starts. Cut at n itself, a Korean or Japanese slug
+// came back with half a character, which a client received as U+FFFD
+// (2026-11-21). ASCII is cut where it always was. internal/upstream has the
+// same function for the error bodies it bounds.
 func truncate(s string, n int) string {
 	if len(s) > n {
+		for n > 0 && !utf8.RuneStart(s[n]) {
+			n--
+		}
 		return s[:n] + "…"
 	}
 	return s

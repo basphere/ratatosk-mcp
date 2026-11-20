@@ -4,8 +4,10 @@ package tools
 // one a measured failure.
 
 import (
+	"strconv"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
@@ -46,5 +48,26 @@ func TestResolveTarget(t *testing.T) {
 	}
 	if k, note := resolveTarget(cur, "nonsense"); k != nil || note == "" {
 		t.Errorf("unparseable target honored: %v %q", k, note)
+	}
+}
+
+// version_source is echoed in the note, bounded at 80 bytes, and the bound
+// could fall inside a multi-byte character, which %q then wrote out as \x
+// escapes of half a character (found 2026-11-21).
+func TestConfessionNoteKeepsWholeCharacters(t *testing.T) {
+	const n = 80
+	for _, ch := range []string{"가", "あ", "😀"} {
+		for k := 1; k < len(ch); k++ { // the bound falls k bytes into the character
+			src := "inferred " + strings.Repeat("a", n-k-len("inferred ")) + strings.Repeat(ch, 10)
+			note := confessionNote(src)
+			i, j := strings.Index(note, "("), strings.Index(note, ") — ")
+			if i < 0 || j < i {
+				t.Fatalf("no quoted source in %q", note)
+			}
+			quoted, err := strconv.Unquote(note[i+1 : j])
+			if kept := strings.TrimSuffix(quoted, "…"); err != nil || !utf8.ValidString(quoted) || len(kept) > n || kept != src[:n-k] || kept == quoted {
+				t.Errorf("version_source cut %d bytes into %q: the note quotes %s", k, ch, note[i+1:j])
+			}
+		}
 	}
 }

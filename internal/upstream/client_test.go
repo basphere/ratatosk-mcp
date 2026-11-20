@@ -7,10 +7,13 @@ package upstream_test
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/basphere/ratatosk-mcp/internal/logging"
 	"github.com/basphere/ratatosk-mcp/internal/metrics"
@@ -80,5 +83,38 @@ func TestMetricsUpstreamOutcomes(t *testing.T) {
 	}
 	if got := metricstest.Sum(s, "ratatosk_mcp_upstream_requests_total{"); got != 6 {
 		t.Errorf("%v upstream requests counted, want 6", got)
+	}
+}
+
+// The error body /v2 answers with is echoed to the caller, bounded at 400
+// bytes, and the bound could fall inside a multi-byte character (found
+// 2026-11-21). The cut now ends before that character.
+func TestHTTPErrorBodyKeepsWholeCharacters(t *testing.T) {
+	const n = 400
+	errorBody := func(body string) (string, *upstream.HTTPError) {
+		t.Helper()
+		api := upstreamtest.Client(t, httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			w.Write([]byte(body))
+		})), nil)
+		_, err := api.ReleaseRaw(context.Background(), "etcd", "v9.9.9", "", false)
+		var he *upstream.HTTPError
+		if !errors.As(err, &he) {
+			t.Fatalf("want an HTTPError, got %v", err)
+		}
+		return err.Error(), he
+	}
+	for _, ch := range []string{"가", "あ", "😀"} {
+		for k := 1; k < len(ch); k++ { // the bound falls k bytes into the character
+			body := strings.Repeat("a", n-k) + strings.Repeat(ch, 10)
+			msg, he := errorBody(body)
+			if kept := strings.TrimSuffix(he.Body, "…"); !utf8.ValidString(msg) || len(kept) > n || kept != body[:n-k] || kept == he.Body {
+				t.Errorf("error body cut %d bytes into %q: %q", k, ch, he.Body[len(he.Body)-12:])
+			}
+		}
+	}
+	// A body that is not UTF-8 at all is out of scope; the cut still ends, in bounds.
+	if _, he := errorBody(strings.Repeat("\x80", 500)); len(he.Body) > n+len("…") {
+		t.Errorf("not UTF-8: %d bytes", len(he.Body))
 	}
 }

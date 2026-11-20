@@ -24,6 +24,7 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+	"unicode/utf8"
 
 	"github.com/basphere/ratatosk-mcp/internal/logging"
 	"github.com/basphere/ratatosk-mcp/internal/metrics"
@@ -166,8 +167,15 @@ func (e *HTTPError) Error() string {
 	return fmt.Sprintf("%s: HTTP %d: %s", e.Path, e.Status, e.Body)
 }
 
+// truncate bounds s to n bytes, with "…" when it cut something, and never
+// splits a character: when byte n falls inside a multi-byte one, it backs off
+// to where that character starts (2026-11-21). internal/tools has the same
+// function for the caller's text it echoes; see there.
 func truncate(s string, n int) string {
 	if len(s) > n {
+		for n > 0 && !utf8.RuneStart(s[n]) {
+			n--
+		}
 		return s[:n] + "…"
 	}
 	return s
