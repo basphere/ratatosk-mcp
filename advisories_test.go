@@ -280,7 +280,32 @@ func TestDistinctAdvisoriesLeaveOutWhatIsAlreadyFixed(t *testing.T) {
 	if b.Summary.Warnings["critical"] != 1 {
 		t.Errorf("warnings.critical %d: the per-release sum keeps counting the release as published", b.Summary.Warnings["critical"])
 	}
+	// The left-out critical change is said beside the figure that still counts
+	// it, in the summary and on its release; the release document is not touched.
+	if got := b.Summary.Warnings[criticalExcludedKey]; got != 1 {
+		t.Errorf("summary.warnings.%s %d, want 1", criticalExcludedKey, got)
+	}
+	if got := (*b.Releases)[0].Warnings[criticalExcludedKey]; got != 1 {
+		t.Errorf("release warnings.%s %d, want 1", criticalExcludedKey, got)
+	}
+	if _, ok := docs[0].Warnings[criticalExcludedKey]; ok {
+		t.Error("the cached release document got the key")
+	}
+	raw, _ := json.Marshal(b.Summary.Warnings)
+	if string(raw) != `{"critical":1,"critical_excluded_on_branch":1,"no_downgrade":0}` {
+		t.Errorf("warnings as answered: %s", raw)
+	}
 	assertSameAs100(t, docs, fixed, running)
+
+	// Nothing critical left out: the key is absent, in the summary and on the row.
+	fixed = map[string]bool{"CVE-2026-2222": true}
+	b, settled = buildBriefing(docs, fixed, running)
+	if _, ok := b.Summary.Warnings[criticalExcludedKey]; ok || settled != 1 {
+		t.Errorf("a high change left out: settled %d, warnings %v", settled, b.Summary.Warnings)
+	}
+	if _, ok := (*b.Releases)[0].Warnings[criticalExcludedKey]; ok {
+		t.Error("the release row carries the key with no critical change left out")
+	}
 }
 
 func TestRecognisedAdvisoryIDs(t *testing.T) {

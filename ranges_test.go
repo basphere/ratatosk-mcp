@@ -134,6 +134,22 @@ func diffFrom100(docs []*v2Release, fixed map[string]bool, running []int) string
 		}
 	}
 	cur.Upgrade, cur.ChangesMore, cur.LaterInRange, cur.ExcludedOnBranch, cur.folded = nil, nil, nil, nil, 0
+	// warnings.critical_excluded_on_branch (1.2.0) is taken off the summary
+	// and the release rows; what is left must be 1.0.0's.
+	if _, ok := sum.Warnings[criticalExcludedKey]; ok {
+		sum.Warnings = maps.Clone(sum.Warnings)
+		delete(sum.Warnings, criticalExcludedKey)
+	}
+	if cur.Releases != nil {
+		rows := slices.Clone(*cur.Releases)
+		for i := range rows {
+			if _, ok := rows[i].Warnings[criticalExcludedKey]; ok {
+				rows[i].Warnings = maps.Clone(rows[i].Warnings)
+				delete(rows[i].Warnings, criticalExcludedKey)
+			}
+		}
+		cur.Releases = &rows
+	}
 	if oldSettled != curSettled {
 		return fmt.Sprintf("settled %d, 1.0.0 %d", curSettled, oldSettled)
 	}

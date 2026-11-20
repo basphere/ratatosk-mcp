@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"sort"
@@ -859,6 +860,12 @@ type excludedOnBranch struct {
 	Advisories []excludedAdvisory `json:"advisories"`
 }
 
+// criticalExcludedKey sits in summary.warnings and in a release's warnings,
+// right after "critical" (map keys go out sorted): how many of the critical
+// security changes counted there the briefing left out because the running
+// branch already fixed them. Present only when there is one.
+const criticalExcludedKey = "critical_excluded_on_branch"
+
 type excludedAdvisory struct {
 	ID       string          `json:"id"`
 	Severity json.RawMessage `json:"severity"`
@@ -1086,6 +1093,14 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 	var folded []briefChange            // security changes folded into an entry (or a backport) of their own release: each gets its line (1.2.0)
 	excluded := map[string]int{}        // advisory id as compared → the highest grade a left-out change gave it
 	excludedName := map[string]string{} // advisory id as compared → as the change spelled it
+	// settledCritical: how many of the left-out security changes are critical.
+	// warnings.critical — the release's own figure, as the website shows it —
+	// keeps counting them, so a range said "critical 1" for a change that was
+	// in no list: containerd v2.2.9 → v2.4.2, where v2.3.4's CVE-2026-95837
+	// was fixed on the 2.2 branch at v2.2.7. Claude runs reported that 1, Codex
+	// runs dropped it (24 runs, 2026-11-20). The count goes out beside the
+	// figure it explains, as warnings.critical_excluded_on_branch.
+	settledCritical := 0
 	for _, d := range docs {
 		inRelease := map[string]int{} // advisory key → the entry this release's changes stand under
 		var touched []string          // advisory key + branch pairs to mark once the release is read
@@ -1105,6 +1120,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 			rr.Warnings = d.Warnings
 		}
 		*b.Releases = append(*b.Releases, rr)
+		relSettledCritical := 0
 		for _, c := range d.Changes {
 			if !slices.Contains(decisionKinds, c.Kind) {
 				continue
@@ -1125,6 +1141,9 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						g := 0
 						if c.Severity != nil {
 							g = gradeRankOf(*c.Severity)
+						}
+						if g == gradeRankOf("critical") {
+							relSettledCritical++
 						}
 						for _, raw := range c.Advisories {
 							id := strings.ToUpper(strings.TrimSpace(raw))
@@ -1209,6 +1228,16 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 		for _, t := range touched {
 			advOnBranch[t] = true
 		}
+		if relSettledCritical > 0 {
+			// A copy: d.Warnings belongs to the cached release document.
+			w := maps.Clone(d.Warnings)
+			w[criticalExcludedKey] = relSettledCritical
+			(*b.Releases)[len(*b.Releases)-1].Warnings = w
+			settledCritical += relSettledCritical
+		}
+	}
+	if settledCritical > 0 {
+		b.Summary.Warnings[criticalExcludedKey] = settledCritical
 	}
 	// Kind first (security leads); security by grade, so a cap cuts the least
 	// severe; then, inside a grade and inside the kinds that have no grade,
@@ -1886,7 +1915,8 @@ var stackHint = "briefing: a data classification, not a recommendation; changes 
 	"not_stated means the notes name no narrower scope. What is not listed is not absent: changes carries entries " +
 	"with a body, and changes_more has one line for every other security, breaking and deprecation change " +
 	"(changes_omitted counts them). Two things stand elsewhere: the same fix on another branch is a version in its " +
-	"entry's also_in, and security changes your branch already fixed are in excluded_on_branch. " + importantFixesCounted +
+	"entry's also_in, and security changes your branch already fixed are in excluded_on_branch " +
+	"(warnings.critical_excluded_on_branch: how many of warnings.critical they are). " + importantFixesCounted +
 	" A briefing has no " +
 	"evidence quotes: before you report a change, read its body and evidence with get_release(project, version, " +
 	"changes:[id, …]). Read every before_upgrade item. summary.counts and summary.warnings add up every release in " +

@@ -324,7 +324,8 @@ func newServer() *mcp.Server {
 			"release lines counts once per release); summary.distinct_advisories counts each advisory once. " +
 			"Security changes citing no advisory id are not in distinct_advisories (summary.counts.security has them), " +
 			"and summary.counts and summary.warnings include the changes excluded_on_branch counts (it names each " +
-			"advisory once, the most severe first). " +
+			"advisory once, the most severe first); warnings.critical_excluded_on_branch, in summary and on a release, " +
+			"says how many of warnings.critical are among them, so critical minus that is what the upgrade newly fixes. " +
 			"affects decides who a change touches: status stated or inferred means it applies ONLY " +
 			"IF that holds in this setup — check before you report it; not_stated means the release notes name no " +
 			"narrower scope. gaps lists where version numbers skip (releases in between may be unanalyzed); " +

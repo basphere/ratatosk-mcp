@@ -38,6 +38,13 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `summary.warnings` still counts them,
   which is why containerd's briefing said `critical: 1` beside
   `distinct_advisories.critical: 0`; `note` keeps its sentence.
+  **`warnings.critical_excluded_on_branch`**, in `summary` and on a release
+  of `releases`, says how many of `warnings.critical` are such changes:
+  containerd v2.2.9 to v2.4.2 answers `critical: 1,
+  critical_excluded_on_branch: 1` (v2.3.4's CVE-2026-95837, fixed on the 2.2
+  branch at v2.2.7), so the upgrade newly fixes no critical change. Absent
+  when no critical change was left out. `warnings.critical` itself stays the
+  figure the website shows for the release.
 - **`version_read_as` on a `check_stack` component and in `check_upgrade`**:
   an image tag with a build suffix after the version (cilium-envoy's
   `v1.37.6-1789133542-<commit>`, or `v1.37.6-cbec91f`) is checked as the
