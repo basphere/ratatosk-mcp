@@ -318,8 +318,13 @@ func Build(docs []*release.Doc, alreadyFixed map[string]bool, runningKey []int) 
 			advOnBranch[t] = true
 		}
 		if relSettledCritical > 0 {
-			// A copy: d.Warnings belongs to the cached release document.
+			// A copy: d.Warnings belongs to the cached release document. A
+			// document without warnings gives none to copy, and writing into
+			// that nil map panicked (independent review, 2026-11-21).
 			w := maps.Clone(d.Warnings)
+			if w == nil {
+				w = map[string]int{}
+			}
 			w[criticalExcludedKey] = relSettledCritical
 			(*b.Releases)[len(*b.Releases)-1].Warnings = w
 			settledCritical += relSettledCritical

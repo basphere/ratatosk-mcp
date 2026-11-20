@@ -295,3 +295,86 @@ func TestTruncateKeepsWholeCharacters(t *testing.T) {
 		t.Errorf("get_release on an unknown project cut inside 가: isError=%v %q", res.IsError, text)
 	}
 }
+
+// Every tool answers the emptiest /v2 — an answer or a tool error, never a
+// panic. A release document without warnings made check_stack and
+// check_upgrade write into a nil map, and the panic took the whole server down
+// (independent review, 2026-11-21).
+func TestToolsAnswerTheSparsestUpstream(t *testing.T) {
+	ctx := context.Background()
+	stack := func(c stackComponent, detail string) checkStackArgs {
+		return checkStackArgs{Components: []stackComponent{c}, Detail: detail}
+	}
+	calls := []struct {
+		name string
+		call func(h *handlers) (*mcp.CallToolResult, any, error)
+	}{
+		{"list_projects", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.listProjectsTool(ctx, nil, listProjectsArgs{})
+		}},
+		{"list_releases", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.listReleasesTool(ctx, nil, listReleasesArgs{})
+		}},
+		{"list_releases project", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.listReleasesTool(ctx, nil, listReleasesArgs{Project: "etcd"})
+		}},
+		{"get_release", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.getReleaseTool(ctx, nil, getReleaseArgs{Project: "etcd", Version: "v3.6.8"})
+		}},
+		{"get_release latest", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.getReleaseTool(ctx, nil, getReleaseArgs{Project: "etcd"})
+		}},
+		{"get_release kinds", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.getReleaseTool(ctx, nil, getReleaseArgs{Project: "etcd", Version: "v3.6.8", Kinds: stringList{"security"}})
+		}},
+		{"get_release changes", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.getReleaseTool(ctx, nil, getReleaseArgs{Project: "etcd", Version: "v3.6.8", Changes: stringList{"etcd@v3.6.8#a"}})
+		}},
+		{"get_release changes without version", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.getReleaseTool(ctx, nil, getReleaseArgs{Project: "etcd", Changes: stringList{"etcd@v3.6.8#a"}})
+		}},
+		{"search", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.searchTool(ctx, nil, searchArgs{Q: "etcd"})
+		}},
+		{"search project", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.searchTool(ctx, nil, searchArgs{Q: "CVE-2026-0001", Project: "etcd"})
+		}},
+		{"check_upgrade", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.checkUpgradeTool(ctx, nil, checkUpgradeArgs{Project: "etcd", From: "v3.5.30"})
+		}},
+		{"check_upgrade same_minor", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.checkUpgradeTool(ctx, nil, checkUpgradeArgs{Project: "etcd", From: "v3.5.30", SameMinor: true})
+		}},
+		{"check_upgrade full", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.checkUpgradeTool(ctx, nil, checkUpgradeArgs{Project: "etcd", From: "v3.5.30", Detail: "full", Kinds: stringList{"security"}})
+		}},
+		{"check_stack", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.checkStackTool(ctx, nil, stack(stackComponent{Project: "etcd", Version: "v3.5.30"}, ""))
+		}},
+		{"check_stack target", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.checkStackTool(ctx, nil, stack(stackComponent{Project: "etcd", Version: "v3.5.30", TargetVersion: "v3.6.8"}, ""))
+		}},
+		{"check_stack same_minor", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.checkStackTool(ctx, nil, stack(stackComponent{Project: "etcd", Version: "v3.5.30", SameMinor: true}, ""))
+		}},
+		{"check_stack full", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.checkStackTool(ctx, nil, stack(stackComponent{Project: "etcd", Version: "v3.5.30"}, "full"))
+		}},
+	}
+	for _, s := range upstreamtest.SparseShapes() {
+		for _, c := range calls {
+			func() {
+				defer func() {
+					if r := recover(); r != nil {
+						t.Errorf("%s on %s: panic: %v", c.name, s.Name, r)
+					}
+				}()
+				h := withAPI(t, httptest.NewServer(s.Handler()))
+				res, _, err := c.call(h)
+				if err != nil || res == nil || len(res.Content) == 0 {
+					t.Errorf("%s on %s: no answer (err %v)", c.name, s.Name, err)
+				}
+			}()
+		}
+	}
+}

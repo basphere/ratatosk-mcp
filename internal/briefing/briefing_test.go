@@ -14,6 +14,7 @@ import (
 
 	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
+	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
 // Carried over from 0.x: the cut briefTextChars measures is visible and keeps a
@@ -459,5 +460,43 @@ func TestExcludedOnBranchNamesEveryAdvisory(t *testing.T) {
 	}
 	if string(ex.Advisories[0].Severity) != `"high"` || string(ex.Advisories[4].Severity) != `"high"` || string(ex.Advisories[5].Severity) != "null" {
 		t.Errorf("the most severe are kept: %+v", ex.Advisories[:6])
+	}
+}
+
+// Build answers the emptiest release documents /v2 could send, with ids the
+// running branch already fixed and without. One without warnings whose
+// critical security change was left out made Build write into a nil map, and
+// the panic took the whole server down (independent review, 2026-11-21): the
+// release now says critical_excluded_on_branch 1 in warnings of its own.
+func TestBuildAnswersTheSparsestDocuments(t *testing.T) {
+	running := version.NormalizeVersion("v3.5.30")
+	for _, s := range upstreamtest.SparseShapes() {
+		d, err := release.Parse([]byte(s.Doc("v3.6.8")))
+		if err != nil {
+			t.Fatalf("%s: %v", s.Name, err)
+		}
+		for _, fixed := range []map[string]bool{nil, {"CVE-2026-0001": true}} {
+			for _, key := range [][]int{nil, running} {
+				func() {
+					defer func() {
+						if r := recover(); r != nil {
+							t.Errorf("%s, fixed %v, running %v: panic: %v", s.Name, fixed, key, r)
+						}
+					}()
+					b, _ := Build([]*release.Doc{d, d}, fixed, key)
+					b.Narrow(map[string]bool{"security": true})
+					if _, err := json.Marshal(b); err != nil {
+						t.Errorf("%s: %v", s.Name, err)
+					}
+					if s.Name == "null items" && fixed != nil && key != nil {
+						for _, r := range *b.Releases {
+							if r.Warnings[criticalExcludedKey] != 1 {
+								t.Errorf("%s: release warnings %v, want %s 1", s.Name, r.Warnings, criticalExcludedKey)
+							}
+						}
+					}
+				}()
+			}
+		}
 	}
 }
