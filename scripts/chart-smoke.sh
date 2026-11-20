@@ -34,15 +34,15 @@ KAGENT_CRDS_VERSIONS="${KAGENT_CRDS_VERSIONS:-0.10.4 1.0.0-rc1}"
 # controller), so it only has to be a valid name; the Agent object is what we test.
 HARNESS=smoke
 
-# main.go is the source of truth for what tools exist.
+# internal/tools (one file per tool) is the source of truth for what tools exist.
 # The spacing after "Name:" is gofmt's business, not ours: it aligns struct
 # fields, so a single-space pattern silently matched nothing the first time a
 # field longer than "Name" joined the literal. With set -e that exits 1 before
 # printing anything, which reads as an install failure rather than a broken
 # regex (v0.7.1, 2026-08-10). Match any run of whitespace, and refuse to
 # continue on an empty list instead of rehearsing against nothing.
-TOOLS="$(grep -oE '^[[:space:]]*Name:[[:space:]]+"[a-z_]+"' main.go | grep -oE '"[a-z_]+"' | tr -d '"' | sort)"
-[ -n "$TOOLS" ] || { echo "  ✗ no tool names found in main.go — the extraction pattern is stale, not the build" >&2; exit 1; }
+TOOLS="$(grep -rhoE '^[[:space:]]*Name:[[:space:]]+"[a-z_]+"' --include='*.go' --exclude='*_test.go' internal/tools | grep -oE '"[a-z_]+"' | tr -d '"' | sort)"
+[ -n "$TOOLS" ] || { echo "  ✗ no tool names found in internal/tools — the extraction pattern is stale, not the build" >&2; exit 1; }
 
 pass() { echo "  ✓ $*"; }
 fail() { echo "  ✗ $*" >&2; exit 1; }
@@ -95,7 +95,7 @@ reset_kagent() {
   fi
 }
 
-# The Agent the install produced must bind every tool main.go registers.
+# The Agent the install produced must bind every tool internal/tools registers.
 assert_agent() {
   local how="$1" listed
   listed="$(kubectl -n $NS get "agents.$GROUP" ratatosk-agent -o jsonpath="$AGENT_TOOLS" | tr ' ' '\n' | sort)"
@@ -195,8 +195,8 @@ names = sorted(t["name"] for t in payload(f"{work}/mcp-tools.json")["result"]["t
 open(f"{work}/mcp-served-tools", "w").write("\n".join(names))
 print(f"  ✓ tools/list serves {len(names)}: {' '.join(names)}")
 PY
-    [ "$(cat "$WORK/mcp-served-tools")" = "$TOOLS" ] || fail "served tools differ from the ones registered in main.go"
-    pass "served tools match main.go"
+    [ "$(cat "$WORK/mcp-served-tools")" = "$TOOLS" ] || fail "served tools differ from the ones registered in internal/tools"
+    pass "served tools match internal/tools"
 
     kill "$PF_PID" 2>/dev/null || true; PF_PID=""
   fi
@@ -232,8 +232,8 @@ if got_version != want:
 open(f"{work}/stdio-tools", "w").write("\n".join(got_tools or []))
 print(f"  ✓ stdio serves {got_version} with {len(got_tools or [])} tools")
 PY
-  [ "$(cat "$WORK/stdio-tools")" = "$TOOLS" ] || fail "stdio tools differ from main.go"
-  pass "stdio tools match main.go"
+  [ "$(cat "$WORK/stdio-tools")" = "$TOOLS" ] || fail "stdio tools differ from internal/tools"
+  pass "stdio tools match internal/tools"
 else
   echo "  – docker unavailable, skipped"
 fi

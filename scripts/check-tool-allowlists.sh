@@ -3,16 +3,16 @@
 # in YAML nothing type-checks: the chart (rendered for kagent 0.x and 1.x) and
 # the two example sets. v0.4.0 shipped list_releases invisible to both install
 # paths for exactly that reason, and kagent 1.x compiles a misspelled name into
-# a ready agent that simply never calls the tool. main.go is the source of
-# truth; every allowlist must name exactly its tools.
+# a ready agent that simply never calls the tool. internal/tools (one file per tool) is the
+# source of truth; every allowlist must name exactly its tools.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
 # gofmt aligns struct fields, so "Name:" can be followed by several spaces; a
 # single-space pattern silently matched nothing after the 2026-08-10 rewrite.
-TOOLS="$(grep -oE '^[[:space:]]*Name:[[:space:]]+"[a-z_]+"' main.go | grep -oE '"[a-z_]+"' | tr -d '"' | sort)"
-[ -n "$TOOLS" ] || { echo "no tool names found in main.go: the extraction pattern is stale" >&2; exit 1; }
+TOOLS="$(grep -rhoE '^[[:space:]]*Name:[[:space:]]+"[a-z_]+"' --include='*.go' --exclude='*_test.go' internal/tools | grep -oE '"[a-z_]+"' | tr -d '"' | sort)"
+[ -n "$TOOLS" ] || { echo "no tool names found in internal/tools: the extraction pattern is stale" >&2; exit 1; }
 echo "registered: $(echo "$TOOLS" | tr '\n' ' ')"
 
 RENDER="$(mktemp -d)"
@@ -32,7 +32,7 @@ for f in "${FILES[@]}"; do
   # k8s_ ones belong to kagent's own tool server.
   LISTED="$(grep -oE '^ *- [a-z0-9_]+$' "$f" | sed 's/^ *- //' | grep -v '^k8s_' | sort)"
   if [ "$LISTED" != "$TOOLS" ]; then
-    echo "::error file=$f::tool allowlist disagrees with main.go"
+    echo "::error file=$f::tool allowlist disagrees with internal/tools"
     diff <(echo "$TOOLS") <(echo "$LISTED") || true
     fail=1
   fi

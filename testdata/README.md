@@ -61,4 +61,4 @@ cd /tmp/mcp-release && go build -o ratatosk-mcp .
 
 Run against v1.1.0 on 2026-11-21, this gives the committed
 `tools-list-1.1.0.json` as JSON value for value; that file was written by
-Go's encoder, which spells `<` as `<`, and the test compares values.
+Go's encoder, which spells `<` as `\u003c`, and the test compares values.

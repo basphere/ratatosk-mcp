@@ -21,7 +21,7 @@ jobs:
       # 0.x and 1.x) and the two example sets. v0.4.0 shipped list_releases
       # invisible to both install paths for exactly that reason, and kagent 1.x
       # turns a misspelled name into a ready agent that never calls the tool.
-      # main.go is the source of truth; every allowlist must agree with it.
+      # internal/tools is the source of truth; every allowlist must agree with it.
       - name: kagent tool allowlists match the registered tools
         run: ./scripts/check-tool-allowlists.sh
 
