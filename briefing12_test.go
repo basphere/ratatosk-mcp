@@ -305,6 +305,43 @@ func TestSummaryLeadsWithDistinctAdvisories(t *testing.T) {
 	}
 }
 
+// distinct_advisories leaves out an id the running branch already fixed, even
+// when a change that stays listed cites it beside others: envoy v1.37.6 →
+// v1.40.2 counted nine critical advisories for one (2026-11-20).
+func TestDistinctAdvisoriesLeaveOutWhatTheBranchFixed(t *testing.T) {
+	crit := "critical"
+	bundle := v2Change{ID: "e#bundle", Kind: "security", Severity: &crit,
+		Advisories: []string{"CVE-2026-111497", "GHSA-3wvj-j6qm-62mr", "CVE-2026-73512", "CVE-2026-73513"}}
+	own := v2Change{ID: "e#brotli", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-111497", "GHSA-3wvj-j6qm-62mr"}}
+	docs := []*v2Release{
+		{Version: "v1.37.8", Changes: []v2Change{own}},
+		{Version: "v1.40.0", Changes: []v2Change{bundle}},
+	}
+	fixed := map[string]bool{"CVE-2026-73512": true, "CVE-2026-73513": true}
+	b, settled := buildBriefing(docs, fixed, []int{1, 37, 6})
+	if settled != 0 {
+		t.Fatalf("settled %d: the bundle cites ids the branch has not fixed and stays listed", settled)
+	}
+	if got, want := b.Summary.DistinctAdvisories, (distinctAdvisories{Total: 1, Critical: 1}); got != want {
+		t.Errorf("distinct advisories %+v, want %+v", got, want)
+	}
+	// With nothing known about the branch, every id counts, as in 1.1.0.
+	b, _ = buildBriefing(docs, nil, []int{1, 37, 6})
+	if b.Summary.DistinctAdvisories.Total != 3 {
+		t.Errorf("without a fixed set, total %d, want 3", b.Summary.DistinctAdvisories.Total)
+	}
+}
+
+// later_in_range lists an event recorded twice on a release once.
+func TestLaterInRangeListsARepeatedEventOnce(t *testing.T) {
+	ev := json.RawMessage(`{"seq":1,"type":"regression_fixed","version":"v1.38.0","fixed_in":"v1.38.7","title":"t"}`)
+	other := json.RawMessage(`{"seq":2,"type":"regression_fixed","version":"v1.38.0","fixed_in":"v1.39.4","title":"t"}`)
+	b, _ := buildBriefing([]*v2Release{{Version: "v1.38.0", Later: []json.RawMessage{ev, ev, other}}}, nil, nil)
+	if n := len(*b.LaterInRange); n != 2 {
+		t.Errorf("later_in_range has %d events, want 2", n)
+	}
+}
+
 // excluded_on_branch names every advisory left out, the most severe first;
 // security counts every change left out. (A cap of 20 with a count of the
 // rest stood here while answers were cut to a size; envoy v1.37.6 has 63.)

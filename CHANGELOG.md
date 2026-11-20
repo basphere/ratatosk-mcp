@@ -119,6 +119,15 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ### Fixed
 
+- **`summary.distinct_advisories` leaves out an advisory the running branch
+  already fixed, also when a change that stays listed cites it beside
+  others.** The docs said so and the count did not: envoy v1.37.6 to v1.40.2
+  answered `critical: 9` for one critical advisory, because v1.40.0's Brotli
+  entry carries forward twelve ids and eight of them, high and medium, were
+  fixed at or below v1.37.6. It now counts the advisories the upgrade still
+  fixes (that range: 6, one critical).
+- `later_in_range` lists an event the server records twice on one release
+  once.
 - **`check_upgrade` leaves out what `from`'s branch already fixed, as
   `check_stack` does.** It used to list every security change in range, so
   the same upgrade got two answers: containerd v2.2.9 to v2.4.2 omitted 42

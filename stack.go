@@ -1140,7 +1140,25 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						continue
 					}
 				}
-				tally.add(ix.advisories(c.Advisories), c.Severity)
+				// distinct_advisories counts what the upgrade still fixes: an id
+				// the running branch already carries is left out even when the
+				// change citing it stays listed, because it cites others too.
+				// Until 1.2.0 it was counted, at that change's grade: envoy
+				// v1.37.6 → v1.40.2 said "critical 9" for one critical advisory,
+				// as v1.40.0's Brotli entry carries forward twelve ids and eight
+				// of them — high and medium — were fixed at or below v1.37.6
+				// (three agent runs called the count unusable, 2026-11-20). On
+				// the running branch nothing is left out, as for the change.
+				counted := c.Advisories
+				if !onRunningBranch && len(alreadyFixed) > 0 {
+					counted = nil
+					for _, raw := range c.Advisories {
+						if !alreadyFixed[strings.ToUpper(strings.TrimSpace(raw))] {
+							counted = append(counted, raw)
+						}
+					}
+				}
+				tally.add(ix.advisories(counted), c.Severity)
 				if key != "" {
 					branch := key + "|" + branchOf(d.Version)
 					if i, ok := inRelease[key]; ok {
@@ -1237,13 +1255,18 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 	// that version". An advisory_after_release on a release in range is an
 	// advisory for a vulnerability that release already fixes, and on cilium
 	// v1.16.18's range it was 25 of the 34 events (spec "마", 2026-11-20).
+	// An event the server records twice on one release is listed once: envoy
+	// v1.38.0 carried the same regression_fixed event, byte for byte, two
+	// times (2026-11-20).
 	later := []json.RawMessage{}
+	seenLater := map[string]bool{}
 	for _, d := range docs {
 		for _, ev := range d.Later {
 			var e struct {
 				Type string `json:"type"`
 			}
-			if json.Unmarshal(ev, &e) == nil && (e.Type == "regression_fixed" || e.Type == "known_issue_fixed") {
+			if json.Unmarshal(ev, &e) == nil && (e.Type == "regression_fixed" || e.Type == "known_issue_fixed") && !seenLater[string(ev)] {
+				seenLater[string(ev)] = true
 				later = append(later, ev)
 			}
 		}
