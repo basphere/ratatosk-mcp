@@ -32,8 +32,8 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 - **`excluded_on_branch` in `check_stack` and `check_upgrade`**: the security
   changes left out because the running version's branch already fixed their
   advisories (`security`, how many) and those advisories with their grade
-  (`advisories: [{id, severity}]`, up to 20, the most severe, with
-  `advisories_omitted` counting the rest). `summary.warnings` still counts them,
+  (`advisories: [{id, severity}]`, each id once, the most severe first).
+  `summary.warnings` still counts them,
   which is why containerd's briefing said `critical: 1` beside
   `distinct_advisories.critical: 0`; `note` keeps its sentence.
 - **`version_read_as` on a `check_stack` component and in `check_upgrade`**:
@@ -102,11 +102,13 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   = `changes` + `changes_omitted` + `excluded_on_branch.security` + the
   backports an `also_in` names. Argo CD v2.10.7 to v3.6.2 counted 103 security
   changes and showed 72 with no way to tell where 31 went; they are the 31
-  backports named in `also_in`.
-- **`excluded_on_branch.advisories` names at most 20 advisories**, the most
-  severe, and `advisories_omitted` counts the rest; `security` still counts
-  every change left out.
-- `hint` is 1,540 characters instead of 3,226 and keeps what reading the
+  backports named in `also_in`. A second security change of a backport
+  release that cites the same advisories has its line as well: dapr v1.15.13
+  counted 129 and accounted for 128 — v1.19.1's "internal gRPC proxy
+  forwarding to other apps blocked" cites the GHSA of the token-bypass fix
+  that named v1.19.1 in its `also_in`, and was in no list (present in 1.1.0
+  too).
+- `hint` is 1,696 characters instead of 3,226 and keeps what reading the
   answer needs; what each field means moved to the tool descriptions. It and
   the descriptions say that what is not in `changes` has its line in
   `changes_more`, and that a briefing has no evidence quotes, so the body and

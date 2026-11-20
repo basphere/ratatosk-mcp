@@ -275,7 +275,7 @@ func newServer() *mcp.Server {
 			"fields are described there), or " +
 			"every release in range verbatim (detail:\"full\"); kinds keeps the changes of those kinds. Read before_upgrade of every release in range — " +
 			"prerequisites and upgrade guides usually sit on the release that starts a new minor. Every security, breaking " +
-			"and deprecation change that is not in changes has its line in changes_more; the briefing carries no evidence quotes, so read the body " +
+			"and deprecation change that changes_omitted counts has its line in changes_more; the briefing carries no evidence quotes, so read the body " +
 			"and evidence of the entries you report with get_release(project, version, changes:[id, …]). A security " +
 			"change whose advisories from's own branch already fixed at or below from is left out and counted in " +
 			"excluded_on_branch, as check_stack does; if the releases that tell cannot be read, nothing is left out " +
@@ -310,7 +310,7 @@ func newServer() *mcp.Server {
 			"(inside a kind, the ones that say what to do first); changes_omitted counts per kind what is not in " +
 			"changes (left out on your branch, in excluded_on_branch, and backports folded into an entry's also_in " +
 			"aside). changes_more has one line — version, id, kind, title, severity, affects, also_in — for every " +
-			"security, breaking and deprecation change that is not in changes: none of those three kinds is left " +
+			"security, breaking and deprecation change changes_omitted counts: none of those three kinds is left " +
 			"out, however long the range. Important fixes past the 10 in changes are only counted, unless kinds " +
 			"names important_fixes: then each has its line too. The answer is not cut to a size; a long range or " +
 			"many components make a long answer, and the way to a shorter one is a narrower call — kinds, fewer " +
@@ -322,8 +322,8 @@ func newServer() *mcp.Server {
 			"summary.counts and summary.warnings add up every release in range (one fix on several " +
 			"release lines counts once per release); summary.distinct_advisories counts each advisory once. " +
 			"Security changes citing no advisory id are not in distinct_advisories (summary.counts.security has them), " +
-			"and summary.counts and summary.warnings include the changes excluded_on_branch counts (it names up to 20 " +
-			"advisories, the most severe, and counts the rest in advisories_omitted). " +
+			"and summary.counts and summary.warnings include the changes excluded_on_branch counts (it names each " +
+			"advisory once, the most severe first). " +
 			"affects decides who a change touches: status stated or inferred means it applies ONLY " +
 			"IF that holds in this setup — check before you report it; not_stated means the release notes name no " +
 			"narrower scope. gaps lists where version numbers skip (releases in between may be unanalyzed); " +

@@ -1,7 +1,6 @@
 package main
 
-// What 1.2.0 adds to a briefing: changes_more under the
-// answer's size budget, before_upgrade with bodies and grouped texts,
+// What 1.2.0 adds to a briefing: changes_more, before_upgrade with bodies and grouped texts,
 // later_in_range, excluded_on_branch, version_read_as and same_minor, and
 // check_upgrade settling what from's branch already fixed. Each case replays
 // a measured answer (docs/design/mcp-answer-shape.md in the ratatosk app
@@ -77,8 +76,8 @@ func TestBeforeUpgradeCarriesBodiesFoldedAndGroupsRecurringTexts(t *testing.T) {
 
 // Every change the caps cut is listed in one line; a sibling folded into an
 // entry of its own release is listed too (coredns v1.14.7 → v1.15.0: eight
-// security changes, five listed, nothing omitted), a backport's sibling stands
-// under also_in with the backport.
+// security changes, five listed, nothing omitted), and so is a backport's
+// sibling.
 func TestBriefingListsWhatDidNotFitInOneLine(t *testing.T) {
 	sec := func(id string, title string, advs ...string) v2Change {
 		return v2Change{ID: id, Kind: "security", Title: title, Advisories: advs, Affects: &v2Attr{Text: "x", Status: "stated", Reason: "r"}}
@@ -119,10 +118,32 @@ func TestBriefingListsWhatDidNotFitInOneLine(t *testing.T) {
 			t.Errorf("the folded sibling %s is not in changes_more %v", id, lines)
 		}
 	}
-	for _, id := range []string{"c#h2-bp", "c#trailer-bp"} {
-		if slices.Contains(lines, id) || slices.Contains(entries, id) {
-			t.Errorf("the backport and its sibling stand under also_in, not in a list: %s", id)
+	// The backport stands under also_in. Its sibling — another change of the
+	// backport release citing the same advisories — is a change of its own and
+	// has its line: left out, dapr v1.15.13 accounted for 128 of 129 security
+	// changes (independent review, 2026-11-20).
+	if slices.Contains(lines, "c#h2-bp") || slices.Contains(entries, "c#h2-bp") {
+		t.Error("the backport stands under also_in, not in a list: c#h2-bp")
+	}
+	if !slices.Contains(lines, "c#trailer-bp") {
+		t.Errorf("the backport's sibling c#trailer-bp is not in changes_more %v", lines)
+	}
+	// Every security change is accounted for: an entry, a line counted in
+	// changes_omitted, or a version in an also_in.
+	nSec, also := 0, 0
+	for _, c := range b.Changes {
+		if c.Kind == "security" {
+			nSec++
+			also += len(c.AlsoIn)
 		}
+	}
+	for _, l := range b.ChangesMore {
+		if l.Kind == "security" {
+			also += len(l.AlsoIn)
+		}
+	}
+	if got := nSec + b.ChangesOmitted["security"] + also; got != 7 {
+		t.Errorf("security changes accounted for: %d entries + %d omitted + %d in also_in = %d, want all 7", nSec, b.ChangesOmitted["security"], also, got)
 	}
 	if b.ChangesOmitted["breaking"] != 5 {
 		t.Fatalf("omitted %v", b.ChangesOmitted)
@@ -275,9 +296,10 @@ func TestSummaryLeadsWithDistinctAdvisories(t *testing.T) {
 	}
 }
 
-// excluded_on_branch names at most 20 advisories, the most severe; security
-// still counts every change left out.
-func TestExcludedOnBranchNamesTwentyAdvisories(t *testing.T) {
+// excluded_on_branch names every advisory left out, the most severe first;
+// security counts every change left out. (A cap of 20 with a count of the
+// rest stood here while answers were cut to a size; envoy v1.37.6 has 63.)
+func TestExcludedOnBranchNamesEveryAdvisory(t *testing.T) {
 	high := "high"
 	var past, cur []v2Change
 	for i := 0; i < 30; i++ {
@@ -295,7 +317,7 @@ func TestExcludedOnBranchNamesTwentyAdvisories(t *testing.T) {
 	}
 	b, settled := buildBriefing([]*v2Release{{Version: "v2.0.0", Changes: cur}}, fixed, []int{1, 0, 0})
 	ex := b.ExcludedOnBranch
-	if settled != 30 || ex == nil || ex.Security != 30 || len(ex.Advisories) != maxExcludedAdvisories || ex.AdvisoriesOmitted != 10 {
+	if settled != 30 || ex == nil || ex.Security != 30 || len(ex.Advisories) != 30 {
 		t.Fatalf("excluded %+v", ex)
 	}
 	if string(ex.Advisories[0].Severity) != `"high"` || string(ex.Advisories[4].Severity) != `"high"` || string(ex.Advisories[5].Severity) != "null" {

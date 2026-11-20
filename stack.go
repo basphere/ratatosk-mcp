@@ -843,16 +843,7 @@ func lineOf(c briefChange) moreLine {
 type excludedOnBranch struct {
 	Security   int                `json:"security"`
 	Advisories []excludedAdvisory `json:"advisories"`
-	// AdvisoriesOmitted counts the ids past maxExcludedAdvisories, the least
-	// severe: envoy v1.37.6 → v1.40.2 named 63, about 2,800 characters of a
-	// component's share of the budget (2026-11-20). security still counts every
-	// change left out.
-	AdvisoriesOmitted int `json:"advisories_omitted,omitempty"`
 }
-
-// maxExcludedAdvisories bounds excluded_on_branch.advisories (the main
-// session's decision, 2026-11-20).
-const maxExcludedAdvisories = 20
 
 type excludedAdvisory struct {
 	ID       string          `json:"id"`
@@ -1050,8 +1041,9 @@ func advisoryKey(ids []string) string {
 //     trace at all. coredns v1.14.7 → v1.15.0 counted 8 security changes,
 //     listed 5 and omitted none — three Go fixes (an HTTP/2 crash, a trailer
 //     memory exhaustion, an x509 check) stood under one "Go 1.27.3" entry
-//     because their cards cite the same seven CVEs (2026-11-20). Not a
-//     backport's siblings: those stand under also_in with the backport.
+//     because their cards cite the same seven CVEs (2026-11-20). The
+//     same holds on a backport release: its first change stands under the
+//     entry's also_in, the others each get their line.
 //   - before_upgrade as upgradeItem, later_in_range, excluded_on_branch.
 func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey []int) (briefing, int) {
 	b := briefing{
@@ -1077,12 +1069,11 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 	// listed 47 extra entries and pushed five distinct advisories out of the
 	// cap of 20 (final review, same day; 36 of 37 repeats sat inside one release).
 	advOnBranch := map[string]bool{}
-	var folded []briefChange            // same-release siblings folded into an entry of their own release (1.2.0)
+	var folded []briefChange            // security changes folded into an entry (or a backport) of their own release: each gets its line (1.2.0)
 	excluded := map[string]int{}        // advisory id as compared → the highest grade a left-out change gave it
 	excludedName := map[string]string{} // advisory id as compared → as the change spelled it
 	for _, d := range docs {
 		inRelease := map[string]int{} // advisory key → the entry this release's changes stand under
-		ownEntry := map[string]bool{} // advisory key → that entry was made by this release, not a backport's also_in
 		var touched []string          // advisory key + branch pairs to mark once the release is read
 		onRunningBranch := false
 		if k := version.NormalizeVersion(d.Version); k != nil && runningKey != nil {
@@ -1148,9 +1139,17 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						// folding them dropped that instruction without a trace.
 						if !carriesItsOwn(c, b.Changes[i]) {
 							raiseSeverity(&b.Changes[i], c.Severity)
-							if ownEntry[key] {
-								folded = append(folded, newBriefChange(d.Version, c, key))
-							}
+							// A sibling under an entry of its own release, or
+							// under a backport named in another entry's also_in:
+							// either way it is a change of its own and gets its
+							// line. The backport's siblings were left out until
+							// the review of 2026-11-20 — dapr v1.15.13 counted
+							// 129 security changes and accounted for 128: v1.19.1
+							// "internal gRPC proxy forwarding to other apps
+							// blocked" cites the same GHSA as the token-bypass
+							// fix whose also_in names v1.19.1, and was nowhere
+							// (istio 1.27.5 lost 2, etcd v3.4.40 3).
+							folded = append(folded, newBriefChange(d.Version, c, key))
 							continue
 						}
 					} else {
@@ -1166,7 +1165,6 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 							continue
 						}
 						inRelease[key] = len(b.Changes)
-						ownEntry[key] = true
 					}
 				}
 			}
@@ -1253,9 +1251,6 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 			}
 			return ex.Advisories[i].ID < ex.Advisories[j].ID
 		})
-		if n := len(ex.Advisories); n > maxExcludedAdvisories {
-			ex.Advisories, ex.AdvisoriesOmitted = ex.Advisories[:maxExcludedAdvisories], n-maxExcludedAdvisories
-		}
 		b.ExcludedOnBranch = ex
 	}
 	return b, settled
@@ -1832,9 +1827,11 @@ var stackHint = "briefing: a data classification, not a recommendation; changes 
 	"stays with the operator. Field meanings are in the tool description. affects is a condition: status stated or " +
 	"inferred means a change applies ONLY IF that holds in this setup, so check it before you report the change; " +
 	"not_stated means the notes name no narrower scope. What is not listed is not absent: changes carries entries " +
-	"with a body, and changes_more has one line for every other security, breaking and deprecation change in range " +
-	"(changes_omitted counts what is not in changes). Important fixes past the ones in changes are only counted " +
-	"there: call again with kinds:[\"important_fixes\"] to list them all. A briefing has no " +
+	"with a body, and changes_more has one line for every other security, breaking and deprecation change " +
+	"(changes_omitted counts them). Two things stand elsewhere: the same fix on another branch is a version in its " +
+	"entry's also_in, and security changes your branch already fixed are in excluded_on_branch. Important fixes past " +
+	"the ones in changes are only counted in changes_omitted: call again with kinds:[\"important_fixes\"] to list " +
+	"them all. A briefing has no " +
 	"evidence quotes: before you report a change, read its body and evidence with get_release(project, version, " +
 	"changes:[id, …]). Read every before_upgrade item. summary.counts and summary.warnings add up every release in " +
 	"range; summary.distinct_advisories counts each advisory once — quote it, and say that security changes citing " +
