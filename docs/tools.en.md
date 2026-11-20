@@ -16,11 +16,11 @@ with the release it arrived in, written in full (`Since 1.2.0.`). A server
 older than that release rejects the parameter and does not send the field;
 the [changelog](../CHANGELOG.md) has each release.
 
-> **Measured 2026-11-03**: every response below came back from this server
-> running against a preview of the ratatosk.io `/v2` API, with the host shown
-> as `https://ratatosk.io`. Release data accrues hourly, so the numbers will
-> differ if you call today; the shape of the responses will not. Long
-> responses are trimmed with `…`.
+> **Measured 2026-11-20**: every response below came back from this server
+> running against the ratatosk.io `/v2` API. Release data accrues hourly, so
+> the numbers will differ if you call today; the shape of the responses will
+> not. Long responses are trimmed with `…`: an array shows its first
+> elements, and the text of `hint` is replaced by it.
 
 1.0 reads `/v2`. The 0.x tools `list_changes`, `changes_by_entity` and `get_matter`
 are gone with the `/v1` API they read; their questions are now
@@ -207,30 +207,32 @@ Each element of `components` takes these fields.
       "project": "etcd",
       "running_version": "v3.5.30",
       "version_source": "user stated",
-      "target_version": "v3.6.13",
-      "note": "4 security change(s) in range were excluded: their advisories are already fixed at or below v3.5.30 on your branch",
+      "target_version": "v3.7.4",
+      "note": "5 security change(s) in range were excluded: their advisories are already fixed at or below v3.5.30 on your branch",
       "summary": {
-        "releases": 9,
+        "releases": 22,
+        "distinct_advisories": {
+          "total": 25,
+          "critical": 0,
+          "high": 2,
+          "medium": 1,
+          "low": 0,
+          "ungraded": 22
+        },
         "counts": {
-          "breaking": 3,
-          "dependency_updates": 9,
-          "deprecations": 1,
-          "enhancements": 6,
-          "important_fixes": 10,
-          "other": 4,
-          "security": 14
+          "breaking": 22,
+          "dependency_updates": 25,
+          "deprecations": 2,
+          "enhancements": 7,
+          "important_fixes": 27,
+          "other": 45,
+          "security": 56
         },
         "warnings": {
           "critical": 0,
           "no_downgrade": 0
         }
       },
-      "gaps": [
-        {
-          "after": "v3.5.32",
-          "before": "v3.6.7"
-        }
-      ],
       "releases": [
         {
           "version": "v3.5.31",
@@ -246,58 +248,94 @@ Each element of `components` takes these fields.
             "security": 1
           }
         },
-        {
-          "version": "v3.5.32",
-          "released_at": "2026-07-01T20:32:19Z",
-          "url": "https://ratatosk.io/en/releases/etcd/v3.5.32",
-          "counts": {
-            "breaking": 1,
-            "dependency_updates": 1,
-            "deprecations": 0,
-            "enhancements": 2,
-            "important_fixes": 1,
-            "other": 0,
-            "security": 3
-          }
-        },
         "…"
       ],
       "before_upgrade": [
         {
-          "version": "v3.5.31",
+          "version": "v3.5.36",
           "section": "upgrade_guide",
-          "id": "etcd@v3.5.31#6c4bd81c",
-          "title": "Full change list and upgrade guidance"
-        },
-        {
-          "version": "v3.5.32",
-          "section": "upgrade_guide",
-          "id": "etcd@v3.5.32#6c4bd81c",
-          "title": "Upgrade guidance for potential breaking changes"
+          "id": "etcd@v3.5.36#6c4bd81c",
+          "title": "Changelog of v3.5.36 changes and upgrade guidance",
+          "body": null,
+          "also_in": [
+            "v3.5.31",
+            "v3.5.32",
+            "v3.5.33",
+            "…"
+          ]
         },
         "…"
       ],
       "changes": [
         {
-          "version": "v3.5.32",
-          "id": "etcd@v3.5.32#4aa67035",
+          "version": "v3.5.33",
+          "id": "etcd@v3.5.33#cbcb276f",
           "kind": "security",
-          "title": "gRPC client certificate revocation checks enforced",
-          "body": "A client with a revoked certificate could authenticate over gRPC even though the HTTP endpoint rejected it. The gRPC listener now rejects peers whose certificat…",
-          "severity": null,
+          "title": "Watch API authorization bypass fixed",
+          "body": "A user with READ permission on one key could use `clientv3.WithFromKey()` in a Watch request to receive events for every key at or after it, not just that key.",
+          "severity": "high",
           "advisories": [
-            "GHSA-3wh4-j44w-pg92"
+            "CVE-2026-73499",
+            "GHSA-xg4h-6gfc-h4m8"
           ],
           "affects": {
-            "text": "split HTTP and gRPC client endpoints using `--listen-client-http-urls` with `--client-crl-file` configured",
+            "text": "authenticated clusters with exact-key READ grants",
             "status": "stated"
           },
           "workaround": {
-            "text": "If upgrading is not immediately possible, reduce exposure by restricting network access to etcd client ports using firewall rules or network policy so that only…",
+            "text": "Audit READ grants and revoke or tighten grants that should not permit full read access; restrict access to etcd's client (gRPC) port using firewall rules or net…",
             "status": "stated"
+          },
+          "also_in": [
+            "v3.6.14",
+            "v3.7.1"
+          ]
+        },
+        "…"
+      ],
+      "changes_omitted": {
+        "breaking": 2,
+        "important_fixes": 17,
+        "security": 15
+      },
+      "changes_more": [
+        {
+          "version": "v3.5.33",
+          "id": "etcd@v3.5.33#d2bfd54f-c40cb2",
+          "kind": "security",
+          "title": "Infinite loop in `norm.Iter` on invalid UTF-8 fixed",
+          "severity": null,
+          "affects": {
+            "text": "code using `golang.org/x/text` `norm.Iter`",
+            "status": "inferred"
           }
         },
         "…"
+      ],
+      "later_in_range": [],
+      "excluded_on_branch": {
+        "security": 5,
+        "advisories": [
+          {
+            "id": "CVE-2026-33413",
+            "severity": "high"
+          },
+          {
+            "id": "GHSA-q8m4-xhhv-38mg",
+            "severity": "high"
+          },
+          {
+            "id": "CVE-2026-33343",
+            "severity": "low"
+          },
+          "…"
+        ]
+      },
+      "gaps": [
+        {
+          "after": "v3.5.36",
+          "before": "v3.6.7"
+        }
       ]
     },
     "…"
@@ -309,8 +347,8 @@ Each element of `components` takes these fields.
       "reason": "unknown project name — not a slug ratatosk knows: check the slug with list_projects (the project may be listed under another slug); if it is not listed, ratatosk does NOT track it, so no changes here means no coverage, not safety"
     }
   ],
-  "privacy": "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)",
-  "hint": "…"
+  "hint": "…",
+  "privacy": "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)"
 }
 ```
 
@@ -361,33 +399,98 @@ empty and `note` says so, in both details. An image build suffix on `from` is re
 
 ```json
 {
-  "project": "etcd",
-  "from": "v3.5.30",
-  "to": "v3.6.13",
-  "summary": {
-    "releases": 9,
-    "counts": {
-      "breaking": 3,
-      "dependency_updates": 9,
-      "deprecations": 1,
-      "enhancements": 6,
-      "important_fixes": 10,
-      "other": 4,
-      "security": 14
+  "before_upgrade": [
+    {
+      "version": "v3.5.36",
+      "section": "upgrade_guide",
+      "id": "etcd@v3.5.36#6c4bd81c",
+      "title": "Changelog of v3.5.36 changes and upgrade guidance",
+      "body": null,
+      "also_in": [
+        "v3.5.31",
+        "v3.5.32",
+        "v3.5.33",
+        "…"
+      ]
     },
-    "warnings": {
-      "critical": 0,
-      "no_downgrade": 0
-    }
+    "…"
+  ],
+  "changes": [
+    {
+      "version": "v3.5.33",
+      "id": "etcd@v3.5.33#cbcb276f",
+      "kind": "security",
+      "title": "Watch API authorization bypass fixed",
+      "body": "A user with READ permission on one key could use `clientv3.WithFromKey()` in a Watch request to receive events for every key at or after it, not just that key.",
+      "severity": "high",
+      "advisories": [
+        "CVE-2026-73499",
+        "GHSA-xg4h-6gfc-h4m8"
+      ],
+      "affects": {
+        "text": "authenticated clusters with exact-key READ grants",
+        "status": "stated"
+      },
+      "workaround": {
+        "text": "Audit READ grants and revoke or tighten grants that should not permit full read access; restrict access to etcd's client (gRPC) port using firewall rules or net…",
+        "status": "stated"
+      },
+      "also_in": [
+        "v3.6.14",
+        "v3.7.1"
+      ]
+    },
+    "…"
+  ],
+  "changes_more": [
+    {
+      "version": "v3.5.33",
+      "id": "etcd@v3.5.33#d2bfd54f-c40cb2",
+      "kind": "security",
+      "title": "Infinite loop in `norm.Iter` on invalid UTF-8 fixed",
+      "severity": null,
+      "affects": {
+        "text": "code using `golang.org/x/text` `norm.Iter`",
+        "status": "inferred"
+      }
+    },
+    "…"
+  ],
+  "changes_omitted": {
+    "breaking": 2,
+    "important_fixes": 17,
+    "security": 15
   },
+  "excluded_on_branch": {
+    "security": 5,
+    "advisories": [
+      {
+        "id": "CVE-2026-33413",
+        "severity": "high"
+      },
+      {
+        "id": "GHSA-q8m4-xhhv-38mg",
+        "severity": "high"
+      },
+      {
+        "id": "CVE-2026-33343",
+        "severity": "low"
+      },
+      "…"
+    ]
+  },
+  "from": "v3.5.30",
   "gaps": [
     {
-      "after": "v3.5.32",
+      "after": "v3.5.36",
       "before": "v3.6.7"
     }
   ],
+  "hint": "…",
   "later_for_from": [],
+  "later_in_range": [],
   "privacy": "from and to were sent to the server (/v2/upgrade); use check_stack to keep versions on your side",
+  "project": "etcd",
   "releases": [
     {
       "version": "v3.5.31",
@@ -403,60 +506,33 @@ empty and `note` says so, in both details. An image build suffix on `from` is re
         "security": 1
       }
     },
-    {
-      "version": "v3.5.32",
-      "released_at": "2026-07-01T20:32:19Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.5.32",
-      "counts": {
-        "breaking": 1,
-        "dependency_updates": 1,
-        "deprecations": 0,
-        "enhancements": 2,
-        "important_fixes": 1,
-        "other": 0,
-        "security": 3
-      }
-    },
     "…"
   ],
-  "before_upgrade": [
-    {
-      "version": "v3.5.31",
-      "section": "upgrade_guide",
-      "id": "etcd@v3.5.31#6c4bd81c",
-      "title": "Full change list and upgrade guidance"
+  "summary": {
+    "releases": 22,
+    "distinct_advisories": {
+      "total": 25,
+      "critical": 0,
+      "high": 2,
+      "medium": 1,
+      "low": 0,
+      "ungraded": 22
     },
-    {
-      "version": "v3.5.32",
-      "section": "upgrade_guide",
-      "id": "etcd@v3.5.32#6c4bd81c",
-      "title": "Upgrade guidance for potential breaking changes"
+    "counts": {
+      "breaking": 22,
+      "dependency_updates": 25,
+      "deprecations": 2,
+      "enhancements": 7,
+      "important_fixes": 27,
+      "other": 45,
+      "security": 56
     },
-    "…"
-  ],
-  "changes": [
-    {
-      "version": "v3.6.9",
-      "id": "etcd@v3.6.9#73465b78",
-      "kind": "security",
-      "title": "etcd API authorization bypass fixed",
-      "body": "Before this release, unauthorized clients could call `MemberList`, `Alarm`, Lease APIs, and compaction, potentially exposing cluster topology, disrupting operat…",
-      "severity": "high",
-      "advisories": [
-        "CVE-2026-33413",
-        "GHSA-q8m4-xhhv-38mg"
-      ],
-      "affects": {
-        "text": "etcd clusters with authentication enabled and gRPC access exposed to untrusted or partially trusted clients",
-        "status": "stated"
-      },
-      "workaround": {
-        "text": "If upgrading is not immediately possible, reduce exposure by treating the affected RPCs as unauthenticated in practice: restrict network access to etcd server p…",
-        "status": "stated"
-      }
-    },
-    "…"
-  ]
+    "warnings": {
+      "critical": 0,
+      "no_downgrade": 0
+    }
+  },
+  "to": "v3.7.4"
 }
 ```
 
@@ -541,17 +617,19 @@ other before-upgrade items are left out too. Pass one of them, not both.
     {
       "id": "etcd@v3.5.32#4aa67035",
       "kind": "security",
-      "title": "gRPC client certificate revocation checks enforced",
-      "body": "A client with a revoked certificate could authenticate over gRPC even though the HTTP endpoint rejected it. The gRPC listener now rejects peers whose certificate serial number appears in the configured CRL.",
-      "severity": null,
+      "title": "gRPC client certificate revocation enforcement fixed",
+      "body": "Before this release, a certificate listed in the CRL was rejected over HTTP but could still authenticate over gRPC. The gRPC listener now rejects clients whose certificate serial number is listed in the CRL.",
+      "severity": "medium",
       "advisories": [
+        "CVE-2026-59818",
         "GHSA-3wh4-j44w-pg92"
       ],
       "affects": {
-        "text": "split HTTP and gRPC client endpoints using `--listen-client-http-urls` with `--client-crl-file` configured",
+        "text": "Split HTTP and gRPC client endpoints configured with `--listen-client-http-urls` and `--client-crl-file`",
         "status": "stated"
       },
       "also_required": null,
+      "no_downgrade": null,
       "security_unclear": false,
       "silent_failure": false,
       "workaround": {
@@ -576,8 +654,7 @@ other before-upgrade items are left out too. Pass one of them, not both.
   ],
   "folded": {
     "dependency_updates_without_security": [
-      "- Compile binaries using [go 1.25.11](https://github.com/etcd-io/etcd/pull/21893)",
-      "…"
+      "- Compile binaries using [go 1.25.11](https://github.com/etcd-io/etcd/pull/21893)"
     ],
     "already_in_earlier_release": []
   },
@@ -619,54 +696,34 @@ carry it.
     {
       "project": "etcd",
       "name": "etcd",
-      "version": "v3.6.13",
-      "released_at": "2026-07-01T20:43:27Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.6.13",
-      "counts": {
-        "security": 3,
-        "breaking": 0,
-        "deprecations": 0,
-        "important_fixes": 1,
-        "enhancements": 1,
-        "dependency_updates": 1,
-        "other": 0
-      },
-      "warnings": {
-        "critical": 0,
-        "no_downgrade": 0
-      }
-    },
-    {
-      "project": "etcd",
-      "name": "etcd",
-      "version": "v3.5.32",
-      "released_at": "2026-07-01T20:32:19Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.5.32",
-      "counts": {
-        "security": 3,
-        "breaking": 1,
-        "deprecations": 0,
-        "important_fixes": 1,
-        "enhancements": 2,
-        "dependency_updates": 1,
-        "other": 0
-      },
-      "warnings": {
-        "critical": 0,
-        "no_downgrade": 0
-      }
-    },
-    {
-      "project": "etcd",
-      "name": "etcd",
-      "version": "v3.6.12",
-      "released_at": "2026-06-01T20:59:07Z",
-      "url": "https://ratatosk.io/en/releases/etcd/v3.6.12",
+      "version": "v3.7.4",
+      "released_at": "2026-11-19T00:06:43Z",
+      "url": "https://ratatosk.io/en/releases/etcd/v3.7.4",
       "counts": {
         "security": 0,
-        "breaking": 0,
+        "breaking": 1,
         "deprecations": 0,
         "important_fixes": 2,
+        "enhancements": 0,
+        "dependency_updates": 0,
+        "other": 6
+      },
+      "warnings": {
+        "critical": 0,
+        "no_downgrade": 0
+      }
+    },
+    {
+      "project": "etcd",
+      "name": "etcd",
+      "version": "v3.6.17",
+      "released_at": "2026-11-18T23:03:50Z",
+      "url": "https://ratatosk.io/en/releases/etcd/v3.6.17",
+      "counts": {
+        "security": 1,
+        "breaking": 0,
+        "deprecations": 0,
+        "important_fixes": 1,
         "enhancements": 0,
         "dependency_updates": 1,
         "other": 1
@@ -675,9 +732,10 @@ carry it.
         "critical": 0,
         "no_downgrade": 0
       }
-    }
+    },
+    "…"
   ],
-  "next_before": "2026-06-01T20:59:07Z"
+  "next_before": "2026-11-18T20:45:15Z"
 }
 ```
 
@@ -731,8 +789,40 @@ item `matched` names is always among them. Pass its ids to
 
 ```json
 {
+  "matches_not_computed": 0,
   "query": "GHSA-3wh4-j44w-pg92",
   "in_analysis": [
+    {
+      "project": "etcd",
+      "name": "etcd",
+      "version": "v3.7.0",
+      "released_at": "2026-07-08T18:26:53Z",
+      "url": "https://ratatosk.io/en/releases/etcd/v3.7.0",
+      "counts": {
+        "security": 2,
+        "breaking": 4,
+        "deprecations": 0,
+        "important_fixes": 1,
+        "enhancements": 0,
+        "dependency_updates": 3,
+        "other": 5
+      },
+      "warnings": {
+        "critical": 0,
+        "no_downgrade": 0
+      },
+      "matched": {
+        "kind": "security",
+        "title": "gRPC certificate revocation checks fixed"
+      },
+      "matches": [
+        {
+          "id": "etcd@v3.7.0#427c7c39",
+          "kind": "security",
+          "title": "gRPC certificate revocation checks fixed"
+        }
+      ]
+    },
     {
       "project": "etcd",
       "name": "etcd",
@@ -754,8 +844,15 @@ item `matched` names is always among them. Pass its ids to
       },
       "matched": {
         "kind": "security",
-        "title": "gRPC CRL revocation checks enforced"
-      }
+        "title": "gRPC client certificate revocation checks enforced"
+      },
+      "matches": [
+        {
+          "id": "etcd@v3.6.13#1713075e",
+          "kind": "security",
+          "title": "gRPC client certificate revocation checks enforced"
+        }
+      ]
     },
     "…"
   ],
@@ -799,34 +896,28 @@ None.
 {
   "projects": [
     {
-      "slug": "envoy",
-      "name": "Envoy",
+      "slug": "argo",
+      "name": "Argo",
       "tier": "graduated",
-      "category": "Networking & Messaging",
-      "website": "https://www.envoyproxy.io",
+      "category": "CI/CD & App Delivery",
+      "website": "https://argoproj.github.io",
       "latest": {
-        "version": "v1.38.3",
-        "released_on": "2026-06-23"
+        "version": "v3.6.2",
+        "released_on": "2026-11-18"
       },
-      "analyzed_releases": 25,
-      "image_aliases": [
-        "cilium-envoy"
-      ],
-      "cluster_core": true
+      "analyzed_releases": 67
     },
     {
-      "slug": "etcd",
-      "name": "etcd",
-      "tier": "graduated",
-      "category": "Kubernetes Core",
-      "website": "https://etcd.io",
+      "slug": "artifact-hub",
+      "name": "Artifact Hub",
+      "tier": "incubating",
+      "category": "CI/CD & App Delivery",
+      "website": "https://artifacthub.io",
       "latest": {
-        "version": "v3.6.13",
-        "released_on": "2026-07-01"
+        "version": "v1.24.0",
+        "released_on": "2026-11-17"
       },
-      "analyzed_releases": 20,
-      "cluster_core": true,
-      "visibility": "may live outside the k8s API, be hidden by a managed control plane, or be replaced entirely — a missing pod is not a missing component; when unreadable, report it under Could not check instead of guessing a version"
+      "analyzed_releases": 3
     },
     "…"
   ]
