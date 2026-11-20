@@ -7,37 +7,21 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ### Added
 
-- **`changes_more` in `check_stack` and `check_upgrade`: what does not fit in
-  `changes`, one line each.** `changes_omitted` was a count only, so a cut
-  breaking change or advisory was invisible: containerd v2.2.9 to v2.4.2 cut
-  22 breaking changes, among them the removal of `enable_cdi`. A line carries
-  `version`, `id`, `kind`, `title`, `severity` (security only), `affects`
-  (`text`, `status`), `action_required: true` when the change has one, and
-  the entry's `also_in`.
-- **A briefing answer is at most 40,000 characters, `hint` included**, about
-  what an agent client shows as text before it hands the answer over as a
-  file (Claude Code does that past 50,000). Over it, an answer shrinks in this
-  order: `before_upgrade` bodies are cut to 400 characters
-  (**`body_truncated: true`**); each entry of `releases` keeps `version` and
-  `released_at`; then the change lists give way layer by layer across every
-  component, from the layer kept least: important fixes, deprecations, other
-  breaking changes, security of medium, low or no grade, breaking changes with
-  `action_required` or `no_downgrade`, and security of critical or high grade.
-  A layer's entries in `changes` become lines in `changes_more` and its lines
-  lose `affects`, in every component and the same share of each, before the
-  next layer gives up anything; only when every layer is down to ids and
-  titles are lines dropped, lowest layer first, and counted per kind in
-  **`changes_unlisted`**. Each component keeps five lines of its highest
-  layer. Last, with many components, the components at the back are given as
-  `project`, `running_version`, `target_version` and `summary`, with a `note`
-  to check them alone. `hint` (at most 2,000 characters) then names the
-  components concerned and says how to list what was left out: the component
-  alone, one kind per call, and a narrower range if one kind is still too
-  many. Five components checked to their newest (kubernetes v1.36.5,
-  containerd v2.2.9, coredns v1.14.7, cilium v1.20.2, envoy v1.37.6) answer in
-  39,913 characters, where 1.1.0 answered 119,756; cilium v1.16.18 with dapr
-  v1.15.13 in 39,952, where a first build of this release answered 59,638
-  with no change listed.
+- **`changes_more` in `check_stack` and `check_upgrade`: every security,
+  breaking and deprecation change that is not in `changes`, one line each.**
+  `changes_omitted` was a count only, so a cut breaking change or advisory was
+  invisible: containerd v2.2.9 to v2.4.2 cut 22 breaking changes, among them
+  the removal of `enable_cdi`. A line carries `version`, `id`, `kind`,
+  `title`, `severity` (security only), `affects` (`text`, `status`),
+  `action_required: true` when the change has one, and the entry's `also_in`.
+  None of those three kinds is left out, however long the range, and the
+  answer is not cut to a size: a long range or many components make a long
+  answer (five components several minors behind: about 300,000 characters,
+  where 1.1.0 answered 188,000 with 493 of those changes as counts only). For
+  a shorter one, narrow the call with `kinds`, fewer components,
+  `target_version` or `same_minor`. Important fixes past the 10 in `changes`
+  stay a count in `changes_omitted`, unless `kinds` names `important_fixes`:
+  then each has its line too.
 - **`later_in_range` in `check_stack` and `check_upgrade`**: the problems
   recorded on releases in range (`regression_fixed`, `known_issue_fixed`), in
   the form of `later_for_running`. cilium v1.20.2 to v1.20.5 now says that
@@ -108,21 +92,26 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   naming the others: containerd v2.2.9 to v2.4.2 lists 8 items where it
   listed 17. In `check_stack`, `before_upgrade` is `[]` on a checked
   component with no item; it was left out.
-- **In a large briefing, `changes` can hold fewer entries with a body than
-  the per-kind caps (20, 20, 10, 10), or none**: to stay within 40,000
-  characters, entries move to `changes_more`, and `changes_omitted` counts
-  them with the rest (containerd v2.2.9 to v2.4.2: 15 entries; five
-  components to their newest: none). An answer that fits is as in 1.1.0.
+- **`summary` lists `distinct_advisories` before `counts` and `warnings`.**
+  Names and values are as in 1.1.0. An agent reported "15 critical" for an
+  Argo CD range off `warnings.critical`, where `distinct_advisories.critical`,
+  right after it, said 5: the per-release sums count one fix once for every
+  release line it shipped on.
+- **`changes_omitted` counts a security change folded into an entry of its
+  own release**, and a line keeps its `also_in`, so per kind `summary.counts`
+  = `changes` + `changes_omitted` + `excluded_on_branch.security` + the
+  backports an `also_in` names. Argo CD v2.10.7 to v3.6.2 counted 103 security
+  changes and showed 72 with no way to tell where 31 went; they are the 31
+  backports named in `also_in`.
 - **`excluded_on_branch.advisories` names at most 20 advisories**, the most
   severe, and `advisories_omitted` counts the rest; `security` still counts
   every change left out.
-- `hint` is 1,457 characters instead of 3,226, at most 2,000 with what fitting
-  adds, and keeps what reading the
+- `hint` is 1,540 characters instead of 3,226 and keeps what reading the
   answer needs; what each field means moved to the tool descriptions. It and
-  the descriptions say what does not fit is in `changes_more` or counted in
-  `changes_unlisted`, and that a briefing has no evidence quotes, so the body
-  and evidence of what you report come from `get_release(changes: [...])`.
-  They no longer send the agent to read whole releases for what was omitted.
+  the descriptions say that what is not in `changes` has its line in
+  `changes_more`, and that a briefing has no evidence quotes, so the body and
+  evidence of what you report come from `get_release(changes: [...])`. They
+  no longer send the agent to read whole releases for what was omitted.
 
 ### Fixed
 

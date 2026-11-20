@@ -2,7 +2,7 @@ package main
 
 // The 1.x regression harness: on real /v2/upgrade ranges, the briefing is the
 // 1.0.0 briefing plus summary.distinct_advisories (1.1.0) and what 1.2.0 adds
-// beside the 1.0.0 fields (changes_more, changes_unlisted, later_in_range,
+// beside the 1.0.0 fields (changes_more, later_in_range,
 // excluded_on_branch, and before_upgrade in its 1.2.0 form), and nothing else.
 //
 // Why it exists: the rule for 1.x is additive only — a 1.0.0 client must
@@ -133,7 +133,7 @@ func diffFrom100(docs []*v2Release, fixed map[string]bool, running []int) string
 			cur.ChangesOmitted = nil
 		}
 	}
-	cur.Upgrade, cur.ChangesMore, cur.ChangesUnlisted, cur.LaterInRange, cur.ExcludedOnBranch, cur.more, cur.folded = nil, nil, nil, nil, nil, nil, 0
+	cur.Upgrade, cur.ChangesMore, cur.LaterInRange, cur.ExcludedOnBranch, cur.folded = nil, nil, nil, nil, 0
 	if oldSettled != curSettled {
 		return fmt.Sprintf("settled %d, 1.0.0 %d", curSettled, oldSettled)
 	}

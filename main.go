@@ -272,10 +272,10 @@ func newServer() *mcp.Server {
 			"from's minor), computed BY THE SERVER: from and to are sent upstream. To keep " +
 			"running versions on your side, use check_stack instead — it compares locally and sends only project " +
 			"slugs. Returns a briefing (detail:\"brief\", default) in the same form as one check_stack component (the " +
-			"fields and the 40,000-character fitting are described there), or " +
+			"fields are described there), or " +
 			"every release in range verbatim (detail:\"full\"); kinds keeps the changes of those kinds. Read before_upgrade of every release in range — " +
-			"prerequisites and upgrade guides usually sit on the release that starts a new minor. What does not fit in " +
-			"changes is listed one line each in changes_more; the briefing carries no evidence quotes, so read the body " +
+			"prerequisites and upgrade guides usually sit on the release that starts a new minor. Every security, breaking " +
+			"and deprecation change that is not in changes has its line in changes_more; the briefing carries no evidence quotes, so read the body " +
 			"and evidence of the entries you report with get_release(project, version, changes:[id, …]). A security " +
 			"change whose advisories from's own branch already fixed at or below from is left out and counted in " +
 			"excluded_on_branch, as check_stack does; if the releases that tell cannot be read, nothing is left out " +
@@ -309,17 +309,12 @@ func newServer() *mcp.Server {
 			"20 security (most severe first), 20 breaking, 10 deprecations and 10 important_fixes with their body " +
 			"(inside a kind, the ones that say what to do first); changes_omitted counts per kind what is not in " +
 			"changes (left out on your branch, in excluded_on_branch, and backports folded into an entry's also_in " +
-			"aside), and changes_more lists each of those in one line, with its also_in. A briefing answer is at most " +
-			"40,000 characters, hint included. Over that, first before_upgrade bodies are cut to 400 characters " +
-			"(body_truncated) and releases keep version and released_at; then the change lists give way layer by " +
-			"layer across every component, the last kept longest: important fixes, deprecations, other breaking " +
-			"changes, security of medium, low or no grade, breaking changes with action_required or no_downgrade, " +
-			"security of critical or high grade. Each layer goes down to ids and titles (entries to lines, then lines " +
-			"without affects) before the layer above gives anything up; then lines are dropped, lowest layer first, and " +
-			"counted per kind in changes_unlisted, but each component keeps five lines of its highest layer. With many " +
-			"components, the ones at the back are then cut to project, running_version, target_version and summary, " +
-			"with a note to ask for them alone. hint names the components with changes not listed and how to list " +
-			"them: the component alone, one kind per call, and a narrower range if one kind is still too many. " +
+			"aside). changes_more has one line — version, id, kind, title, severity, affects, also_in — for every " +
+			"security, breaking and deprecation change that is not in changes: none of those three kinds is left " +
+			"out, however long the range. Important fixes past the 10 in changes are only counted, unless kinds " +
+			"names important_fixes: then each has its line too. The answer is not cut to a size; a long range or " +
+			"many components make a long answer, and the way to a shorter one is a narrower call — kinds, fewer " +
+			"components, target_version or same_minor. " +
 			"later_in_range carries only problems (regression_fixed, known_issue_fixed). The briefing carries no " +
 			"evidence quotes: read the body and evidence of the entries you report with get_release(project, version, " +
 			"changes:[id, …]). " +

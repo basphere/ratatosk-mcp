@@ -319,19 +319,6 @@ func briefText(s string) string {
 	return strings.TrimRight(string(r[:briefTextChars]), " ") + "…"
 }
 
-// briefCharBudget is the most one briefing answer (check_stack or
-// check_upgrade, detail "brief") may be, in characters of the answer text,
-// hint included. Measured 2026-11-20 in Claude Code: a Korean answer of 37,227
-// characters reached the model as it was, one of 64,615 was saved to a file
-// instead (its documented limit for a tool's text answer is 50,000
-// characters). Over it, an agent reads its own answer through a file in
-// pieces, and in the 32 runs of that day some reports were written before the
-// file was read. fitBriefings (fit.go) keeps every answer within it: the parts
-// that are not change lists shrink first, then the change lists layer by
-// layer, and last, with many components, the components at the back are cut
-// to a summary.
-const briefCharBudget = 40000
-
 // buildTailRe matches the build suffix an image tag carries after the version
 // it was built from: "-<unix time>-<commit>" (cilium-envoy:
 // v1.37.6-1789133542-cbec91f666af0bf742da986d43832932dbb26b82) or "-<commit>".
@@ -761,16 +748,13 @@ type briefItem struct {
 // in all for 8 different texts. The newest is kept because each release words
 // its card anew and the newest wording is the latest reading.
 type upgradeItem struct {
-	Version string  `json:"version"`
-	Section string  `json:"section"` // prerequisites | known_issues | upgrade_guide
-	ID      string  `json:"id"`
-	Title   string  `json:"title"`
-	Body    *string `json:"body"`
-	// BodyTruncated says body was cut at upgradeBodyChars to fit the answer
-	// (fitBriefings); get_release(changes:[id]) has the whole text.
-	BodyTruncated bool              `json:"body_truncated,omitempty"`
-	Folded        []json.RawMessage `json:"folded,omitempty"`
-	AlsoIn        []string          `json:"also_in,omitempty"`
+	Version string            `json:"version"`
+	Section string            `json:"section"` // prerequisites | known_issues | upgrade_guide
+	ID      string            `json:"id"`
+	Title   string            `json:"title"`
+	Body    *string           `json:"body"`
+	Folded  []json.RawMessage `json:"folded,omitempty"`
+	AlsoIn  []string          `json:"also_in,omitempty"`
 }
 
 // beforeUpgradeOf lists the before_upgrade items of the releases in range
@@ -906,20 +890,6 @@ type rangeRelease struct {
 	Counts     map[string]int `json:"counts"`
 	Warnings   map[string]int `json:"warnings,omitempty"`
 	Processing bool           `json:"processing,omitempty"`
-	// slim keeps only version and released_at, when the answer is over its
-	// budget (fitBriefings).
-	slim bool
-}
-
-func (r rangeRelease) MarshalJSON() ([]byte, error) {
-	if r.slim {
-		return json.Marshal(struct {
-			Version    string `json:"version"`
-			ReleasedAt string `json:"released_at"`
-		}{r.Version, r.ReleasedAt})
-	}
-	type plain rangeRelease
-	return json.Marshal(plain(r))
 }
 
 // stackSummary: Counts and Warnings add up every release in range, so a fix
@@ -927,10 +897,14 @@ func (r rangeRelease) MarshalJSON() ([]byte, error) {
 // v2.10.7 → v3.6.1: critical 15). DistinctAdvisories counts each advisory
 // once (critical 5) — added in 1.1.0 beside them, which keep their values.
 type stackSummary struct {
-	Releases           int                `json:"releases"`
+	Releases int `json:"releases"`
+	// DistinctAdvisories goes out before Counts and Warnings (1.2.0): a reader
+	// takes the first number it meets, and an agent told the operator "Argo CD:
+	// 15 critical" off warnings.critical with distinct_advisories.critical 5
+	// right after it (field report, 2026-11-20). The names and values are 1.1.0's.
+	DistinctAdvisories distinctAdvisories `json:"distinct_advisories"`
 	Counts             map[string]int     `json:"counts"`
 	Warnings           map[string]int     `json:"warnings"`
-	DistinctAdvisories distinctAdvisories `json:"distinct_advisories"`
 }
 
 type briefing struct {
@@ -947,15 +921,10 @@ type briefing struct {
 	Upgrade        *[]upgradeItem `json:"before_upgrade,omitempty"`
 	Changes        []briefChange  `json:"changes,omitempty"`
 	ChangesOmitted map[string]int `json:"changes_omitted,omitempty"`
-	// The rest is 1.2.0. ChangesMore and ChangesUnlisted: see buildBriefing
-	// and fitBriefings; LaterInRange: see buildBriefing.
+	// The rest is 1.2.0. ChangesMore, LaterInRange: see buildBriefing.
 	ChangesMore      []moreLine         `json:"changes_more,omitempty"`
-	ChangesUnlisted  map[string]int     `json:"changes_unlisted,omitempty"`
 	LaterInRange     *[]json.RawMessage `json:"later_in_range,omitempty"`
 	ExcludedOnBranch *excludedOnBranch  `json:"excluded_on_branch,omitempty"`
-	// more is what ChangesMore lists, as whole entries in briefing order:
-	// fitBriefings reads their grade and step to decide what gives way first.
-	more []briefChange
 	// folded counts the security changes folded into an entry of their own
 	// release (listed in changes_more, counted in changes_omitted since the
 	// independent review of 2026-11-20). The 1.0.0 harness takes them off
@@ -1246,7 +1215,6 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 	}
 	more := append(cut, folded...)
 	sort.SliceStable(more, func(i, j int) bool { return briefLess(more[i], more[j]) })
-	b.more = more
 	for _, c := range more {
 		b.ChangesMore = append(b.ChangesMore, lineOf(c))
 	}
@@ -1356,10 +1324,36 @@ func gradeName(g int) string {
 	return ""
 }
 
-// keepKinds narrows a briefing to the kinds asked for (1.2.0 kinds). summary,
-// releases, before_upgrade and the rest describe the range and stay whole;
-// only the change lists and their counts are narrowed.
-func (b *briefing) keepKinds(k map[string]bool) {
+// narrow settles which changes a briefing lists, for the kinds asked for
+// (1.2.0 kinds; none asked = all four decision kinds).
+//
+// changes_more is whole for security, breaking and deprecations, always: those
+// are what an upgrade decision turns on, and a change that is not listed is one
+// the reader does not know to ask for (the misses measured on 2026-11-20 were
+// all changes a briefing did not carry, in runs that never opened the release
+// they sat on). Important fixes past their cap stay a count in changes_omitted
+// unless kinds names important_fixes — then every one of them is listed too.
+//
+// Nothing here looks at the size of the answer. An earlier build of 1.2.0 cut
+// answers to 40,000 characters so that one client would not save them to a
+// file, and on a five-component stack years behind it answered no entry with a
+// body and none of kubernetes' 33 security changes (2026-11-20). The server
+// does not guess what a client can hold: it lists what there is, and the
+// caller narrows the call — kinds, one component, target_version, same_minor.
+//
+// summary, releases, before_upgrade and the rest describe the range and stay
+// whole; only the change lists and their counts are narrowed.
+func (b *briefing) narrow(k map[string]bool) {
+	var lines []moreLine
+	for _, l := range b.ChangesMore {
+		if l.Kind == "important_fixes" && !k["important_fixes"] {
+			continue
+		}
+		if len(k) == 0 || k[l.Kind] {
+			lines = append(lines, l)
+		}
+	}
+	b.ChangesMore = lines
 	if len(k) == 0 {
 		return
 	}
@@ -1370,20 +1364,6 @@ func (b *briefing) keepKinds(k map[string]bool) {
 		}
 	}
 	b.Changes = ch
-	var lines []moreLine
-	for _, l := range b.ChangesMore {
-		if k[l.Kind] {
-			lines = append(lines, l)
-		}
-	}
-	b.ChangesMore = lines
-	var more []briefChange
-	for _, c := range b.more {
-		if k[c.Kind] {
-			more = append(more, c)
-		}
-	}
-	b.more = more
 	for kind := range b.ChangesOmitted {
 		if !k[kind] {
 			delete(b.ChangesOmitted, kind)
@@ -1414,28 +1394,6 @@ type componentReport struct {
 	LaterForRunning []json.RawMessage `json:"later_for_running,omitempty"`
 	Full            []json.RawMessage `json:"releases_full,omitempty"` // detail:"full" only
 	FullOmitted     int               `json:"releases_full_omitted,omitempty"`
-	// stub is set by fitBriefings when the answer is over its budget with
-	// every list down to its counts (many components): 1 answers project,
-	// running_version, target_version, summary and note; 2 not even summary.
-	stub int
-}
-
-func (r componentReport) MarshalJSON() ([]byte, error) {
-	if r.stub == 0 {
-		type plain componentReport
-		return json.Marshal(plain(r))
-	}
-	out := struct {
-		Project        string        `json:"project"`
-		RunningVersion string        `json:"running_version"`
-		TargetVersion  string        `json:"target_version,omitempty"`
-		Summary        *stackSummary `json:"summary,omitempty"`
-		Note           string        `json:"note"`
-	}{r.Project, r.RunningVersion, r.TargetVersion, r.Summary, joinNotes(r.Note, stubNote)}
-	if r.stub > 1 {
-		out.Summary = nil
-	}
-	return json.Marshal(out)
 }
 
 // untrackedReason answers a component whose project is neither a slug nor an
@@ -1826,7 +1784,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		} else {
 			var settled int
 			rep.briefing, settled = buildBriefing(rangeDocs, alreadyFixed, currentKey)
-			rep.briefing.keepKinds(kindSet)
+			rep.briefing.narrow(kindSet)
 			if settled > 0 {
 				notes = append(notes, fmt.Sprintf(
 					"%d security change(s) in range were excluded: their advisories are already fixed at or below %s on your branch",
@@ -1848,19 +1806,9 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		res, err := jsonResult(out)
 		return res, nil, err
 	}
-	var units []*fitUnit
-	for i := range reports {
-		if reports[i].Summary == nil {
-			continue
-		}
-		rep := &reports[i]
-		units = append(units, unitOf(rep.Project, &rep.briefing, func(level int) { rep.stub = level }))
-	}
-	text, err := fitBriefings(units, stackHint, func(h string) { out["hint"] = h }, func() ([]byte, error) { return json.Marshal(out) }, stackExtra)
-	if err != nil {
-		return nil, nil, err
-	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}, nil, nil
+	out["hint"] = stackHint
+	res, err := jsonResult(out)
+	return res, nil, err
 }
 
 // rowsOnLine is the rows on v's release line that carry a version number.
@@ -1877,14 +1825,16 @@ func rowsOnLine(rows []v2Row, v string) []v2Row {
 // stackHint travels with every briefing because the briefing is what the agent
 // reads when it decides; the tool description may be long gone from view. It
 // holds only what reading this answer needs — what a field means is in the
-// tool descriptions. It was 4,429 characters on every briefing, 11% of the
-// answer budget (2026-11-20); the spec bounds it at 2,000.
+// tool descriptions. It was 4,429 characters on every briefing (2026-11-20),
+// and an agent that had 3,226 of them in front of it still quoted
+// warnings.critical 15 for five advisories; a test keeps it under 2,000.
 var stackHint = "briefing: a data classification, not a recommendation; changes come without warranty and the decision " +
 	"stays with the operator. Field meanings are in the tool description. affects is a condition: status stated or " +
 	"inferred means a change applies ONLY IF that holds in this setup, so check it before you report the change; " +
 	"not_stated means the notes name no narrower scope. What is not listed is not absent: changes carries entries " +
-	"with a body, changes_more one line for each of the rest (changes_omitted counts what is not in changes), and " +
-	"changes_unlisted counts per kind what is in neither — the calls that list it end this hint. A briefing has no " +
+	"with a body, and changes_more has one line for every other security, breaking and deprecation change in range " +
+	"(changes_omitted counts what is not in changes). Important fixes past the ones in changes are only counted " +
+	"there: call again with kinds:[\"important_fixes\"] to list them all. A briefing has no " +
 	"evidence quotes: before you report a change, read its body and evidence with get_release(project, version, " +
 	"changes:[id, …]). Read every before_upgrade item. summary.counts and summary.warnings add up every release in " +
 	"range; summary.distinct_advisories counts each advisory once — quote it, and say that security changes citing " +
@@ -2037,70 +1987,53 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 		notes = append(notes, fmt.Sprintf("could not read the releases at or below %s, so security changes your branch already fixed are not left out (as in 1.1.0): %v", truncate(up.From, 80), err))
 	}
 	b, _ := buildBriefing(docs, fixed, fromKey)
-	b.keepKinds(kindSet)
+	b.narrow(kindSet)
 	if up.LaterForFrom == nil {
 		up.LaterForFrom = []json.RawMessage{}
 	}
-	hint := stackHint
-	stub := 0
-	answer := func() map[string]any {
-		out := map[string]any{
-			"project": up.Project,
-			"from":    args.From, // as passed; version_read_as says what was checked
-			"to":      up.To,
-			"summary": b.Summary,
-			"gaps":    gaps,
-			"privacy": "from and to were sent to the server (/v2/upgrade); use check_stack to keep versions on your side",
-			"hint":    hint,
-		}
-		if readAs != "" {
-			out["version_read_as"] = readAs
-		}
-		note := joinNotes(notes...)
-		if stub > 0 {
-			// At the size limit with every list down to its counts: what is
-			// left is the range and its counts (fitBriefings).
-			if stub > 1 {
-				delete(out, "summary")
-			}
-			out["note"] = joinNotes(note, "summary only: this range is too large for one answer — narrow it with to or same_minor")
-			return out
-		}
-		if note != "" {
-			out["note"] = note
-		}
-		// Arrays, never null, as the docs say: an empty range came back as
-		// "changes": null and "before_upgrade": null (independent review,
-		// 2026-11-15), which a client reading the documented shape may not expect.
-		changes := b.Changes
-		if changes == nil {
-			changes = []briefChange{}
-		}
-		out["releases"] = b.Releases
-		out["before_upgrade"] = b.Upgrade
-		out["changes"] = changes
-		out["later_for_from"] = up.LaterForFrom
-		out["later_in_range"] = b.LaterInRange
-		if len(b.ChangesOmitted) > 0 {
-			out["changes_omitted"] = b.ChangesOmitted
-		}
-		if len(b.ChangesMore) > 0 {
-			out["changes_more"] = b.ChangesMore
-		}
-		if len(b.ChangesUnlisted) > 0 {
-			out["changes_unlisted"] = b.ChangesUnlisted
-		}
-		if b.ExcludedOnBranch != nil {
-			out["excluded_on_branch"] = b.ExcludedOnBranch
-		}
-		return out
+	out := map[string]any{
+		"project": up.Project,
+		"from":    args.From, // as passed; version_read_as says what was checked
+		"to":      up.To,
+		"summary": b.Summary,
+		"gaps":    gaps,
+		"privacy": "from and to were sent to the server (/v2/upgrade); use check_stack to keep versions on your side",
+		"hint":    stackHint,
 	}
-	units := []*fitUnit{unitOf(up.Project, &b, func(level int) { stub = level })}
-	text, err := fitBriefings(units, stackHint, func(h string) { hint = h }, func() ([]byte, error) { return json.Marshal(answer()) }, upgradeExtra)
-	if err != nil {
-		return nil, nil, err
+	if readAs != "" {
+		out["version_read_as"] = readAs
 	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}, nil, nil
+	if note := joinNotes(notes...); note != "" {
+		out["note"] = note
+	}
+	// Arrays, never null, as the docs say: an empty range came back as
+	// "changes": null and "before_upgrade": null (independent review,
+	// 2026-11-15), which a client reading the documented shape may not expect.
+	changes := b.Changes
+	if changes == nil {
+		changes = []briefChange{}
+	}
+	out["releases"] = b.Releases
+	out["before_upgrade"] = b.Upgrade
+	out["changes"] = changes
+	out["later_for_from"] = up.LaterForFrom
+	out["later_in_range"] = b.LaterInRange
+	if len(b.ChangesOmitted) > 0 {
+		out["changes_omitted"] = b.ChangesOmitted
+	}
+	if len(b.ChangesMore) > 0 {
+		out["changes_more"] = b.ChangesMore
+	}
+	if b.ExcludedOnBranch != nil {
+		out["excluded_on_branch"] = b.ExcludedOnBranch
+	}
+	res, err := jsonResult(out)
+	return res, nil, err
+}
+
+// joinNotes joins the non-empty notes with "; ".
+func joinNotes(parts ...string) string {
+	return strings.Join(slices.DeleteFunc(parts, func(p string) bool { return p == "" }), "; ")
 }
 
 // readBuildTail is the version an image build suffix stands on: v without

@@ -137,9 +137,11 @@ func TestDistinctAdvisoriesCountEachAdvisoryOnce(t *testing.T) {
 		t.Errorf("distinct advisories %+v, want %+v (critical: 3v3m 9v9p fw5c m3vr fmxq; the eight-advisory card's grade must not reach 4439 j6cw g3ff w996; 52cp has no grade)", got, want)
 	}
 	raw, _ := json.Marshal(b.Summary)
-	const shape = `"warnings":{"critical":15,"no_downgrade":0},"distinct_advisories":{"total":10,"critical":5,"high":2,"medium":2,"low":0,"ungraded":1}}`
-	if !strings.HasSuffix(string(raw), shape) {
-		t.Errorf("summary JSON %s, want it to end %s (every grade present, after warnings)", raw, shape)
+	// Every grade present; before counts and warnings since 1.2.0 (see
+	// stackSummary: the first number met is the one quoted).
+	const shape = `{"releases":6,"distinct_advisories":{"total":10,"critical":5,"high":2,"medium":2,"low":0,"ungraded":1},"counts":`
+	if !strings.HasPrefix(string(raw), shape) || !strings.HasSuffix(string(raw), `"warnings":{"critical":15,"no_downgrade":0}}`) {
+		t.Errorf("summary JSON %s, want it to start %s and end with warnings (every grade present, before counts and warnings)", raw, shape)
 	}
 	assertSameAs100(t, docs, nil, nil)
 }

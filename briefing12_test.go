@@ -1,6 +1,6 @@
 package main
 
-// What 1.2.0 adds to a briefing: changes_more and changes_unlisted under the
+// What 1.2.0 adds to a briefing: changes_more under the
 // answer's size budget, before_upgrade with bodies and grouped texts,
 // later_in_range, excluded_on_branch, version_read_as and same_minor, and
 // check_upgrade settling what from's branch already fixed. Each case replays
@@ -193,11 +193,10 @@ func upgradeServer(t *testing.T, docs ...string) {
 }
 
 type upgradeOut struct {
-	Changes         []briefChange  `json:"changes"`
-	ChangesOmitted  map[string]int `json:"changes_omitted"`
-	ChangesMore     []moreLine     `json:"changes_more"`
-	ChangesUnlisted map[string]int `json:"changes_unlisted"`
-	Hint            string         `json:"hint"`
+	Changes        []briefChange  `json:"changes"`
+	ChangesOmitted map[string]int `json:"changes_omitted"`
+	ChangesMore    []moreLine     `json:"changes_more"`
+	Hint           string         `json:"hint"`
 }
 
 func runUpgrade(t *testing.T, args checkUpgradeArgs) (upgradeOut, string) {
@@ -215,6 +214,65 @@ func runUpgrade(t *testing.T, args checkUpgradeArgs) (upgradeOut, string) {
 		t.Fatalf("unmarshal: %v", err)
 	}
 	return out, text
+}
+
+// However long the range, every security, breaking and deprecation change has
+// its entry or its line: the answer is not cut to a size. An earlier build of
+// 1.2.0 kept answers within 40,000 characters and, on a five-component stack
+// years behind, answered none of kubernetes' 33 security changes (2026-11-20).
+// Important fixes past their cap stay a count unless kinds asks for them.
+func TestBriefingLeavesOutNoDecisionChangeHoweverLong(t *testing.T) {
+	n := map[string]int{"security": 150, "breaking": 300, "deprecations": 40, "important_fixes": 200}
+	upgradeServer(t, changeDoc("p", "v1.0.0", n, 120))
+	out, text := runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0"})
+	if utf8.RuneCountInString(text) < 60000 {
+		t.Fatalf("the fixture is meant to be a long answer, got %d characters", utf8.RuneCountInString(text))
+	}
+	count := func(o upgradeOut) (entries, lines map[string]int) {
+		entries, lines = map[string]int{}, map[string]int{}
+		for _, c := range o.Changes {
+			entries[c.Kind]++
+		}
+		for _, l := range o.ChangesMore {
+			lines[l.Kind]++
+		}
+		return
+	}
+	entries, lines := count(out)
+	for _, kind := range []string{"security", "breaking", "deprecations"} {
+		if entries[kind] != kindCaps[kind] || entries[kind]+lines[kind] != n[kind] {
+			t.Errorf("%s: %d entries + %d lines, want all %d (entries %d)", kind, entries[kind], lines[kind], n[kind], kindCaps[kind])
+		}
+		if out.ChangesOmitted[kind] != lines[kind] {
+			t.Errorf("%s: changes_omitted %d, lines %d", kind, out.ChangesOmitted[kind], lines[kind])
+		}
+	}
+	if entries["important_fixes"] != 10 || lines["important_fixes"] != 0 || out.ChangesOmitted["important_fixes"] != 190 {
+		t.Errorf("important fixes: %d entries, %d lines, omitted %d — want 10, 0, 190", entries["important_fixes"], lines["important_fixes"], out.ChangesOmitted["important_fixes"])
+	}
+
+	upgradeServer(t, changeDoc("p", "v1.0.0", n, 120))
+	out, _ = runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0", Kinds: stringList{"important_fixes"}})
+	entries, lines = count(out)
+	if entries["important_fixes"] != 10 || lines["important_fixes"] != 190 || len(out.Changes)+len(out.ChangesMore) != 200 {
+		t.Errorf("kinds important_fixes: %d entries, %d lines of %d in all — want 10 and 190, nothing else", entries["important_fixes"], lines["important_fixes"], len(out.Changes)+len(out.ChangesMore))
+	}
+}
+
+// distinct_advisories is read before counts and warnings: an agent quoted
+// warnings.critical 15 for five advisories (field report, 2026-11-20).
+func TestSummaryLeadsWithDistinctAdvisories(t *testing.T) {
+	upgradeServer(t, changeDoc("p", "v1.0.0", map[string]int{"security": 2}, 10))
+	_, text := runUpgrade(t, checkUpgradeArgs{Project: "p", From: "v0.9.0"})
+	at := strings.Index(text, `"summary":{`)
+	if at < 0 {
+		t.Fatalf("no summary in %s", text)
+	}
+	sum := text[at:]
+	d, c, w := strings.Index(sum, `"distinct_advisories"`), strings.Index(sum, `"counts"`), strings.Index(sum, `"warnings"`)
+	if d < 0 || c < 0 || w < 0 || d > c || d > w {
+		t.Errorf("summary order: distinct_advisories at %d, counts at %d, warnings at %d", d, c, w)
+	}
 }
 
 // excluded_on_branch names at most 20 advisories, the most severe; security
@@ -434,19 +492,19 @@ func TestDescriptionsSayWhatALineIsAndWhereEvidenceIs(t *testing.T) {
 		}
 	}
 	// hint keeps what reading the answer needs, within 2,000 characters; the
-	// meanings it dropped are in the description (spec revised 2026-11-20:
-	// 4,429 characters on every briefing were 11% of the budget).
+	// meanings it dropped are in the description (4,429 characters rode on
+	// every briefing, 2026-11-20).
 	if n := utf8.RuneCountInString(stackHint); n > 2000 {
 		t.Errorf("hint is %d characters, at most 2,000", n)
 	}
-	for _, want := range []string{"ONLY IF", "What is not listed is not absent", "changes_more", "changes_unlisted", "the calls that list it end this hint",
+	for _, want := range []string{"ONLY IF", "What is not listed is not absent", "changes_more", `kinds:["important_fixes"]`,
 		"get_release(project, version, changes:[id, …])", "no evidence", "does not mean the release is vulnerable", "later_in_range"} {
 		if !strings.Contains(stackHint, want) {
 			t.Errorf("hint does not say %q", want)
 		}
 	}
 	for _, want := range []string{"excluded_on_branch", "version_read_as", "also_in naming the others", "security_unclear", "no_downgrade means",
-		"removed_in is when", "also_required (security) are what the notes say to do", "at most 40,000 characters", "changes_unlisted",
+		"removed_in is when", "also_required (security) are what the notes say to do", "none of those three kinds is left out", "The answer is not cut to a size",
 		"Security changes citing no advisory id are not in distinct_advisories", "recorded on that version, not here", "null when no grade was found"} {
 		if !strings.Contains(d["check_stack"], want) {
 			t.Errorf("check_stack description does not say %q", want)
