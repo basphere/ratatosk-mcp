@@ -69,6 +69,18 @@ harness can lift them in a test.)
   ranges when 2.0 ships; their row in `testdata/README.md` lists what goes
   with them.
 
+## Version numbers in the docs
+
+- A parameter or response field added after 1.0.0 is marked in the tools
+  reference with the release it arrived in, all three numbers:
+  `Since 1.2.0.` A minor release (the second number) is what adds tools,
+  parameters and fields, so the third number of a `Since` mark is 0; a patch
+  release fixes behaviour and adds no mark.
+- Prose does not name the current release ("the tools 1.2 provides"): it is
+  wrong at the next release. The exceptions are the install commands and
+  examples that pin an image tag, which the release procedure bumps, and
+  sentences about a past release (0.x read `/v1`; 1.0.0 reads `/v2`).
+
 ## Pull requests
 
 - Keep the read-only, no-credential design: tools must never require secrets,

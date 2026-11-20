@@ -2,7 +2,7 @@
 
 [English](tools.en.md) · [한국어](tools.ko.md) · [日本語](tools.ja.md)
 
-This page is the detailed reference for the six tools ratatosk-mcp 1.0
+This page is the detailed reference for the six tools ratatosk-mcp
 provides: [`check_stack`](#check_stack), [`check_upgrade`](#check_upgrade),
 [`get_release`](#get_release), [`list_releases`](#list_releases),
 [`search`](#search), and [`list_projects`](#list_projects). For each tool you
@@ -10,6 +10,11 @@ will find when to reach for it, every parameter, a real call and its
 response, and example questions you can put to an agent. For connecting the
 server itself (hosted endpoint, Docker, Helm, kagent), see the
 [installation guide](install.en.md).
+
+A parameter or response field added after 1.0.0 ends with the release it
+arrived in, written in full (`Since 1.2.0.`). A server older than that
+release rejects the parameter and does not send the field; the
+[changelog](../CHANGELOG.md) has each release.
 
 > **Measured 2026-11-03**: every response below came back from this server
 > running against a preview of the ratatosk.io `/v2` API, with the host shown
@@ -103,22 +108,22 @@ of `later_for_running`.
 | Field | Where | Type | Meaning |
 |---|---|---|---|
 | `summary` | component | `object` | Releases in range (`releases`), `distinct_advisories`, change counts by kind (`counts`) and warnings (`warnings`). `counts` and `warnings` add up the releases in range one by one, so a fix shipped on several release lines is counted once per release |
-| `distinct_advisories` | `summary` | `object` | The advisories the security changes in range cite, each counted once: `total`, and by grade `critical`, `high`, `medium`, `low` and `ungraded` (no grade found). A CVE and the GHSA cited together on a change are one advisory. When changes in range pair those ids differently, each id counts on its own, so one advisory can be counted twice; a pairing that no other change contradicts is taken at its word, so one change that pairs the ids of two advisories counts them as one. An advisory's grade is the highest grade of the changes that cite it alone; when none of those carries a grade, or no change cites it alone, it is the highest grade of the changes that cite it together with other advisories. Security changes that cite no advisory id of a recognised kind (CVE, GHSA, GO, RUSTSEC, PYSEC) are not counted here (`counts.security` has them), and neither are those `note` says your branch already fixed. Quote this, not `warnings.critical`, when you say how many advisories an upgrade fixes |
+| `distinct_advisories` | `summary` | `object` | The advisories the security changes in range cite, each counted once: `total`, and by grade `critical`, `high`, `medium`, `low` and `ungraded` (no grade found). A CVE and the GHSA cited together on a change are one advisory. When changes in range pair those ids differently, each id counts on its own, so one advisory can be counted twice; a pairing that no other change contradicts is taken at its word, so one change that pairs the ids of two advisories counts them as one. An advisory's grade is the highest grade of the changes that cite it alone; when none of those carries a grade, or no change cites it alone, it is the highest grade of the changes that cite it together with other advisories. Security changes that cite no advisory id of a recognised kind (CVE, GHSA, GO, RUSTSEC, PYSEC) are not counted here (`counts.security` has them), and neither are those `note` says your branch already fixed. Quote this, not `warnings.critical`, when you say how many advisories an upgrade fixes. Since 1.1.0. |
 | `releases` | component | `array` | The versions in (running, target], oldest first, on the running version's release line |
 | `before_upgrade` | component | `array` | Every prerequisite, known issue and upgrade guide in range, each with its version, its whole `body` (`null` when the item has none) and the entries folded under it (`folded`). They usually sit on the release that starts a new minor; read all of them. An item whose text recurs on several releases is listed once, at the newest, with `also_in` naming the others. Always present on a checked component, `[]` when there is none |
 | `changes` | component | `array` | The kinds that ask for a decision: `security`, `breaking`, `deprecations`, `important_fixes`, up to 20, 20, 10 and 10 with their body. Security goes most severe first; within a grade, and within each of the other kinds, changes that say what to do (`action_required`, `also_required`, a stated or inferred `no_downgrade` or `removed_in`) come first. The other three kinds are counted in `summary.counts`; `get_release` has them |
 | `changes_omitted` | component | `object` | Per kind, the changes not in `changes` (security keeps its most severe; within a grade, and in the other kinds, changes that say what to do are kept first), a security change that cites the same advisories as another change of its own release included. Per kind, `summary.counts` = `changes` + `changes_omitted` + `excluded_on_branch.security` + the backports an `also_in` names. `changes_more` lists every one of them that is a security, breaking or deprecation change |
-| `changes_more` | component | `array` | One line for every security, breaking and deprecation change `changes_omitted` counts, however long the range (a backport of an entry is a version in that entry's `also_in`, and what your branch already fixed is in `excluded_on_branch`): `version`, `id`, `kind`, `title`, `severity` (security only), `affects` (`text`, `status`), `also_in` as an entry has it, and marks for what the change asks for: `action_required: true`, `also_required: true`, `no_downgrade: true` (stated or inferred) and `removed_in` (`text`, `status`; stated or inferred). The text behind a mark is in the change itself. It includes a security change that cites the same advisories as another change of its own release (an entry, or a backport named in an entry's `also_in`). Important fixes past the 10 in `changes` are only counted in `changes_omitted`, unless `kinds` names `important_fixes`: then each has its line too. Read the body and evidence of a line with `get_release(project, version, changes: [id])` |
+| `changes_more` | component | `array` | One line for every security, breaking and deprecation change `changes_omitted` counts, however long the range (a backport of an entry is a version in that entry's `also_in`, and what your branch already fixed is in `excluded_on_branch`): `version`, `id`, `kind`, `title`, `severity` (security only), `affects` (`text`, `status`), `also_in` as an entry has it, and marks for what the change asks for: `action_required: true`, `also_required: true`, `no_downgrade: true` (stated or inferred) and `removed_in` (`text`, `status`; stated or inferred). The text behind a mark is in the change itself. It includes a security change that cites the same advisories as another change of its own release (an entry, or a backport named in an entry's `also_in`). Important fixes past the 10 in `changes` are only counted in `changes_omitted`, unless `kinds` names `important_fixes`: then each has its line too. Read the body and evidence of a line with `get_release(project, version, changes: [id])`. Since 1.2.0. |
 | `affects` | change | `object` | Decides who a change applies to. `stated` or `inferred`: it applies only if that holds in the running configuration, so check before reporting it. `not_stated`: the notes do not narrow it. Unless the title names something specific, treat it as applying to every install |
 | `also_in` | change | `array` | Versions of other releases in range that fix the same advisory on other branches. See the paragraph below the table. On a `before_upgrade` item: the other releases that carry the same text |
 | `note` | component | `string` | What was excluded and why. See the paragraph below the table |
 | `gaps` | component | `array` | Neighbouring versions whose numbers skip (v3.5.32 then v3.6.7): releases in between may exist that were not analyzed. Check their release notes yourself |
 | `releases_not_read` | component | `array` | Versions in range whose documents were not read; the newest 60 releases of a project are read per call |
 | `later_for_running` | component | `array` | What was learned about the running version after it shipped, as recorded on that release: `advisory_after_release` is an advisory published later for a vulnerability it already fixes (not a sign that it is vulnerable); `known_issue_fixed` and `regression_fixed` are problems it has, fixed in `fixed_in`. A defect that started in an earlier version is recorded on that version, not here, so an empty list does not mean no known defect |
-| `later_in_range` | component | `array` | The problems recorded on releases in range: `regression_fixed` and `known_issue_fixed`, a defect that release has, fixed in `fixed_in` (for example a regression in one patch fixed in the next). An `advisory_after_release` on a release in range is not here: it is for a vulnerability that release already fixes. `[]` when none is recorded |
-| `excluded_on_branch` | component | `object` | The security changes left out because the running version's branch already fixed their advisories at or below it: `security` (how many) and `advisories` (each id once, the most severe first, with the highest `severity` a left-out change gave it). `summary.counts` and `summary.warnings` still include them, and `warnings.critical_excluded_on_branch` (in `summary`, and on each release in `releases` that had one) says how many of `warnings.critical` they are: `critical` minus that is what the upgrade newly fixes. Present only when something was left out |
+| `later_in_range` | component | `array` | The problems recorded on releases in range: `regression_fixed` and `known_issue_fixed`, a defect that release has, fixed in `fixed_in` (for example a regression in one patch fixed in the next). An `advisory_after_release` on a release in range is not here: it is for a vulnerability that release already fixes. `[]` when none is recorded. Since 1.2.0. |
+| `excluded_on_branch` | component | `object` | The security changes left out because the running version's branch already fixed their advisories at or below it: `security` (how many) and `advisories` (each id once, the most severe first, with the highest `severity` a left-out change gave it). `summary.counts` and `summary.warnings` still include them, and `warnings.critical_excluded_on_branch` (in `summary`, and on each release in `releases` that had one) says how many of `warnings.critical` they are: `critical` minus that is what the upgrade newly fixes. Present only when something was left out. Since 1.2.0. |
 | `running_version` | component | `string` | The running version as passed in the call |
-| `version_read_as` | component | `string` | The version that was checked, when the one passed carried an image build suffix after the version (`v1.37.6-1789133542-<commit>` is read as `v1.37.6`). Absent otherwise. `check_upgrade` reads `from` the same way |
+| `version_read_as` | component | `string` | The version that was checked, when the one passed carried an image build suffix after the version (`v1.37.6-1789133542-<commit>` is read as `v1.37.6`). Absent otherwise. `check_upgrade` reads `from` the same way. Since 1.2.0. |
 | `target_version` | component | `string` | Where the range ends: the target passed, with `same_minor` the newest release of the running minor, otherwise the newest release on the running version's release line. A release line is a tag prefix (`flagd/`, `lts-`), not a minor version: v1.36.5 is checked up to v1.37.x |
 | `version_source` | component | `string` | Echoed back as provided |
 | `tracked` | component | `boolean` | `false` if ratatosk knows no project by that slug (check it with `list_projects`; if it is not listed, ratatosk does not track it); `true` if it tracks the project but has no analyzed release yet; absent otherwise |
@@ -170,7 +175,7 @@ locally. Self-hosted, your versions never leave your infrastructure.
 | `components` | `array` | yes | none | The components to check, up to 100. Each element takes the fields in the next table |
 | `detail` | `string` | no | `brief` | `brief` or `full` (every release in range verbatim, up to 15) |
 | `lang` | `string` | no | `en` | `en`, `ko` or `ja`: the language of the text fields |
-| `kinds` | `array` | no | every kind | Only changes of these kinds, for every component. With `brief`, any of `security`, `breaking`, `deprecations`, `important_fixes` (a briefing counts the other three in `summary.counts` only, and asking for them is an error that says where to read them); with `full`, any of the seven kinds, and folded lines are then left out. `summary` stays the whole range |
+| `kinds` | `array` | no | every kind | Only changes of these kinds, for every component. With `brief`, any of `security`, `breaking`, `deprecations`, `important_fixes` (a briefing counts the other three in `summary.counts` only, and asking for them is an error that says where to read them); with `full`, any of the seven kinds, and folded lines are then left out. `summary` stays the whole range. Since 1.2.0. |
 
 Each element of `components` takes these fields.
 
@@ -179,7 +184,7 @@ Each element of `components` takes these fields.
 | `project` | `string` | yes | none | A slug from `list_projects`; image aliases are also accepted and mapped to the project |
 | `version` | `string` | yes | none | The running version exactly as published, including its release-line prefix (`flagd/v0.16.1`) |
 | `target_version` | `string` | no | the newest on the release line | The target version; limits the range only if it is above `version`. A release line is a tag prefix (`flagd/`, `lts-`), not a minor version: without a target, v1.36.5 is checked up to v1.37.x |
-| `same_minor` | `boolean` | no | `false` | `true` stops the range at the newest release of the running minor (v1.36.5 up to the newest v1.36.x). Not together with `target_version` |
+| `same_minor` | `boolean` | no | `false` | `true` stops the range at the newest release of the running minor (v1.36.5 up to the newest v1.36.x). Not together with `target_version`. Since 1.2.0. |
 | `version_source` | `string` | no | none | Where the version was read; echoed back as provided |
 
 ### Example call
@@ -336,9 +341,9 @@ empty and `note` says so, in both details. An image build suffix on `from` is re
 | `project` | `string` | yes | none | Project slug |
 | `from` | `string` | yes | none | The version you run (exclusive) |
 | `to` | `string` | no | the newest on the release line | Target version (inclusive). A release line is a tag prefix, not a minor version: without `to`, v1.36.5 reaches v1.37.x |
-| `same_minor` | `boolean` | no | `false` | `true` stops the range at the newest release of `from`'s minor. Not together with `to` |
+| `same_minor` | `boolean` | no | `false` | `true` stops the range at the newest release of `from`'s minor. Not together with `to`. Since 1.2.0. |
 | `detail` | `string` | no | `brief` | `brief` or `full` (the server's answer verbatim) |
-| `kinds` | `array` | no | every kind | Only changes of these kinds, as in `check_stack` |
+| `kinds` | `array` | no | every kind | Only changes of these kinds, as in `check_stack`. Since 1.2.0. |
 | `lang` | `string` | no | `en` | `en`, `ko` or `ja` |
 
 ### Example call
@@ -475,8 +480,8 @@ other before-upgrade items are left out too. Pass one of them, not both.
 | `project` | `string` | yes | none | Project slug |
 | `version` | `string` | no | the latest release | As published, with or without the leading `v`. With `changes` and no `version`, the release the ids name |
 | `lang` | `string` | no | `en` | `en`, `ko` or `ja`. Evidence quotes stay verbatim |
-| `kinds` | `array` | no | every kind | Only changes of these kinds; `folded` is then left out |
-| `changes` | `array` | no | every change | Up to 50 change or before-upgrade item ids: only those, with `not_found` listing the ids not found. Without `version`, the releases the ids name (up to 10). Not together with `kinds` |
+| `kinds` | `array` | no | every kind | Only changes of these kinds; `folded` is then left out. Since 1.2.0. |
+| `changes` | `array` | no | every change | Up to 50 change or before-upgrade item ids: only those, with `not_found` listing the ids not found. Without `version`, the releases the ids name (up to 10). Not together with `kinds`. Since 1.2.0. |
 
 ### Example call
 
@@ -685,7 +690,7 @@ id such as `GHSA-3wh4` finds the full one. A complete id (`CVE-2026-1234`,
 |---|---|---|---|---|
 | `q` | `string` | yes | none | The query, 2–200 characters |
 | `lang` | `string` | no | `en` | `en`, `ko` or `ja` |
-| `project` | `string` | no | every project | Only that project's releases, in all three arrays |
+| `project` | `string` | no | every project | Only that project's releases, in all three arrays. Since 1.2.0. |
 
 ### Response fields
 
@@ -694,9 +699,9 @@ id such as `GHSA-3wh4` finds the full one. A complete id (`CVE-2026-1234`,
 | `in_analysis` | `array` | Releases where a change or before-upgrade item matched, or the project name or version (`matched.kind: "release"`) |
 | `in_release_notes` | `array` | Releases where the release notes matched |
 | `in_linked_documents` | `array` | Releases where a document the notes link matched |
-| `matches` | `array` | On an `in_analysis` release matched through an item: every item of that release that matches `q` (`id`, `kind`, `title`; `kind` is `before_upgrade` for a before-upgrade item), up to 20. `matched` names only the first. Given for the first 8 such releases of the answer; a release matched through a folded dependency line (`matched` with kind `dependency_updates` and no title) has no item to list and carries none |
-| `matches_omitted` | `integer` | How many more items of that release match, past 20 |
-| `matches_not_computed` | `integer` | At the top of the answer: how many `in_analysis` releases matched through an item carry no `matches`, because one call reads at most 8 releases or a release could not be read. Narrow with `project` to reach them |
+| `matches` | `array` | On an `in_analysis` release matched through an item: every item of that release that matches `q` (`id`, `kind`, `title`; `kind` is `before_upgrade` for a before-upgrade item), up to 20. `matched` names only the first. Given for the first 8 such releases of the answer; a release matched through a folded dependency line (`matched` with kind `dependency_updates` and no title) has no item to list and carries none. Since 1.2.0. |
+| `matches_omitted` | `integer` | How many more items of that release match, past 20. Since 1.2.0. |
+| `matches_not_computed` | `integer` | At the top of the answer: how many `in_analysis` releases matched through an item carry no `matches`, because one call reads at most 8 releases or a release could not be read. Narrow with `project` to reach them. Since 1.2.0. |
 
 `in_release_notes` and `in_linked_documents` list the newest releases first. In
 `in_analysis`, releases whose project name or version matched the query
