@@ -24,20 +24,31 @@ import (
 // The whole point of check_stack over check_upgrade. Two installs on very
 // different versions, one with a target, must produce exactly the same
 // upstream requests — otherwise the server could read the running version
-// off which releases were fetched.
+// off which releases were fetched. That holds for a version that is not read
+// as one too: a version that could not be parsed skipped the release list and
+// sent one request, one on a line with no releases skipped the documents and
+// sent two, an ordinary one sent eight (independent review, 2026-11-21). The
+// requests are compared as a multiset: documents are read several at a time.
 func TestCheckStackRequestsDoNotDependOnVersions(t *testing.T) {
 	var sets [][]string
-	for _, comp := range []stackComponent{
+	comps := []stackComponent{
 		{Project: "etcd", Version: "v3.5.30"},
 		{Project: "etcd", Version: "v3.6.8"},
 		{Project: "etcd", Version: "3.5.31", TargetVersion: "v3.6.7"},
 		{Project: "etcd", Version: "api/v3.6.7"},
-		{Project: "etcd", Version: "v3.6.99"}, // newer than every release on record: refused after the same fetch
-	} {
+		{Project: "etcd", Version: "v3.6.99"},                   // newer than every release on record
+		{Project: "etcd", Version: "v3.4.0"},                    // older than every release on record
+		{Project: "etcd", Version: "v3.5.30-1789133542-0f3e1a"}, // an image build suffix
+		{Project: "etcd", Version: "knative-v3.5.30"},           // a line with no releases
+		{Project: "etcd", Version: "garbage"},                   // not a version
+		{Project: "etcd", Version: ""},
+		{Project: "etcd", Version: "v3.5.30", SameMinor: true},
+	}
+	for _, comp := range comps {
 		f := upstreamtest.NewEtcd()
 		h := withAPI(t, httptest.NewServer(f.Handler(t)))
 		runStack(t, h, checkStackArgs{Components: []stackComponent{comp}})
-		reqs := f.Requests()
+		reqs := slices.Sorted(slices.Values(f.Requests()))
 		for _, u := range reqs {
 			if strings.Contains(u, "from=") || strings.Contains(u, "/v2/upgrade") {
 				t.Fatalf("check_stack called the server-side range: %s", u)
@@ -47,7 +58,8 @@ func TestCheckStackRequestsDoNotDependOnVersions(t *testing.T) {
 	}
 	for i := 1; i < len(sets); i++ {
 		if !slices.Equal(sets[0], sets[i]) {
-			t.Fatalf("requests depend on the running version:\n%v\nvs\n%v", sets[0], sets[i])
+			t.Errorf("requests depend on the running version: %q sent %d, %q sent %d:\n%v\nvs\n%v",
+				comps[0].Version, len(sets[0]), comps[i].Version, len(sets[i]), sets[0], sets[i])
 		}
 	}
 }

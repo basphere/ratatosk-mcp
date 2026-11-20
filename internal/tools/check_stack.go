@@ -228,13 +228,33 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 				continue
 			}
 		}
+		// What goes upstream is decided here, from the project alone: its
+		// release list and, within the call's budget, its newest releases.
+		// Every check below that reads the running version comes after, so a
+		// version that cannot be parsed, sits on a line with no releases or
+		// lies above every release on record sends the same requests as any
+		// other. Refusing the first two before the reads let the number of
+		// requests tell the server which case it was (1, 2 or 8 on the test
+		// history; independent review, 2026-11-21).
+		rows, listErr := h.api.ProjectReleases(ctx, slug)
+		var docs map[string]*release.Doc
+		var docsErr error
+		overBudget := false
+		if listErr == nil && len(rows) > 0 {
+			set := fetchSet(rows)
+			if spent+len(set) > fetchBudget {
+				overBudget = true
+			} else {
+				spent += len(set)
+				docs, docsErr = h.fetchDocs(ctx, set, lang)
+			}
+		}
 		if version.NormalizeVersion(comp.Version) == nil {
 			skip("running version could not be parsed")
 			continue
 		}
-		rows, err := h.api.ProjectReleases(ctx, slug)
-		if err != nil {
-			skip(fetchReason(ctx, err))
+		if listErr != nil {
+			skip(fetchReason(ctx, listErr))
 			continue
 		}
 		if len(rows) == 0 {
@@ -281,15 +301,12 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 		if targetNote != "" {
 			notes = append(notes, targetNote)
 		}
-		set := fetchSet(rows)
-		if spent+len(set) > fetchBudget {
+		if overBudget {
 			skip("not checked: this call already read as many releases as one call may — call check_stack again with the remaining components")
 			continue
 		}
-		spent += len(set)
-		docs, err := h.fetchDocs(ctx, set, lang)
-		if err != nil {
-			skip(fetchReason(ctx, err))
+		if docsErr != nil {
+			skip(fetchReason(ctx, docsErr))
 			continue
 		}
 
@@ -329,10 +346,6 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 		if n := confessionNote(comp.VersionSource); n != "" {
 			notes = append(notes, n)
 		}
-		// Decided here, after the documents were read, and not before the fetch
-		// with the other refusals: skipping the fetch would make the upstream
-		// requests depend on the running version, which is what check_stack
-		// exists to prevent (see fetchSet).
 		if n := newerNote(running, currentKey, newest, newestTag); n != "" {
 			rep.TargetVersion = "" // the range end resolved above sits below the running version
 			skip(n)
