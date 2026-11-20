@@ -19,6 +19,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
@@ -38,7 +39,7 @@ func gradeRank100(raw json.RawMessage) int {
 	return 0
 }
 
-func carriesItsOwn100(c v2Change, kept briefChange) bool {
+func carriesItsOwn100(c release.Change, kept briefChange) bool {
 	if s := strOf(c.AlsoRequired); s != "" && s != kept.AlsoRequired {
 		return true
 	}
@@ -60,7 +61,7 @@ func raiseSeverity100(bc *briefChange, sev *string) {
 	}
 }
 
-func buildBriefing100(docs []*v2Release, alreadyFixed map[string]bool, runningKey []int) (briefing, int) {
+func buildBriefing100(docs []*release.Doc, alreadyFixed map[string]bool, runningKey []int) (briefing, int) {
 	b := briefing{
 		Summary:  &stackSummary{Counts: map[string]int{}, Warnings: map[string]int{"critical": 0, "no_downgrade": 0}},
 		Releases: &[]rangeRelease{},
@@ -89,7 +90,7 @@ func buildBriefing100(docs []*v2Release, alreadyFixed map[string]bool, runningKe
 		*b.Releases = append(*b.Releases, rr)
 		for _, sec := range []struct {
 			name  string
-			items []v2Item
+			items []release.Item
 		}{{"prerequisites", d.BeforeUpgrade.Prerequisites}, {"known_issues", d.BeforeUpgrade.KnownIssues}, {"upgrade_guide", d.BeforeUpgrade.UpgradeGuide}} {
 			for _, it := range sec.items {
 				b.BeforeUpgrade = append(b.BeforeUpgrade, briefItem{Version: d.Version, Section: sec.name, ID: it.ID, Title: it.Title, Body: briefText(strOf(it.Body))})

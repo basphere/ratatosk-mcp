@@ -14,6 +14,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
@@ -26,7 +27,7 @@ import (
 type fakeV2 struct {
 	mu       sync.Mutex
 	seen     []string
-	rows     []v2Row
+	rows     []release.Row
 	docs     map[string]string // version → release document
 	projects string
 }
@@ -40,7 +41,7 @@ func (f *fakeV2) handler(t *testing.T) http.HandlerFunc {
 		case r.URL.Path == "/v2/projects":
 			w.Write([]byte(f.projects))
 		case r.URL.Path == "/v2/releases":
-			var rows []v2Row
+			var rows []release.Row
 			for _, row := range f.rows {
 				if p := r.URL.Query().Get("project"); p == "" || p == row.Project {
 					rows = append(rows, row)
@@ -107,7 +108,7 @@ func newFakeEtcd() *fakeV2 {
 	}
 	f := &fakeV2{
 		projects: `{"projects":[{"slug":"etcd","name":"etcd"},{"slug":"envoy","name":"Envoy","image_aliases":["cilium-envoy"]}]}`,
-		rows: []v2Row{
+		rows: []release.Row{
 			{Project: "etcd", Version: "v3.6.8"}, {Project: "etcd", Version: "v3.6.7"}, {Project: "etcd", Version: "api/v3.6.7"},
 			{Project: "etcd", Version: "v3.5.32"}, {Project: "etcd", Version: "v3.5.31"}, {Project: "etcd", Version: "v3.5.30"},
 		},
@@ -149,7 +150,7 @@ type stackOut struct {
 			Kind        string          `json:"kind"`
 			Severity    json.RawMessage `json:"severity"`
 			AlsoIn      []string        `json:"also_in"`
-			NoDowngrade *v2Attr         `json:"no_downgrade"`
+			NoDowngrade *release.Attr   `json:"no_downgrade"`
 		} `json:"changes"`
 		Gaps            []versionGap      `json:"gaps"`
 		LaterForRunning []json.RawMessage `json:"later_for_running"`
@@ -353,7 +354,7 @@ func TestVersionGaps(t *testing.T) {
 }
 
 func TestUpgradeRange(t *testing.T) {
-	rows := []v2Row{{Version: "v1.24.4"}, {Version: "v1.24.3"}, {Version: "v1.24.3-rc1"}, {Version: "v1.24.2"}, {Version: "api/v1.30.0"}, {Version: "redirect"}}
+	rows := []release.Row{{Version: "v1.24.4"}, {Version: "v1.24.3"}, {Version: "v1.24.3-rc1"}, {Version: "v1.24.2"}, {Version: "api/v1.30.0"}, {Version: "redirect"}}
 	got := func(running, target string) ([]string, string) {
 		r, tgt := upgradeRange(rows, running, target)
 		var v []string
@@ -381,9 +382,9 @@ func TestUpgradeRange(t *testing.T) {
 // 2026-11-11 the running release itself came back as upgrade work, and a target
 // spelled with "v" returned no releases and no note.
 func TestUpgradeRangeIgnoresTheCallersVStyle(t *testing.T) {
-	bare := []v2Row{{Version: "0.45.2"}, {Version: "0.45.1"}, {Version: "0.45.1-rc1"}, {Version: "0.45.0"}}
-	withV := []v2Row{{Version: "v0.45.2"}, {Version: "v0.45.1"}, {Version: "v0.45.1-rc1"}, {Version: "v0.45.0"}}
-	names := func(rows []v2Row, running, target string) []string {
+	bare := []release.Row{{Version: "0.45.2"}, {Version: "0.45.1"}, {Version: "0.45.1-rc1"}, {Version: "0.45.0"}}
+	withV := []release.Row{{Version: "v0.45.2"}, {Version: "v0.45.1"}, {Version: "v0.45.1-rc1"}, {Version: "v0.45.0"}}
+	names := func(rows []release.Row, running, target string) []string {
 		r, _ := upgradeRange(rows, running, target)
 		var v []string
 		for _, x := range r {
@@ -391,7 +392,7 @@ func TestUpgradeRangeIgnoresTheCallersVStyle(t *testing.T) {
 		}
 		return v
 	}
-	for _, rows := range [][]v2Row{bare, withV} {
+	for _, rows := range [][]release.Row{bare, withV} {
 		for _, c := range []struct {
 			running, target string
 			want            []string
@@ -676,16 +677,16 @@ func TestListReleasesValidates(t *testing.T) {
 // of every breaking one; a single cap would have hidden all of them. Caps are
 // per kind, security keeps its most severe, and every cut is counted.
 func TestBriefingCapsPerKind(t *testing.T) {
-	d := &v2Release{Version: "v1.38.0"}
+	d := &release.Doc{Version: "v1.38.0"}
 	grades := []string{"low", "critical", "medium", "high"}
 	for i := 0; i < 30; i++ {
 		g := grades[i%4]
-		d.Changes = append(d.Changes, v2Change{ID: fmt.Sprint("s", i), Kind: "security", Severity: &g, Advisories: []string{fmt.Sprint("CVE-2026-", 1000+i)}})
+		d.Changes = append(d.Changes, release.Change{ID: fmt.Sprint("s", i), Kind: "security", Severity: &g, Advisories: []string{fmt.Sprint("CVE-2026-", 1000+i)}})
 	}
 	for i := 0; i < 3; i++ {
-		d.Changes = append(d.Changes, v2Change{ID: fmt.Sprint("b", i), Kind: "breaking"})
+		d.Changes = append(d.Changes, release.Change{ID: fmt.Sprint("b", i), Kind: "breaking"})
 	}
-	b, _ := buildBriefing([]*v2Release{d}, nil, nil)
+	b, _ := buildBriefing([]*release.Doc{d}, nil, nil)
 	var sec, brk int
 	for _, c := range b.Changes {
 		switch c.Kind {
@@ -714,22 +715,22 @@ func TestBriefingCapsPerKind(t *testing.T) {
 // the cap of 20 kept one of them. Entries that say what to do lead their kind;
 // inside each group the old order holds; the omitted count means what it meant.
 func TestBriefingKeepsEntriesThatCarryAStepBeforeTheCap(t *testing.T) {
-	d := &v2Release{Version: "v1.36.0"}
+	d := &release.Doc{Version: "v1.36.0"}
 	ar := "migrate the flex-volume mount before upgrading"
-	stated := &v2Attr{Text: "1.37", Status: "stated"}
-	notStated := &v2Attr{Text: "", Status: "not_stated"}
+	stated := &release.Attr{Text: "1.37", Status: "stated"}
+	notStated := &release.Attr{Text: "", Status: "not_stated"}
 	for i := 0; i < 30; i++ {
-		c := v2Change{ID: fmt.Sprint("b", i), Kind: "breaking", NoDowngrade: notStated}
+		c := release.Change{ID: fmt.Sprint("b", i), Kind: "breaking", NoDowngrade: notStated}
 		switch i {
 		case 25, 27, 29:
 			c.ActionRequired = &ar
 		case 28:
-			c.NoDowngrade = &v2Attr{Text: "", Status: "inferred"}
+			c.NoDowngrade = &release.Attr{Text: "", Status: "inferred"}
 		}
 		d.Changes = append(d.Changes, c)
 	}
 	for i := 0; i < 12; i++ {
-		c := v2Change{ID: fmt.Sprint("d", i), Kind: "deprecations", RemovedIn: notStated}
+		c := release.Change{ID: fmt.Sprint("d", i), Kind: "deprecations", RemovedIn: notStated}
 		if i == 11 {
 			c.RemovedIn = stated
 		}
@@ -740,12 +741,12 @@ func TestBriefingKeepsEntriesThatCarryAStepBeforeTheCap(t *testing.T) {
 	low, crit, high := "low", "critical", "high"
 	also := "rotate the tokens"
 	d.Changes = append(d.Changes,
-		v2Change{ID: "s-crit", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-1"}},
-		v2Change{ID: "s-low-step", Kind: "security", Severity: &low, Advisories: []string{"CVE-2026-2"}, AlsoRequired: &also},
-		v2Change{ID: "s-high", Kind: "security", Severity: &high, Advisories: []string{"CVE-2026-3"}},
-		v2Change{ID: "s-high-step", Kind: "security", Severity: &high, Advisories: []string{"CVE-2026-4"}, AlsoRequired: &also},
+		release.Change{ID: "s-crit", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-1"}},
+		release.Change{ID: "s-low-step", Kind: "security", Severity: &low, Advisories: []string{"CVE-2026-2"}, AlsoRequired: &also},
+		release.Change{ID: "s-high", Kind: "security", Severity: &high, Advisories: []string{"CVE-2026-3"}},
+		release.Change{ID: "s-high-step", Kind: "security", Severity: &high, Advisories: []string{"CVE-2026-4"}, AlsoRequired: &also},
 	)
-	b, _ := buildBriefing([]*v2Release{d}, nil, nil)
+	b, _ := buildBriefing([]*release.Doc{d}, nil, nil)
 
 	var brk, dep, sec []string
 	for _, c := range b.Changes {

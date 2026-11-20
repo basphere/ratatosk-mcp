@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
 // sdkSession connects an in-memory client to the real server, so a call passes
@@ -247,9 +249,9 @@ func TestBriefingListsAFollowUpFixInsideTheRange(t *testing.T) {
 		return doc(ver, "", "", `[{"id":"etcd@`+ver+`#a","kind":"security","title":"fix","body":null,"severity":`+g+`,"advisories":["GHSA-1111"],`+
 			`"affects":{"text":"","status":"not_stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, "")
 	}
-	var docs []*v2Release
+	var docs []*release.Doc
 	for _, d := range []string{sec("v1.2.1", ""), sec("v1.2.2", "critical"), sec("v1.3.0", ""), sec("v1.3.1", "high")} {
-		r, err := parseRelease([]byte(d))
+		r, err := release.Parse([]byte(d))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -338,12 +340,12 @@ func TestBriefingTreatsSiblingsInOneReleaseAsOne(t *testing.T) {
 		return `{"id":"etcd@` + ver + `#` + id + `","kind":"security","title":"fix","body":null,"severity":` + g + `,"advisories":["GHSA-2222"],` +
 			`"affects":{"text":"","status":"not_stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
 	}
-	var docs []*v2Release
+	var docs []*release.Doc
 	for _, d := range []string{
 		doc("v1.2.1", "", "", `[`+ch("v1.2.1", "a", "")+`,`+ch("v1.2.1", "b", "")+`]`, ""),
 		doc("v1.3.0", "", "", `[`+ch("v1.3.0", "a", "critical")+`,`+ch("v1.3.0", "b", "critical")+`]`, ""),
 	} {
-		r, err := parseRelease([]byte(d))
+		r, err := release.Parse([]byte(d))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -394,11 +396,11 @@ func TestBriefingKeepsASiblingThatCarriesItsOwnStep(t *testing.T) {
 	withStep := `{"id":"etcd@v1.2.1#b","kind":"security","title":"opt-in GCM encryption","body":null,"severity":"high","advisories":["GHSA-3333"],` +
 		`"affects":{"text":"","status":"not_stated"},"also_required":"set use_gcm_encryption to true","security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}`
 	same := strings.Replace(plain, "#a", "#c", 1)
-	r, err := parseRelease([]byte(doc("v1.2.1", "", "", `[`+plain+`,`+withStep+`,`+same+`]`, "")))
+	r, err := release.Parse([]byte(doc("v1.2.1", "", "", `[`+plain+`,`+withStep+`,`+same+`]`, "")))
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, _ := buildBriefing([]*v2Release{r}, nil, []int{1, 2, 0})
+	b, _ := buildBriefing([]*release.Doc{r}, nil, []int{1, 2, 0})
 	var ids []string
 	for _, c := range b.Changes {
 		ids = append(ids, c.ID)

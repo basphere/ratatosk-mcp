@@ -1,7 +1,5 @@
-package main
-
-// How many different advisories a range fixes: summary.distinct_advisories
-// (1.1.0).
+// Package advisory counts how many different advisories a range fixes:
+// summary.distinct_advisories (1.1.0).
 //
 // Why this exists (an outside agent's field report, 2026-11-18):
 // summary.counts and summary.warnings add up every release in range, and a
@@ -39,12 +37,20 @@ package main
 // Only ids in the advisory families the ratatosk worker recognises (its
 // reader.advisoryPattern) take part. Anything else in advisories is not an
 // advisory id and links nothing.
+//
+// It is a package of its own so the briefing sees only the count: which ids
+// name one advisory, and how a disputed group is undone, stays in here. It
+// reads release documents (internal/release) and nothing else — no client,
+// no network.
+package advisory
 
 import (
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
+
+	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
 // advisoryIDRe is one whole advisory id: GHSA, CVE, GO, RUSTSEC or PYSEC,
@@ -52,18 +58,18 @@ import (
 // advisoryPattern).
 var advisoryIDRe = regexp.MustCompile(`(?i)^(?:GHSA(?:-[23456789cfghjmpqrvwx]{4}){3}|CVE-\d{4}-\d{4,7}|GO-\d{4}-\d{4,}|RUSTSEC-\d{4}-\d{4,}|PYSEC-\d{4}-\d+)$`)
 
-// normAdvisoryID is the form ids are compared in: upper case, no surrounding
-// space (advisoryKey has always compared this way).
-func normAdvisoryID(id string) string {
+// NormID is the form ids are compared in: upper case, no surrounding space
+// (the briefing's advisoryKey has always compared this way).
+func NormID(id string) string {
 	return strings.ToUpper(strings.TrimSpace(id))
 }
 
-// recognisedIDs returns the advisory ids among ids, normalised, sorted and
+// RecognisedIDs returns the advisory ids among ids, normalised, sorted and
 // without repeats.
-func recognisedIDs(ids []string) []string {
+func RecognisedIDs(ids []string) []string {
 	var out []string
 	for _, id := range ids {
-		if n := normAdvisoryID(id); advisoryIDRe.MatchString(n) {
+		if n := NormID(id); advisoryIDRe.MatchString(n) {
 			out = append(out, n)
 		}
 	}
@@ -91,22 +97,24 @@ func namesOneAdvisory(ids []string) bool {
 	return true
 }
 
-// advisoryIndex maps every recognised id cited by the security changes of a
+// Index maps every recognised id cited by the security changes of a
 // range to the advisory it names (a union-find over the links above). The
 // root of each advisory is its smallest id, so keys do not depend on the order
 // the releases were read in.
-type advisoryIndex struct {
+type Index struct {
 	parent map[string]string
 }
 
-func newAdvisoryIndex(docs []*v2Release) *advisoryIndex {
-	ix := &advisoryIndex{parent: map[string]string{}}
+// NewIndex links the ids the security changes of docs cite (see the package
+// comment). It reads the whole range before it decides anything.
+func NewIndex(docs []*release.Doc) *Index {
+	ix := &Index{parent: map[string]string{}}
 	for _, d := range docs {
 		for _, c := range d.Changes {
 			if c.Kind != "security" {
 				continue
 			}
-			ids := recognisedIDs(c.Advisories)
+			ids := RecognisedIDs(c.Advisories)
 			if len(ids) > 1 && namesOneAdvisory(ids) {
 				for _, id := range ids[1:] {
 					ix.union(ids[0], id)
@@ -122,7 +130,7 @@ func newAdvisoryIndex(docs []*v2Release) *advisoryIndex {
 // file comment): all of its ids become advisories of their own. A group is
 // judged whole, once every link is in, so the outcome is the same whatever
 // order the links arrived in.
-func (ix *advisoryIndex) dropDisputed() {
+func (ix *Index) dropDisputed() {
 	type famOf struct{ root, fam string }
 	first := map[famOf]string{}
 	disputed := map[string]bool{}
@@ -144,7 +152,7 @@ func (ix *advisoryIndex) dropDisputed() {
 	}
 }
 
-func (ix *advisoryIndex) find(id string) string {
+func (ix *Index) find(id string) string {
 	p, ok := ix.parent[id]
 	if !ok || p == id {
 		return id
@@ -154,7 +162,7 @@ func (ix *advisoryIndex) find(id string) string {
 	return r
 }
 
-func (ix *advisoryIndex) union(a, b string) {
+func (ix *Index) union(a, b string) {
 	ra, rb := ix.find(a), ix.find(b)
 	if ra == rb {
 		return
@@ -166,10 +174,10 @@ func (ix *advisoryIndex) union(a, b string) {
 	ix.parent[rb] = ra
 }
 
-// advisories names the advisories a change cites, one root id each, sorted.
+// Advisories names the advisories a change cites, one root id each, sorted.
 // nil when it cites no recognised id.
-func (ix *advisoryIndex) advisories(ids []string) []string {
-	rec := recognisedIDs(ids)
+func (ix *Index) Advisories(ids []string) []string {
+	rec := RecognisedIDs(ids)
 	if len(rec) == 0 {
 		return nil
 	}
@@ -181,9 +189,9 @@ func (ix *advisoryIndex) advisories(ids []string) []string {
 	return slices.Compact(out)
 }
 
-// distinctAdvisories counts the advisories a range's security changes cite,
+// Counts counts the advisories a range's security changes cite,
 // each once, by grade.
-type distinctAdvisories struct {
+type Counts struct {
 	Total    int `json:"total"`
 	Critical int `json:"critical"`
 	High     int `json:"high"`
@@ -194,8 +202,7 @@ type distinctAdvisories struct {
 	Ungraded int `json:"ungraded"`
 }
 
-// advisoryTally collects the security changes of a range for
-// distinctAdvisories.
+// Tally collects the security changes of a range for Counts.
 //
 // An advisory's grade is the highest grade of the changes that cite it alone.
 // A change citing several advisories carries the highest of their grades (the
@@ -208,24 +215,28 @@ type distinctAdvisories struct {
 // (2026-11-18) an advisory cited alone without a grade stayed ungraded even
 // when a several-advisory card graded it; ungraded says no grade was found,
 // and one was.
-type advisoryTally struct {
+type Tally struct {
 	seen        map[string]bool
 	aloneGrade  map[string]int // highest grade of the changes citing it alone
 	sharedGrade map[string]int // highest grade of the changes citing it with others
 }
 
-func newAdvisoryTally() *advisoryTally {
-	return &advisoryTally{seen: map[string]bool{}, aloneGrade: map[string]int{}, sharedGrade: map[string]int{}}
+// NewTally starts an empty count.
+func NewTally() *Tally {
+	return &Tally{seen: map[string]bool{}, aloneGrade: map[string]int{}, sharedGrade: map[string]int{}}
 }
 
-// add records one security change. advs are its advisories (from
-// advisoryIndex.advisories). A change that cites no recognised advisory id is
+// Add records one security change. advs are its advisories (from
+// Index.Advisories). A change that cites no recognised advisory id is
 // a security change with no advisory id, and is not counted: a value such as
 // "OSV-2026-1" or "N/A" is no more an advisory alone than it is next to a CVE,
 // where it was always ignored (until the final review, 2026-11-18, it counted
 // when it stood alone; on the seven live ranges of that day no count moved).
-func (t *advisoryTally) add(advs []string, severity *string) {
-	g := gradeRankOf(strOf(severity))
+func (t *Tally) Add(advs []string, severity *string) {
+	g := 0
+	if severity != nil {
+		g = GradeRank(*severity)
+	}
 	for _, a := range advs {
 		t.seen[a] = true
 		if len(advs) == 1 {
@@ -236,8 +247,9 @@ func (t *advisoryTally) add(advs []string, severity *string) {
 	}
 }
 
-func (t *advisoryTally) counts() distinctAdvisories {
-	var out distinctAdvisories
+// Counts is the count by grade, each advisory once.
+func (t *Tally) Counts() Counts {
+	var out Counts
 	for a := range t.seen {
 		g := t.aloneGrade[a]
 		if g == 0 {
@@ -260,9 +272,10 @@ func (t *advisoryTally) counts() distinctAdvisories {
 	return out
 }
 
-// gradeRankOf is gradeRank for a grade as text (the 1.0.0 comparison: case
-// folded, nothing trimmed).
-func gradeRankOf(g string) int {
+// GradeRank ranks a severity grade given as text, critical 4 to low 1, 0 for
+// none or anything else (the 1.0.0 comparison: case folded, nothing
+// trimmed).
+func GradeRank(g string) int {
 	switch strings.ToLower(g) {
 	case "critical":
 		return 4

@@ -21,6 +21,8 @@ import (
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
 // stringList is an array argument that also takes the forms models send in
@@ -107,8 +109,8 @@ func kindsArg(list stringList, briefing bool) (map[string]bool, error) {
 	var counted []string
 	for _, k := range list {
 		k = strings.ToLower(strings.TrimSpace(k))
-		if !containsStr(kinds, k) {
-			return nil, fmt.Errorf("kinds: unknown kind %q — kinds are %s", truncate(k, 40), strings.Join(kinds, ", "))
+		if !containsStr(release.Kinds, k) {
+			return nil, fmt.Errorf("kinds: unknown kind %q — kinds are %s", truncate(k, 40), strings.Join(release.Kinds, ", "))
 		}
 		if briefing && !containsStr(decisionKinds, k) {
 			counted = append(counted, k)

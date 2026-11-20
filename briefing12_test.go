@@ -18,6 +18,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/advisory"
+	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
 func ptr(s string) *string { return &s }
@@ -26,19 +29,19 @@ func ptr(s string) *string { return &s }
 // cilium v1.20.0's prerequisite had no body and its warning (Gateway API v1.6.1
 // before upgrading, or TLSRoute objects are lost) only in folded.
 func TestBeforeUpgradeCarriesBodiesFoldedAndGroupsRecurringTexts(t *testing.T) {
-	item := func(id, title string, body *string, folded string) v2Item {
-		it := v2Item{ID: id, Title: title, Body: body}
+	item := func(id, title string, body *string, folded string) release.Item {
+		it := release.Item{ID: id, Title: title, Body: body}
 		if folded != "" {
 			it.Folded = []json.RawMessage{json.RawMessage(folded)}
 		}
 		return it
 	}
-	rel := func(v string, pre ...v2Item) *v2Release {
-		d := &v2Release{Version: v}
+	rel := func(v string, pre ...release.Item) *release.Doc {
+		d := &release.Doc{Version: v}
 		d.BeforeUpgrade.Prerequisites = pre
 		return d
 	}
-	docs := []*v2Release{
+	docs := []*release.Doc{
 		rel("v2.3.1", item("c@v2.3.1#4f6a2055", "runc and CNI (2.3.1 wording)", ptr("install them separately"), "")),
 		rel("v2.3.3", item("c@v2.3.3#4f6a2055", "runc and CNI (2.3.3 wording)", nil, ""), item("c@v2.3.3#6ddd209f", "glibc archive", nil, "")),
 		rel("v2.4.0", item("c@v2.4.0#c62eff94", "legacy features", nil, `{"title":"Gateway API v1.6.1","body":"upgrade Gateway API to v1.6.1 before upgrading, or TLSRoute objects are lost"}`)),
@@ -66,7 +69,7 @@ func TestBeforeUpgradeCarriesBodiesFoldedAndGroupsRecurringTexts(t *testing.T) {
 	}
 	// A long body goes out whole: the instruction sits at its end.
 	long := strings.Repeat("가", 300) + " — upgrade Gateway API first"
-	if got := beforeUpgradeOf([]*v2Release{rel("v1", item("x@v1#a", "t", &long, ""))}); *got[0].Body != long {
+	if got := beforeUpgradeOf([]*release.Doc{rel("v1", item("x@v1#a", "t", &long, ""))}); *got[0].Body != long {
 		t.Error("a before-upgrade body was cut")
 	}
 	if got := beforeUpgradeOf(nil); got == nil || len(got) != 0 {
@@ -79,11 +82,11 @@ func TestBeforeUpgradeCarriesBodiesFoldedAndGroupsRecurringTexts(t *testing.T) {
 // security changes, five listed, nothing omitted), and so is a backport's
 // sibling.
 func TestBriefingListsWhatDidNotFitInOneLine(t *testing.T) {
-	sec := func(id string, title string, advs ...string) v2Change {
-		return v2Change{ID: id, Kind: "security", Title: title, Advisories: advs, Affects: &v2Attr{Text: "x", Status: "stated", Reason: "r"}}
+	sec := func(id string, title string, advs ...string) release.Change {
+		return release.Change{ID: id, Kind: "security", Title: title, Advisories: advs, Affects: &release.Attr{Text: "x", Status: "stated", Reason: "r"}}
 	}
 	go1273 := []string{"CVE-2026-111943", "CVE-2026-33818"}
-	coredns := &v2Release{Version: "v1.15.0", Changes: []v2Change{
+	coredns := &release.Doc{Version: "v1.15.0", Changes: []release.Change{
 		sec("c#asn1", "ASN.1 depth", append(slices.Clone(go1273), "GO-2026-5972")...),
 		sec("c#tls", "TLS policies"),
 		sec("c#h2", "HTTP/2 crash", go1273...),
@@ -92,17 +95,17 @@ func TestBriefingListsWhatDidNotFitInOneLine(t *testing.T) {
 	}}
 	ar := "migrate"
 	for i := 0; i < 25; i++ {
-		c := v2Change{ID: fmt.Sprint("c#b", i), Kind: "breaking", Title: "b"}
+		c := release.Change{ID: fmt.Sprint("c#b", i), Kind: "breaking", Title: "b"}
 		if i == 24 {
 			c.ActionRequired = &ar
 		}
 		coredns.Changes = append(coredns.Changes, c)
 	}
-	backport := &v2Release{Version: "v1.15.1", Changes: []v2Change{sec("c#h2-bp", "HTTP/2 crash (1.15)", go1273...), sec("c#trailer-bp", "trailer (1.15)", go1273...)}}
+	backport := &release.Doc{Version: "v1.15.1", Changes: []release.Change{sec("c#h2-bp", "HTTP/2 crash (1.15)", go1273...), sec("c#trailer-bp", "trailer (1.15)", go1273...)}}
 	// v1.15.1 is the same branch as v1.15.0; make it another branch.
 	backport.Version = "v1.16.0"
 
-	b, settled := buildBriefing([]*v2Release{coredns, backport}, nil, nil)
+	b, settled := buildBriefing([]*release.Doc{coredns, backport}, nil, nil)
 	if settled != 0 {
 		t.Fatalf("settled %d", settled)
 	}
@@ -174,12 +177,12 @@ func TestBriefingListsWhatDidNotFitInOneLine(t *testing.T) {
 		t.Error("the breaking change with action_required must lead and stay in changes")
 	}
 	// A line marks what its change asks for, whatever the kind.
-	req, nd := "re-register the cluster", &v2Attr{Text: "x", Status: "stated", Reason: "r"}
-	marked := lineOf(briefChange{Kind: "security", AlsoRequired: req, NoDowngrade: nd, RemovedIn: &v2Attr{Text: "v1.21", Status: "inferred", Reason: "r"}})
+	req, nd := "re-register the cluster", &release.Attr{Text: "x", Status: "stated", Reason: "r"}
+	marked := lineOf(briefChange{Kind: "security", AlsoRequired: req, NoDowngrade: nd, RemovedIn: &release.Attr{Text: "v1.21", Status: "inferred", Reason: "r"}})
 	if !marked.AlsoRequired || !marked.NoDowngrade || marked.ActionRequired || marked.RemovedIn == nil || *marked.RemovedIn != (lineAttr{Text: "v1.21", Status: "inferred"}) {
 		t.Errorf("line marks: %+v", marked)
 	}
-	if plain := lineOf(briefChange{Kind: "deprecations", NoDowngrade: &v2Attr{Status: "not_stated"}, RemovedIn: &v2Attr{Status: "not_stated"}}); plain.NoDowngrade || plain.RemovedIn != nil {
+	if plain := lineOf(briefChange{Kind: "deprecations", NoDowngrade: &release.Attr{Status: "not_stated"}, RemovedIn: &release.Attr{Status: "not_stated"}}); plain.NoDowngrade || plain.RemovedIn != nil {
 		t.Errorf("a not_stated no_downgrade or removed_in is no mark: %+v", plain)
 	}
 	j, _ := json.Marshal(b.ChangesMore[0])
@@ -193,7 +196,7 @@ func TestBriefingListsWhatDidNotFitInOneLine(t *testing.T) {
 func changeDoc(project, ver string, n map[string]int, titleLen int) string {
 	var cs []string
 	title := strings.Repeat("t", titleLen)
-	for _, kind := range kinds {
+	for _, kind := range release.Kinds {
 		for i := 0; i < n[kind]; i++ {
 			c := fmt.Sprintf(`{"id":"%s@%s#%s%d","kind":%q,"title":"%s %s %d","body":"b","severity":null,"advisories":["CVE-2026-%d"],`+
 				`"affects":{"text":"every install","status":"not_stated"},"evidence":[{"quote":"q","source":"release_notes","url":"u"}],"later":[]}`,
@@ -328,19 +331,19 @@ func TestSummaryLeadsWithDistinctAdvisories(t *testing.T) {
 // v1.40.2 counted nine critical advisories for one (2026-11-20).
 func TestDistinctAdvisoriesLeaveOutWhatTheBranchFixed(t *testing.T) {
 	crit := "critical"
-	bundle := v2Change{ID: "e#bundle", Kind: "security", Severity: &crit,
+	bundle := release.Change{ID: "e#bundle", Kind: "security", Severity: &crit,
 		Advisories: []string{"CVE-2026-111497", "GHSA-3wvj-j6qm-62mr", "CVE-2026-73512", "CVE-2026-73513"}}
-	own := v2Change{ID: "e#brotli", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-111497", "GHSA-3wvj-j6qm-62mr"}}
-	docs := []*v2Release{
-		{Version: "v1.37.8", Changes: []v2Change{own}},
-		{Version: "v1.40.0", Changes: []v2Change{bundle}},
+	own := release.Change{ID: "e#brotli", Kind: "security", Severity: &crit, Advisories: []string{"CVE-2026-111497", "GHSA-3wvj-j6qm-62mr"}}
+	docs := []*release.Doc{
+		{Version: "v1.37.8", Changes: []release.Change{own}},
+		{Version: "v1.40.0", Changes: []release.Change{bundle}},
 	}
 	fixed := map[string]bool{"CVE-2026-73512": true, "CVE-2026-73513": true}
 	b, settled := buildBriefing(docs, fixed, []int{1, 37, 6})
 	if settled != 0 {
 		t.Fatalf("settled %d: the bundle cites ids the branch has not fixed and stays listed", settled)
 	}
-	if got, want := b.Summary.DistinctAdvisories, (distinctAdvisories{Total: 1, Critical: 1}); got != want {
+	if got, want := b.Summary.DistinctAdvisories, (advisory.Counts{Total: 1, Critical: 1}); got != want {
 		t.Errorf("distinct advisories %+v, want %+v", got, want)
 	}
 	// With nothing known about the branch, every id counts, as in 1.1.0.
@@ -354,7 +357,7 @@ func TestDistinctAdvisoriesLeaveOutWhatTheBranchFixed(t *testing.T) {
 func TestLaterInRangeListsARepeatedEventOnce(t *testing.T) {
 	ev := json.RawMessage(`{"seq":1,"type":"regression_fixed","version":"v1.38.0","fixed_in":"v1.38.7","title":"t"}`)
 	other := json.RawMessage(`{"seq":2,"type":"regression_fixed","version":"v1.38.0","fixed_in":"v1.39.4","title":"t"}`)
-	b, _ := buildBriefing([]*v2Release{{Version: "v1.38.0", Later: []json.RawMessage{ev, ev, other}}}, nil, nil)
+	b, _ := buildBriefing([]*release.Doc{{Version: "v1.38.0", Later: []json.RawMessage{ev, ev, other}}}, nil, nil)
 	if n := len(*b.LaterInRange); n != 2 {
 		t.Errorf("later_in_range has %d events, want 2", n)
 	}
@@ -365,10 +368,10 @@ func TestLaterInRangeListsARepeatedEventOnce(t *testing.T) {
 // rest stood here while answers were cut to a size; envoy v1.37.6 has 63.)
 func TestExcludedOnBranchNamesEveryAdvisory(t *testing.T) {
 	high := "high"
-	var past, cur []v2Change
+	var past, cur []release.Change
 	for i := 0; i < 30; i++ {
 		id := fmt.Sprintf("CVE-2026-%d", 100+i)
-		c := v2Change{ID: fmt.Sprint("s", i), Kind: "security", Advisories: []string{id}}
+		c := release.Change{ID: fmt.Sprint("s", i), Kind: "security", Advisories: []string{id}}
 		if i >= 25 {
 			c.Severity = &high
 		}
@@ -379,7 +382,7 @@ func TestExcludedOnBranchNamesEveryAdvisory(t *testing.T) {
 	for _, c := range past {
 		fixed[c.Advisories[0]] = true
 	}
-	b, settled := buildBriefing([]*v2Release{{Version: "v2.0.0", Changes: cur}}, fixed, []int{1, 0, 0})
+	b, settled := buildBriefing([]*release.Doc{{Version: "v2.0.0", Changes: cur}}, fixed, []int{1, 0, 0})
 	ex := b.ExcludedOnBranch
 	if settled != 30 || ex == nil || ex.Security != 30 || len(ex.Advisories) != 30 {
 		t.Fatalf("excluded %+v", ex)

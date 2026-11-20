@@ -4,9 +4,10 @@ package main
 // itself). Read-only; the base URL is the only configuration. v2 returns the
 // same shape the website shows — a release with before-upgrade checks and
 // changes in seven kinds — so the tools mostly pass it through; only the types
-// check_stack inspects are spelled out here, and unknown fields are ignored so
-// the server can add fields without breaking this client (the v2 numbering
-// rule: additions never change the path, removals and renames move it to /v3).
+// check_stack inspects are spelled out (internal/release), and unknown fields
+// are ignored so the server can add fields without breaking this client (the
+// v2 numbering rule: additions never change the path, removals and renames
+// move it to /v3).
 
 import (
 	"context"
@@ -20,6 +21,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
 type apiClient struct {
@@ -37,7 +40,7 @@ func newAPIClient(baseURL string) *apiClient {
 }
 
 // ---------------------------------------------------------------------------
-// v2 shapes (only what check_stack reads)
+// v2 shapes this client reads itself (a release's are in internal/release)
 // ---------------------------------------------------------------------------
 
 // v2Project is one row of /v2/projects.
@@ -51,72 +54,6 @@ type v2Project struct {
 	Latest *struct {
 		Version string `json:"version"`
 	} `json:"latest"`
-}
-
-// v2Row is one row of /v2/releases — a release without its changes.
-type v2Row struct {
-	Project    string         `json:"project"`
-	Version    string         `json:"version"`
-	ReleasedAt string         `json:"released_at"`
-	URL        string         `json:"url"`
-	Counts     map[string]int `json:"counts"`
-	Warnings   map[string]int `json:"warnings"`
-}
-
-// v2Attr is an attribute that says whether the release notes stated it:
-// status stated | inferred | not_stated | not_read.
-type v2Attr struct {
-	Text   string `json:"text"`
-	Status string `json:"status"`
-	Reason string `json:"reason,omitempty"`
-}
-
-type v2Item struct {
-	ID    string  `json:"id"`
-	Title string  `json:"title"`
-	Body  *string `json:"body"`
-	// Folded holds entries kept under the item ({title, body}); passed on as
-	// received (a briefing's before_upgrade carries them since 1.2.0).
-	Folded []json.RawMessage `json:"folded"`
-}
-
-type v2Change struct {
-	ID              string            `json:"id"`
-	Kind            string            `json:"kind"`
-	Title           string            `json:"title"`
-	Body            *string           `json:"body"`
-	Severity        *string           `json:"severity"`
-	Advisories      []string          `json:"advisories"`
-	Affects         *v2Attr           `json:"affects"`
-	ActionRequired  *string           `json:"action_required"`
-	AlsoRequired    *string           `json:"also_required"`
-	NoDowngrade     *v2Attr           `json:"no_downgrade"`
-	RemovedIn       *v2Attr           `json:"removed_in"`
-	SecurityUnclear bool              `json:"security_unclear"`
-	SilentFailure   bool              `json:"silent_failure"`
-	Workaround      *v2Attr           `json:"workaround"`
-	RegressionSince *v2Attr           `json:"regression_since"`
-	Later           []json.RawMessage `json:"later"`
-}
-
-// v2Release is GET /v2/releases/{project}/{version}. Raw keeps the document
-// as received for detail:"full", so nothing the server adds is lost on the way.
-type v2Release struct {
-	Project       string         `json:"project"`
-	Version       string         `json:"version"`
-	ReleasedAt    string         `json:"released_at"`
-	URL           string         `json:"url"`
-	Counts        map[string]int `json:"counts"`
-	Warnings      map[string]int `json:"warnings"`
-	Processing    bool           `json:"processing"`
-	BeforeUpgrade struct {
-		Prerequisites []v2Item `json:"prerequisites"`
-		KnownIssues   []v2Item `json:"known_issues"`
-		UpgradeGuide  []v2Item `json:"upgrade_guide"`
-	} `json:"before_upgrade"`
-	Changes []v2Change        `json:"changes"`
-	Later   []json.RawMessage `json:"later"`
-	Raw     json.RawMessage   `json:"-"`
 }
 
 // ---------------------------------------------------------------------------
@@ -348,14 +285,14 @@ const maxReleasePages = 10
 
 // projectReleases pages through every release row of one project, newest
 // first. Only the project slug is sent — never a version.
-func (c *apiClient) projectReleases(ctx context.Context, project string) ([]v2Row, error) {
+func (c *apiClient) projectReleases(ctx context.Context, project string) ([]release.Row, error) {
 	// An empty slug drops the project filter and this loop would page every
 	// project. check_stack refuses such a component first; this is the
 	// backstop at the one place the fan-out happens.
 	if project == "" {
 		return nil, fmt.Errorf("refusing to list releases without a project")
 	}
-	var all []v2Row
+	var all []release.Row
 	before := ""
 	for page := 0; page < maxReleasePages; page++ {
 		b, err := c.releasesRaw(ctx, releasesQuery{Project: project, Before: before, Limit: 200}, true)
@@ -363,8 +300,8 @@ func (c *apiClient) projectReleases(ctx context.Context, project string) ([]v2Ro
 			return nil, err
 		}
 		var out struct {
-			Releases   []v2Row `json:"releases"`
-			NextBefore *string `json:"next_before"`
+			Releases   []release.Row `json:"releases"`
+			NextBefore *string       `json:"next_before"`
 		}
 		if err := json.Unmarshal(b, &out); err != nil {
 			return nil, fmt.Errorf("/v2/releases: %w", err)
@@ -405,15 +342,6 @@ func (c *apiClient) releaseRaw(ctx context.Context, project, version, lang strin
 		return nil, err
 	}
 	return c.getRaw(ctx, "/v2/releases/{project}/{version}", "/v2/releases/"+p+"/"+v, langQuery(nil, lang), cached)
-}
-
-func parseRelease(b []byte) (*v2Release, error) {
-	var r v2Release
-	if err := json.Unmarshal(b, &r); err != nil {
-		return nil, err
-	}
-	r.Raw = b
-	return &r, nil
 }
 
 // upgradeRaw is the explicit server-side range: from and to travel to the

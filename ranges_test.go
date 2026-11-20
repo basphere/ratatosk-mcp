@@ -44,6 +44,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/basphere/ratatosk-mcp/internal/advisory"
+	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
@@ -56,7 +58,7 @@ type upgradeAnswer struct {
 
 type namedRange struct {
 	name string
-	docs []*v2Release
+	docs []*release.Doc
 }
 
 func loadRanges(t *testing.T) []namedRange {
@@ -85,9 +87,9 @@ func loadRanges(t *testing.T) []namedRange {
 		if up.Project == "" || len(up.Releases) == 0 {
 			t.Fatalf("%s is not a /v2/upgrade answer with releases", p)
 		}
-		var docs []*v2Release
+		var docs []*release.Doc
 		for _, r := range up.Releases {
-			d, err := parseRelease(r)
+			d, err := release.Parse(r)
 			if err != nil {
 				t.Fatalf("%s: %v", p, err)
 			}
@@ -114,11 +116,11 @@ func withCaps(n int) (restore func()) {
 // and says where they differ, "" when they do not (distinct_advisories and the
 // 1.2.0 fields aside). before_upgrade is set aside on both sides: 1.2.0
 // answers it in a new form (upgradeItem), and the fixtures carry none.
-func diffFrom100(docs []*v2Release, fixed map[string]bool, running []int) string {
+func diffFrom100(docs []*release.Doc, fixed map[string]bool, running []int) string {
 	old, oldSettled := buildBriefing100(docs, fixed, running)
 	cur, curSettled := buildBriefing(docs, fixed, running)
 	sum := *cur.Summary
-	sum.DistinctAdvisories = distinctAdvisories{}
+	sum.DistinctAdvisories = advisory.Counts{}
 	cur.Summary = &sum
 	old.BeforeUpgrade = nil
 	// changes_omitted counts the security changes folded into an entry of
@@ -173,7 +175,7 @@ func diffFrom100(docs []*v2Release, fixed map[string]bool, running []int) string
 
 // assertSameAs100 fails the test unless buildBriefing answers docs as 1.0.0
 // did, distinct_advisories aside, with the production caps and with none.
-func assertSameAs100(t *testing.T, docs []*v2Release, fixed map[string]bool, running []int) {
+func assertSameAs100(t *testing.T, docs []*release.Doc, fixed map[string]bool, running []int) {
 	t.Helper()
 	for _, caps := range []int{0, 1 << 30} {
 		restore := withCaps(caps)
@@ -188,9 +190,9 @@ func assertSameAs100(t *testing.T, docs []*v2Release, fixed map[string]bool, run
 // rangeModes are the two ways a range reaches buildBriefing: check_upgrade
 // (nothing settled) and check_stack with the first release of the range as
 // the running version (its advisories settle backports on other branches).
-func rangeModes(docs []*v2Release) []struct {
+func rangeModes(docs []*release.Doc) []struct {
 	name    string
-	docs    []*v2Release
+	docs    []*release.Doc
 	fixed   map[string]bool
 	running []int
 } {
@@ -198,13 +200,13 @@ func rangeModes(docs []*v2Release) []struct {
 	for _, c := range docs[0].Changes {
 		if c.Kind == "security" {
 			for _, id := range c.Advisories {
-				fixed[normAdvisoryID(id)] = true
+				fixed[advisory.NormID(id)] = true
 			}
 		}
 	}
 	return []struct {
 		name    string
-		docs    []*v2Release
+		docs    []*release.Doc
 		fixed   map[string]bool
 		running []int
 	}{
@@ -280,7 +282,7 @@ func TestCutRangeFixtures(t *testing.T) {
 				}
 				k := advisoryKey(ids(ch))
 				whole[k]++
-				for _, id := range recognisedIDs(ids(ch)) {
+				for _, id := range advisory.RecognisedIDs(ids(ch)) {
 					if sets[id] == nil {
 						sets[id] = map[string]bool{}
 					}
@@ -296,7 +298,7 @@ func TestCutRangeFixtures(t *testing.T) {
 			if whole[k] > 1 {
 				return true
 			}
-			for _, id := range recognisedIDs(ids(ch)) {
+			for _, id := range advisory.RecognisedIDs(ids(ch)) {
 				if len(sets[id]) > 1 {
 					return true
 				}

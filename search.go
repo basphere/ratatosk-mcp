@@ -17,6 +17,8 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+
+	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
 // searchMatchReleases bounds the release documents one search call reads for
@@ -82,15 +84,15 @@ type matchDoc struct {
 }
 
 type matchItem struct {
-	ID             string   `json:"id"`
-	Kind           string   `json:"kind"`
-	Title          string   `json:"title"`
-	Body           *string  `json:"body"`
-	Affects        *v2Attr  `json:"affects"`
-	ActionRequired *string  `json:"action_required"`
-	AlsoRequired   *string  `json:"also_required"`
-	ToUse          *string  `json:"to_use"`
-	Advisories     []string `json:"advisories"`
+	ID             string        `json:"id"`
+	Kind           string        `json:"kind"`
+	Title          string        `json:"title"`
+	Body           *string       `json:"body"`
+	Affects        *release.Attr `json:"affects"`
+	ActionRequired *string       `json:"action_required"`
+	AlsoRequired   *string       `json:"also_required"`
+	ToUse          *string       `json:"to_use"`
+	Advisories     []string      `json:"advisories"`
 	Evidence       []struct {
 		Quote string `json:"quote"`
 	} `json:"evidence"`

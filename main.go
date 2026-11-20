@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/basphere/ratatosk-mcp/internal/release"
 )
 
 // buildVersion is stamped by the release workflow via
@@ -586,16 +588,14 @@ type listReleasesArgs struct {
 	Lang    string `json:"lang,omitempty" jsonschema:"en (default), ko or ja — the language of the website links in url"`
 }
 
-var kinds = []string{"security", "breaking", "deprecations", "important_fixes", "enhancements", "dependency_updates", "other"}
-
 func listReleasesTool(ctx context.Context, req *mcp.CallToolRequest, args listReleasesArgs) (*mcp.CallToolResult, any, error) {
 	ctx = requestContext(ctx, "list_releases", req)
 	lang, err := langArg(args.Lang)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	if args.Kind != "" && !containsStr(kinds, args.Kind) {
-		return errResult(fmt.Errorf("kind must be one of %s", strings.Join(kinds, "|"))), nil, nil
+	if args.Kind != "" && !containsStr(release.Kinds, args.Kind) {
+		return errResult(fmt.Errorf("kind must be one of %s", strings.Join(release.Kinds, "|"))), nil, nil
 	}
 	if args.Since != "" {
 		if _, err := time.Parse("2006-01-02", args.Since); err != nil {

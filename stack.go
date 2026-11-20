@@ -30,6 +30,8 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/basphere/ratatosk-mcp/internal/advisory"
+	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
@@ -447,7 +449,7 @@ func sameBranch(a, b []int) bool {
 // names the same release if there is one, otherwise v with its leading "v"
 // added or dropped to match the line (a version not on record, such as a
 // pre-release nobody analyzed). With no row to copy from, v comes back as is.
-func tagOfRows(line []v2Row, v string) string {
+func tagOfRows(line []release.Row, v string) string {
 	for _, r := range line {
 		if r.Version == v {
 			return v
@@ -481,8 +483,8 @@ func tagOfRows(line []v2Row, v string) string {
 // upgradeRange cuts (running, target] out of a project's rows on the running
 // version's line, oldest first — the same selection /v2/upgrade makes. target
 // "" means the highest version on that line.
-func upgradeRange(rows []v2Row, running, target string) (inRange []v2Row, resolvedTarget string) {
-	var line []v2Row
+func upgradeRange(rows []release.Row, running, target string) (inRange []release.Row, resolvedTarget string) {
+	var line []release.Row
 	for _, r := range rows {
 		if version.SameLine(r.Version, running) && version.NormalizeVersion(r.Version) != nil {
 			line = append(line, r)
@@ -525,9 +527,9 @@ func upgradeRange(rows []v2Row, running, target string) (inRange []v2Row, resolv
 // sameMinorTarget is same_minor's range end: the newest release on the running
 // version's line and branch (major.minor) above it, as the project spells it.
 // "" when no release above the running version is on record there.
-func sameMinorTarget(rows []v2Row, running string) string {
+func sameMinorTarget(rows []release.Row, running string) string {
 	key := version.NormalizeVersion(running)
-	var line []v2Row
+	var line []release.Row
 	for _, r := range rows {
 		if version.SameLine(r.Version, running) && version.NormalizeVersion(r.Version) != nil {
 			line = append(line, r)
@@ -547,7 +549,7 @@ func sameMinorTarget(rows []v2Row, running string) string {
 }
 
 // newestOnLine is the highest version on running's line, as spelled on record.
-func newestOnLine(rows []v2Row, running string) string {
+func newestOnLine(rows []release.Row, running string) string {
 	best := ""
 	for _, r := range rows {
 		if !version.SameLine(r.Version, running) || version.NormalizeVersion(r.Version) == nil {
@@ -662,7 +664,7 @@ func resolveTarget(currentKey []int, targetRaw string) ([]int, string) {
 }
 
 // linesPresent lists the release lines a project publishes, in a stable order.
-func linesPresent(rows []v2Row) []string {
+func linesPresent(rows []release.Row) []string {
 	seen := map[string]bool{}
 	var out []string
 	for _, r := range rows {
@@ -690,7 +692,7 @@ func lineList(lines []string) string {
 
 // exampleTag returns a real tag from the given line, so the note shows the
 // shape the caller should have sent rather than describing it.
-func exampleTag(rows []v2Row, line string) string {
+func exampleTag(rows []release.Row, line string) string {
 	for _, r := range rows {
 		if version.Line(r.Version) == line {
 			return r.Version
@@ -717,10 +719,10 @@ func lineLabel(line string) string {
 var decisionKinds = []string{"security", "breaking", "deprecations", "important_fixes"}
 
 func kindRank(k string) int {
-	if i := slices.Index(kinds, k); i >= 0 {
+	if i := slices.Index(release.Kinds, k); i >= 0 {
 		return i
 	}
-	return len(kinds)
+	return len(release.Kinds)
 }
 
 // briefItem is a before_upgrade item as 1.0.0 and 1.1.0 answered it. Only the
@@ -761,14 +763,14 @@ type upgradeItem struct {
 // beforeUpgradeOf lists the before_upgrade items of the releases in range
 // (oldest first), recurring texts grouped (see upgradeItem). Never nil: an
 // empty list and a component that was not checked must stay apart.
-func beforeUpgradeOf(docs []*v2Release) []upgradeItem {
+func beforeUpgradeOf(docs []*release.Doc) []upgradeItem {
 	var all []upgradeItem
 	var keys []string
 	newest := map[string]int{}
 	for _, d := range docs {
 		for _, sec := range []struct {
 			name  string
-			items []v2Item
+			items []release.Item
 		}{{"prerequisites", d.BeforeUpgrade.Prerequisites}, {"known_issues", d.BeforeUpgrade.KnownIssues}, {"upgrade_guide", d.BeforeUpgrade.UpgradeGuide}} {
 			for _, it := range sec.items {
 				k := ""
@@ -837,7 +839,7 @@ type moreLine struct {
 }
 
 func lineOf(c briefChange) moreLine {
-	said := func(a *v2Attr) bool { return a != nil && (a.Status == "stated" || a.Status == "inferred") }
+	said := func(a *release.Attr) bool { return a != nil && (a.Status == "stated" || a.Status == "inferred") }
 	l := moreLine{Version: c.Version, ID: c.ID, Kind: c.Kind, Title: c.Title, Severity: c.Severity, AlsoIn: c.AlsoIn,
 		ActionRequired: c.ActionRequired != "", AlsoRequired: c.AlsoRequired != "", NoDowngrade: said(c.NoDowngrade)}
 	if c.Affects != nil {
@@ -881,15 +883,15 @@ type briefChange struct {
 	// grade was found in what was read — absent and null mean different things.
 	Severity        json.RawMessage   `json:"severity,omitempty"`
 	Advisories      []string          `json:"advisories,omitempty"`
-	Affects         *v2Attr           `json:"affects,omitempty"`
+	Affects         *release.Attr     `json:"affects,omitempty"`
 	ActionRequired  string            `json:"action_required,omitempty"`
 	AlsoRequired    string            `json:"also_required,omitempty"`
-	NoDowngrade     *v2Attr           `json:"no_downgrade,omitempty"`
-	RemovedIn       *v2Attr           `json:"removed_in,omitempty"`
-	Workaround      *v2Attr           `json:"workaround,omitempty"`
+	NoDowngrade     *release.Attr     `json:"no_downgrade,omitempty"`
+	RemovedIn       *release.Attr     `json:"removed_in,omitempty"`
+	Workaround      *release.Attr     `json:"workaround,omitempty"`
 	SecurityUnclear bool              `json:"security_unclear,omitempty"`
 	SilentFailure   bool              `json:"silent_failure,omitempty"`
-	RegressionSince *v2Attr           `json:"regression_since,omitempty"`
+	RegressionSince *release.Attr     `json:"regression_since,omitempty"`
 	AlsoIn          []string          `json:"also_in,omitempty"`
 	Later           []json.RawMessage `json:"later,omitempty"`
 	advKey          string
@@ -914,9 +916,9 @@ type stackSummary struct {
 	// takes the first number it meets, and an agent told the operator "Argo CD:
 	// 15 critical" off warnings.critical with distinct_advisories.critical 5
 	// right after it (field report, 2026-11-20). The names and values are 1.1.0's.
-	DistinctAdvisories distinctAdvisories `json:"distinct_advisories"`
-	Counts             map[string]int     `json:"counts"`
-	Warnings           map[string]int     `json:"warnings"`
+	DistinctAdvisories advisory.Counts `json:"distinct_advisories"`
+	Counts             map[string]int  `json:"counts"`
+	Warnings           map[string]int  `json:"warnings"`
 }
 
 type briefing struct {
@@ -949,7 +951,7 @@ type briefing struct {
 func gradeRank(raw json.RawMessage) int {
 	var g string
 	_ = json.Unmarshal(raw, &g)
-	return gradeRankOf(g)
+	return advisory.GradeRank(g)
 }
 
 func strOf(p *string) string {
@@ -959,7 +961,7 @@ func strOf(p *string) string {
 	return *p
 }
 
-func attrOf(a *v2Attr) *v2Attr {
+func attrOf(a *release.Attr) *release.Attr {
 	if a == nil || (a.Text == "" && a.Status == "") {
 		return nil
 	}
@@ -969,7 +971,7 @@ func attrOf(a *v2Attr) *v2Attr {
 // carriesItsOwn says a change asks the operator for something the entry it
 // would fold into does not: its own required step, workaround, no-downgrade
 // warning or regression note.
-func carriesItsOwn(c v2Change, kept briefChange) bool {
+func carriesItsOwn(c release.Change, kept briefChange) bool {
 	if s := strOf(c.AlsoRequired); s != "" && s != kept.AlsoRequired {
 		return true
 	}
@@ -994,7 +996,7 @@ func carriesAStep(c briefChange) bool {
 	if c.ActionRequired != "" || c.AlsoRequired != "" {
 		return true
 	}
-	for _, a := range []*v2Attr{c.NoDowngrade, c.RemovedIn} {
+	for _, a := range []*release.Attr{c.NoDowngrade, c.RemovedIn} {
 		if a != nil && (a.Status == "stated" || a.Status == "inferred") {
 			return true
 		}
@@ -1066,7 +1068,7 @@ func advisoryKey(ids []string) string {
 //     same holds on a backport release: its first change stands under the
 //     entry's also_in, the others each get their line.
 //   - before_upgrade as upgradeItem, later_in_range, excluded_on_branch.
-func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey []int) (briefing, int) {
+func buildBriefing(docs []*release.Doc, alreadyFixed map[string]bool, runningKey []int) (briefing, int) {
 	b := briefing{
 		Summary:  &stackSummary{Counts: map[string]int{}, Warnings: map[string]int{"critical": 0, "no_downgrade": 0}},
 		Releases: &[]rangeRelease{},
@@ -1076,8 +1078,8 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 	// that is not settled, before the per-kind caps cut the list; it reads the
 	// whole range first, as a link between two ids can sit on a later release
 	// than the changes it joins (advisories.go). It changes nothing below.
-	ix := newAdvisoryIndex(docs)
-	tally := newAdvisoryTally()
+	ix := advisory.NewIndex(docs)
+	tally := advisory.NewTally()
 	firstByAdv := map[string]int{} // advisory key → index in b.Changes
 	// advisory key + branch → an EARLIER release of that branch carried it. The
 	// first release of a branch that carries an advisory already listed is the
@@ -1140,9 +1142,9 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						settled++
 						g := 0
 						if c.Severity != nil {
-							g = gradeRankOf(*c.Severity)
+							g = advisory.GradeRank(*c.Severity)
 						}
-						if g == gradeRankOf("critical") {
+						if g == advisory.GradeRank("critical") {
 							relSettledCritical++
 						}
 						for _, raw := range c.Advisories {
@@ -1177,7 +1179,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 						}
 					}
 				}
-				tally.add(ix.advisories(counted), c.Severity)
+				tally.Add(ix.Advisories(counted), c.Severity)
 				if key != "" {
 					branch := key + "|" + branchOf(d.Version)
 					if i, ok := inRelease[key]; ok {
@@ -1262,7 +1264,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 		kept = append(kept, c)
 	}
 	b.Changes = kept
-	b.Summary.DistinctAdvisories = tally.counts()
+	b.Summary.DistinctAdvisories = tally.Counts()
 
 	// 1.2.0 — nothing above reads what follows.
 	if len(folded) > 0 {
@@ -1324,7 +1326,7 @@ func buildBriefing(docs []*v2Release, alreadyFixed map[string]bool, runningKey [
 
 // newBriefChange is one change as a briefing entry: texts cut to
 // briefTextChars, severity present on security only (null when no grade).
-func newBriefChange(ver string, c v2Change, key string) briefChange {
+func newBriefChange(ver string, c release.Change, key string) briefChange {
 	bc := briefChange{
 		Version: ver, ID: c.ID, Kind: c.Kind, Title: c.Title, Body: briefText(strOf(c.Body)),
 		Advisories: c.Advisories, Affects: attrOf(c.Affects),
@@ -1485,7 +1487,7 @@ func detailArg(d string) (bool, error) {
 // fetchSetSize by release date, across every line. It is a function of the
 // project alone — that is the privacy property, so nothing about the running
 // version, its line or the target may enter here.
-func fetchSet(rows []v2Row) []v2Row {
+func fetchSet(rows []release.Row) []release.Row {
 	if len(rows) > fetchSetSize {
 		return rows[:fetchSetSize]
 	}
@@ -1495,8 +1497,8 @@ func fetchSet(rows []v2Row) []v2Row {
 // fetchDocs reads release documents through the cache, a few at a time. A 404
 // is "not on record" (the release list and the documents come from different
 // moments) and is skipped; anything else is an error.
-func fetchDocs(ctx context.Context, rows []v2Row, lang string) (map[string]*v2Release, error) {
-	out := make(map[string]*v2Release, len(rows))
+func fetchDocs(ctx context.Context, rows []release.Row, lang string) (map[string]*release.Doc, error) {
+	out := make(map[string]*release.Doc, len(rows))
 	var mu sync.Mutex
 	var firstErr error
 	// One failed document fails the component, so the rest are not worth
@@ -1511,7 +1513,7 @@ func fetchDocs(ctx context.Context, rows []v2Row, lang string) (map[string]*v2Re
 		}
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(r v2Row) {
+		go func(r release.Row) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			b, err := api.releaseRaw(ctx, r.Project, r.Version, lang, true)
@@ -1527,7 +1529,7 @@ func fetchDocs(ctx context.Context, rows []v2Row, lang string) (map[string]*v2Re
 				}
 				return
 			}
-			d, perr := parseRelease(b)
+			d, perr := release.Parse(b)
 			if perr != nil {
 				if firstErr == nil {
 					firstErr = fmt.Errorf("/v2/releases/{project}/{version}: %w", perr)
@@ -1716,7 +1718,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 		if targetKey != nil {
 			target = comp.TargetVersion
 		}
-		var inRange []v2Row
+		var inRange []release.Row
 		var resolved string
 		if comp.SameMinor {
 			if t := sameMinorTarget(rows, running); t != "" {
@@ -1786,7 +1788,7 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 			}
 		}
 
-		var rangeDocs []*v2Release
+		var rangeDocs []*release.Doc
 		for _, r := range inRange {
 			if d, ok := docs[r.Version]; ok {
 				rangeDocs = append(rangeDocs, d)
@@ -1873,8 +1875,8 @@ func checkStackTool(ctx context.Context, req *mcp.CallToolRequest, args checkSta
 }
 
 // rowsOnLine is the rows on v's release line that carry a version number.
-func rowsOnLine(rows []v2Row, v string) []v2Row {
-	var out []v2Row
+func rowsOnLine(rows []release.Row, v string) []release.Row {
+	var out []release.Row
 	for _, r := range rows {
 		if version.SameLine(r.Version, v) && version.NormalizeVersion(r.Version) != nil {
 			out = append(out, r)
@@ -1966,7 +1968,7 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	// request; independent review, 2026-11-20). A list that cannot be read
 	// fails the call only when same_minor needs it; otherwise the answer comes
 	// as 1.1.0 gave it, and note says what could not be done.
-	var rows []v2Row
+	var rows []release.Row
 	var listErr error
 	_, tailLike := stripBuildTail(args.From)
 	if !full || args.SameMinor || tailLike {
@@ -2030,9 +2032,9 @@ func checkUpgradeTool(ctx context.Context, req *mcp.CallToolRequest, args checkU
 	if up.Project == "" || up.Releases == nil {
 		return errResult(fmt.Errorf("/v2/upgrade answered without a project and a release range — not an upgrade answer; check the arguments")), nil, nil
 	}
-	var docs []*v2Release
+	var docs []*release.Doc
 	for _, r := range up.Releases {
-		d, err := parseRelease(r)
+		d, err := release.Parse(r)
 		if err != nil {
 			return errResult(fmt.Errorf("/v2/upgrade: %w", err)), nil, nil
 		}
@@ -2126,7 +2128,7 @@ func joinNotes(parts ...string) string {
 // whose line is the main one — was read as a pre-release of v1.37.6 and
 // v1.37.6 itself was listed as upgrade work. A pre-release (v1.21.0-rc.1)
 // never matches stripBuildTail.
-func readBuildTail(rows []v2Row, v string) (string, bool) {
+func readBuildTail(rows []release.Row, v string) (string, bool) {
 	if onRecord(rows, v) {
 		return "", false
 	}
@@ -2138,20 +2140,20 @@ func readBuildTail(rows []v2Row, v string) (string, bool) {
 
 // onRecord says v names a release in rows (sameTag: the leading "v" and case
 // aside).
-func onRecord(rows []v2Row, v string) bool {
-	return slices.ContainsFunc(rows, func(r v2Row) bool { return sameTag(r.Version, v) })
+func onRecord(rows []release.Row, v string) bool {
+	return slices.ContainsFunc(rows, func(r release.Row) bool { return sameTag(r.Version, v) })
 }
 
 // fixedOnBranch reads the advisory ids from's own branch carries at or below
 // from — the alreadyFixed set check_stack builds from its fetch set. The rows
 // come newest first, so the newest fetchSetSize releases of the branch are
 // read, the same bound check_stack's fetch set puts on what it reads.
-func fixedOnBranch(ctx context.Context, rows []v2Row, from, lang string) (map[string]bool, error) {
+func fixedOnBranch(ctx context.Context, rows []release.Row, from, lang string) (map[string]bool, error) {
 	fromKey := version.NormalizeVersion(from)
 	if len(fromKey) < 2 {
 		return nil, nil // no branch to read: nothing is settled, as before 1.2.0
 	}
-	var branch []v2Row
+	var branch []release.Row
 	for _, r := range rows {
 		k := version.NormalizeVersion(r.Version)
 		if k == nil || !version.SameLine(r.Version, from) || !sameBranch(k, fromKey) || version.Compare(k, fromKey) > 0 {
