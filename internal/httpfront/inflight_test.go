@@ -1,8 +1,9 @@
-package main
+package httpfront
 
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -41,13 +42,30 @@ func TestInflightMiddlewareCapsConcurrentRequests(t *testing.T) {
 	}
 }
 
-func TestInflightOffByDefault(t *testing.T) {
-	for _, raw := range []string{"", "0", "-3", "x"} {
-		if n := inflightFromEnv(raw); n != 0 {
-			t.Errorf("inflightFromEnv(%q) = %d, want 0 (off)", raw, n)
+// In stateful mode the client's event stream is a GET held open for the whole
+// session. It does no work and must not take a slot from the session's calls.
+// (Independent review, 2026-11-11.)
+func TestInflightCapCountsOnlyPosts(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{}, 1)
+	h := inflightMiddleware(1, 50*time.Millisecond, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			started <- struct{}{}
+			<-release
 		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	done := make(chan struct{})
+	go func() {
+		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/mcp", nil))
+		close(done)
+	}()
+	<-started
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}")))
+	if rec.Code != http.StatusOK {
+		t.Errorf("a POST while the stream is open: got %d, want 200", rec.Code)
 	}
-	if n := inflightFromEnv("16"); n != 16 {
-		t.Errorf("inflightFromEnv(16) = %d", n)
-	}
+	close(release)
+	<-done
 }

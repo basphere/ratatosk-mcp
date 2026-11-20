@@ -1,24 +1,26 @@
-package main
+package httpfront
 
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/basphere/ratatosk-mcp/internal/config"
 	"github.com/basphere/ratatosk-mcp/internal/logging"
 )
 
 func TestRateLimiterAllowsUpToLimitThenBlocks(t *testing.T) {
-	rl := newRateLimiter(3)
+	rl := NewRateLimiter(3)
 	now := time.Now()
 	for i := 1; i <= 3; i++ {
-		if ok, _ := rl.allow("1.2.3.4", now); !ok {
+		if ok, _ := rl.Allow("1.2.3.4", now); !ok {
 			t.Fatalf("request %d should be allowed", i)
 		}
 	}
-	ok, retry := rl.allow("1.2.3.4", now)
+	ok, retry := rl.Allow("1.2.3.4", now)
 	if ok {
 		t.Fatal("the 4th request should be blocked")
 	}
@@ -30,42 +32,28 @@ func TestRateLimiterAllowsUpToLimitThenBlocks(t *testing.T) {
 // The whole point of the middleware: one caller exhausting its window must not
 // affect another. If this fails, we are back to a single shared bucket.
 func TestRateLimiterIsolatesCallers(t *testing.T) {
-	rl := newRateLimiter(1)
+	rl := NewRateLimiter(1)
 	now := time.Now()
-	if ok, _ := rl.allow("1.2.3.4", now); !ok {
+	if ok, _ := rl.Allow("1.2.3.4", now); !ok {
 		t.Fatal("first caller's first request should be allowed")
 	}
-	if ok, _ := rl.allow("1.2.3.4", now); ok {
+	if ok, _ := rl.Allow("1.2.3.4", now); ok {
 		t.Fatal("first caller's second request should be blocked")
 	}
-	if ok, _ := rl.allow("5.6.7.8", now); !ok {
+	if ok, _ := rl.Allow("5.6.7.8", now); !ok {
 		t.Fatal("a different caller must have its own budget")
 	}
 }
 
 func TestRateLimiterWindowResets(t *testing.T) {
-	rl := newRateLimiter(1)
+	rl := NewRateLimiter(1)
 	now := time.Now()
-	rl.allow("1.2.3.4", now)
-	if ok, _ := rl.allow("1.2.3.4", now); ok {
+	rl.Allow("1.2.3.4", now)
+	if ok, _ := rl.Allow("1.2.3.4", now); ok {
 		t.Fatal("second request inside the window should be blocked")
 	}
-	if ok, _ := rl.allow("1.2.3.4", now.Add(rateWindow+time.Second)); !ok {
+	if ok, _ := rl.Allow("1.2.3.4", now.Add(rateWindow+time.Second)); !ok {
 		t.Fatal("a new window should start fresh")
-	}
-}
-
-// Off by default is what the self-hosted binary needs: it is single-tenant, so
-// limiting its one caller would only get in the way.
-func TestRateLimitFromEnvOffUnlessSet(t *testing.T) {
-	for _, raw := range []string{"", "0", "-5", "abc"} {
-		if rl := rateLimitFromEnv(raw); rl != nil {
-			t.Fatalf("MCP_RATE_LIMIT_PER_MIN=%q should leave the limiter off", raw)
-		}
-	}
-	rl := rateLimitFromEnv("60")
-	if rl == nil || rl.limit != 60 {
-		t.Fatalf("MCP_RATE_LIMIT_PER_MIN=60 should build a limiter of 60, got %+v", rl)
 	}
 }
 
@@ -81,7 +69,7 @@ func TestRateLimitMiddlewareNilIsIdentity(t *testing.T) {
 }
 
 func TestRateLimitMiddlewareAnswers429WithRetryAfter(t *testing.T) {
-	h := rateLimitMiddleware(newRateLimiter(1), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := rateLimitMiddleware(NewRateLimiter(1), http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
 	req := func() *http.Request {
@@ -107,7 +95,7 @@ func TestRateLimitMiddlewareAnswers429WithRetryAfter(t *testing.T) {
 // The caller address is a bucket key. It must never appear in what we send
 // back, because the response is the one thing that leaves this process.
 func TestRateLimitResponseDoesNotEchoCaller(t *testing.T) {
-	h := rateLimitMiddleware(newRateLimiter(1), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	h := rateLimitMiddleware(NewRateLimiter(1), http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
 	req := func() *http.Request {
 		r := httptest.NewRequest(http.MethodPost, "/mcp", nil)
 		r.Header.Set("X-Forwarded-For", "203.0.113.7")
@@ -165,7 +153,7 @@ func TestCallerClassMiddleware(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("MCP_SELF_CALLERS", tc.selfCallers)
 			var got string
-			h := callerClassMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			h := callerClassMiddleware(config.Read(os.Getenv).SelfCallers, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 				got = logging.CallerClassFrom(r.Context())
 			}))
 			r := httptest.NewRequest(http.MethodPost, "/mcp", nil)

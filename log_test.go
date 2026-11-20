@@ -19,6 +19,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/basphere/ratatosk-mcp/internal/config"
 	"github.com/basphere/ratatosk-mcp/internal/logging"
 	"github.com/basphere/ratatosk-mcp/internal/upstream"
 )
@@ -37,7 +38,7 @@ func captureLogs(t *testing.T) *bytes.Buffer {
 func swapAPI(t *testing.T, ts *httptest.Server) {
 	t.Helper()
 	orig := api
-	api = upstream.New(ts.URL, buildVersion, cacheBytesFromEnv(os.Getenv("MCP_CACHE_MAX_MB")), mx)
+	api = upstream.New(ts.URL, buildVersion, config.Read(os.Getenv).CacheMaxBytes, mx)
 	t.Cleanup(func() { api = orig; ts.Close() })
 }
 

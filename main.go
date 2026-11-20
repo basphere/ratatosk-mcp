@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"slices"
 	"strconv"
@@ -26,6 +25,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/basphere/ratatosk-mcp/internal/audit"
+	"github.com/basphere/ratatosk-mcp/internal/config"
+	"github.com/basphere/ratatosk-mcp/internal/httpfront"
 	"github.com/basphere/ratatosk-mcp/internal/logging"
 	"github.com/basphere/ratatosk-mcp/internal/metrics"
 	"github.com/basphere/ratatosk-mcp/internal/release"
@@ -38,9 +40,12 @@ var buildVersion = "dev"
 
 var api *upstream.Client
 
-// mx is the process's metrics; nil = off (the default). It stays a variable
-// here only until the server and the HTTP chain are built with it.
+// mx is the process's metrics; nil = off (the default). It and aud stay
+// variables here only until the server is built from internal/mcpserver.
 var mx *metrics.Metrics
+
+// aud is the audit stream (MCP_AUDIT); off unless set.
+var aud *audit.Auditor
 
 // dataNote is said once in the server instructions and again in every tool
 // that returns model-written text, because a tool description is what an agent
@@ -65,119 +70,86 @@ func laterNote(who string) string {
 }
 
 func main() {
-	setupLogging()
-	initAudit()
-	base := os.Getenv("RATATOSK_URL")
-	if base == "" {
-		base = "https://ratatosk.io"
-	}
-
-	metricsAddr := os.Getenv("MCP_METRICS_ADDR")
-
+	cfg := config.Read(os.Getenv)
+	logging.Setup(cfg.LogLevel)
+	aud = audit.New(cfg.AuditMode, os.Stderr)
 	// Two transports, one binary: stdio for local agents (Claude Code, MCP
 	// inspector), streamable HTTP for the in-cluster Service the Helm chart
 	// deploys — agents in the cluster connect to http://<svc>:8080/mcp.
-	if addr := os.Getenv("MCP_HTTP_ADDR"); addr != "" {
-		// Metrics, when asked for, listen on an address of their own: a proxy
-		// that forwards this server's port (the hosted Caddy forwards /mcp)
-		// cannot expose them, and the /mcp mux has no route to them.
-		metricsField := "off"
-		if metricsAddr != "" {
-			if metricsAddr == addr {
-				slog.Error("MCP_METRICS_ADDR must differ from MCP_HTTP_ADDR: metrics are served on a listener of their own")
-				os.Exit(1)
-			}
-			mx = metrics.New(buildVersion)
-			ln, err := net.Listen("tcp", metricsAddr)
-			if err != nil {
-				slog.Error("metrics listener failed", "kind", logging.ErrKind(err))
-				os.Exit(1)
-			}
-			go func() {
-				if err := metrics.Server(mx).Serve(ln); err != nil {
-					slog.Error("metrics server exited", "kind", logging.ErrKind(err))
-					os.Exit(1)
-				}
-			}()
-			metricsField = metricsAddr + "/metrics"
-		}
-		// Built after the metrics, which they count into.
-		api = upstream.New(base, buildVersion, cacheBytesFromEnv(os.Getenv("MCP_CACHE_MAX_MB")), mx)
-		server := newServer()
-		// MCP_HTTP_STATELESS=1 serves every POST on a temporary session: no
-		// Mcp-Session-Id round-trip, GET/DELETE answer 405 — and, per go-sdk
-		// v1.7.0, it is the only HTTP mode that speaks the 2026-07-28 revision
-		// (stdio speaks it regardless). Default stays stateful so existing
-		// in-cluster clients see no behavior change; hosted endpoints and
-		// horizontally-scaled installs are what the flag is for.
-		stateless := os.Getenv("MCP_HTTP_STATELESS") == "1"
-		handler := mcp.NewStreamableHTTPHandler(
-			func(*http.Request) *mcp.Server { return server },
-			&mcp.StreamableHTTPOptions{
-				Stateless: stateless,
-				// Stateful mode keeps a session per client, and the SDK never
-				// closes idle ones when this is zero — an install that reconnects
-				// often grows memory until it dies, with no attacker involved.
-				// Stateless mode (what the 2026-07-28 revision needs) allocates
-				// nothing, so this only guards the backward-compatibility path.
-				// Expiry is the protocol's own mechanism: a client returning with
-				// a closed session id re-initializes.
-				SessionTimeout: 30 * time.Minute,
-			})
-		// Per-caller limiting sits in front of the MCP handler, not upstream:
-		// this process is the one that can tell hosted callers apart, and the
-		// upstream API deliberately cannot (see ratelimit.go). Off by default,
-		// which is what a self-hosted single-tenant server wants.
-		rl := rateLimitFromEnv(os.Getenv("MCP_RATE_LIMIT_PER_MIN"))
-		// The in-flight cap sits behind the rate limiter: an over-limit caller is
-		// turned away without taking a slot (see inflight.go).
-		inflight := inflightFromEnv(os.Getenv("MCP_MAX_INFLIGHT"))
-		// A batch is refused behind the limiter (the attempt counts as a request)
-		// and before it can take a slot (see batch.go).
-		mux := mcpMux(mcpHTTPChain(rl, inflight, 10*time.Second, handler))
-		mode := "stateful"
-		if stateless {
-			mode = "stateless"
-		}
-		// The limit is a configured number, not a caller attribute — safe to log.
-		rateField := "off"
-		if rl != nil {
-			rateField = strconv.Itoa(rl.limit) + "/min per caller"
-		}
-		inflightField := "off"
-		if inflight > 0 {
-			inflightField = strconv.Itoa(inflight)
-		}
-		slog.Info("listening", "transport", "http", "addr", addr+"/mcp", "mode", mode, "upstream", base, "version", buildVersion, "rate_limit", rateField, "max_inflight", inflightField, "metrics", metricsField)
-		// Explicit timeouts: this is an unauthenticated public endpoint, and the
-		// zero-value http.Server leaves every timeout unset (unbounded), so a
-		// client that dribbles a request header one byte at a time holds a
-		// goroutine/FD forever (slowloris) — and does it below the rate limiter,
-		// which only counts requests that finish their headers. WriteTimeout is
-		// generous because a large check_stack legitimately streams a while.
-		srv := &http.Server{
-			Addr:              addr,
-			Handler:           mux,
-			ReadHeaderTimeout: 5 * time.Second,
-			ReadTimeout:       30 * time.Second,
-			WriteTimeout:      120 * time.Second,
-			IdleTimeout:       60 * time.Second,
-			MaxHeaderBytes:    1 << 20,
-		}
-		if err := srv.ListenAndServe(); err != nil {
-			slog.Error("http server exited", "kind", logging.ErrKind(err))
-			os.Exit(1)
-		}
+	if cfg.HTTPAddr != "" {
+		serveHTTP(cfg)
 		return
 	}
-	if metricsAddr != "" {
+	serveStdio(cfg)
+}
+
+func serveHTTP(cfg config.Config) {
+	addr := cfg.HTTPAddr
+	// Metrics, when asked for, listen on an address of their own: a proxy
+	// that forwards this server's port (the hosted Caddy forwards /mcp)
+	// cannot expose them, and the /mcp mux has no route to them.
+	metricsField := "off"
+	if cfg.MetricsAddr != "" {
+		if cfg.MetricsAddr == addr {
+			slog.Error("MCP_METRICS_ADDR must differ from MCP_HTTP_ADDR: metrics are served on a listener of their own")
+			os.Exit(1)
+		}
+		mx = metrics.New(buildVersion)
+		ln, err := net.Listen("tcp", cfg.MetricsAddr)
+		if err != nil {
+			slog.Error("metrics listener failed", "kind", logging.ErrKind(err))
+			os.Exit(1)
+		}
+		go func() {
+			if err := metrics.Server(mx).Serve(ln); err != nil {
+				slog.Error("metrics server exited", "kind", logging.ErrKind(err))
+				os.Exit(1)
+			}
+		}()
+		metricsField = cfg.MetricsAddr + "/metrics"
+	}
+	// Built after the metrics, which they count into.
+	api = upstream.New(cfg.UpstreamURL, buildVersion, cfg.CacheMaxBytes, mx)
+	server := newServer()
+	var rl *httpfront.RateLimiter
+	if cfg.RateLimitPerMin > 0 {
+		rl = httpfront.NewRateLimiter(cfg.RateLimitPerMin)
+	}
+	mux := httpfront.Handler(httpfront.MCPHandler(server, cfg.Stateless), httpfront.Options{
+		RateLimiter: rl,
+		MaxInflight: cfg.MaxInflight,
+		SelfCallers: cfg.SelfCallers,
+		Metrics:     mx,
+	})
+	mode := "stateful"
+	if cfg.Stateless {
+		mode = "stateless"
+	}
+	// The limit is a configured number, not a caller attribute — safe to log.
+	rateField := "off"
+	if rl != nil {
+		rateField = strconv.Itoa(cfg.RateLimitPerMin) + "/min per caller"
+	}
+	inflightField := "off"
+	if cfg.MaxInflight > 0 {
+		inflightField = strconv.Itoa(cfg.MaxInflight)
+	}
+	slog.Info("listening", "transport", "http", "addr", addr+"/mcp", "mode", mode, "upstream", cfg.UpstreamURL, "version", buildVersion, "rate_limit", rateField, "max_inflight", inflightField, "metrics", metricsField)
+	if err := httpfront.Server(addr, mux).ListenAndServe(); err != nil {
+		slog.Error("http server exited", "kind", logging.ErrKind(err))
+		os.Exit(1)
+	}
+}
+
+func serveStdio(cfg config.Config) {
+	if cfg.MetricsAddr != "" {
 		// One stdio process serves one caller and is started by that caller;
 		// a port per process would collide as soon as a second client starts one.
 		slog.Warn("MCP_METRICS_ADDR is ignored on stdio: metrics are served in HTTP mode only")
 	}
-	api = upstream.New(base, buildVersion, cacheBytesFromEnv(os.Getenv("MCP_CACHE_MAX_MB")), mx)
+	api = upstream.New(cfg.UpstreamURL, buildVersion, cfg.CacheMaxBytes, mx)
 	server := newServer()
-	slog.Info("listening", "transport", "stdio", "upstream", base, "version", buildVersion)
+	slog.Info("listening", "transport", "stdio", "upstream", cfg.UpstreamURL, "version", buildVersion)
 	if err := server.Run(context.Background(), &mcp.StdioTransport{}); err != nil {
 		slog.Error("stdio session ended with error", "kind", logging.ErrKind(err))
 		os.Exit(1)
@@ -185,58 +157,9 @@ func main() {
 	slog.Info("stdio session ended")
 }
 
-// cacheBytesFromEnv reads MCP_CACHE_MAX_MB (until internal/config) — the response cache's byte budget.
-// Absent or unparseable means 32 MiB: half of the smallest container the Helm
-// chart and the hosted compose have shipped with, so the cache alone can never
-// take a process down.
-func cacheBytesFromEnv(raw string) int {
-	if n, err := strconv.Atoi(raw); err == nil && n > 0 {
-		return n << 20
-	}
-	return 32 << 20
-}
-
-// setupLogging reads MCP_LOG (default info). It moves to internal/config with
-// the other environment variables.
-func setupLogging() {
-	level := slog.LevelInfo
-	switch strings.ToLower(os.Getenv("MCP_LOG")) {
-	case "debug":
-		level = slog.LevelDebug
-	case "warn":
-		level = slog.LevelWarn
-	case "error":
-		level = slog.LevelError
-	}
-	logging.Setup(level)
-}
-
 // newServer registers the six tools and the audit middleware. It is its own
 // function so docs_test.go can list the tools exactly as a client sees them —
 // the docs are checked against this, not against a second hand-kept list.
-// mcpHTTPChain is everything an HTTP request passes before the MCP handler:
-// caller class, the per-caller rate limit, the batch refusal, the in-flight
-// cap. A function of its own so a test can hold the order to account — the
-// batch refusal is only worth something between the limiter and the handler.
-//
-// The metrics layer sits right inside the caller class (it labels self from
-// it) and outside every refusal, so it sees each one; it is the identity while
-// metrics are off.
-func mcpHTTPChain(rl *rateLimiter, inflight int, wait time.Duration, handler http.Handler) http.Handler {
-	return callerClassMiddleware(mx.HTTPMiddleware(rateLimitMiddleware(rl, rejectBatchMiddleware(inflightMiddleware(inflight, wait, handler)))))
-}
-
-// mcpMux is everything the MCP listener serves: /mcp and /healthz. Metrics are
-// not here — they have a listener of their own (metricsServer).
-func mcpMux(mcpHandler http.Handler) *http.ServeMux {
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", mcpHandler)
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-	})
-	return mux
-}
-
 func newServer() *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "ratatosk", Version: buildVersion}, &mcp.ServerOptions{
 		Instructions: "Data source: the public ratatosk.io agent API v2 — what changed in CNCF project releases, read by AI " +
@@ -410,7 +333,7 @@ func newServer() *mcp.Server {
 
 	// Audit stream (P3): observes tools/call when MCP_AUDIT is set; the
 	// identity function otherwise. See audit.go and docs/logging-design.md.
-	server.AddReceivingMiddleware(auditMiddleware)
+	server.AddReceivingMiddleware(aud.Middleware)
 	server.AddReceivingMiddleware(deadlineMiddleware)
 	// Added last, so it is the outermost: a tool call is timed from the
 	// moment it arrives to its answer. The identity while metrics are off.

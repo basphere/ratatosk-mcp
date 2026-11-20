@@ -259,33 +259,6 @@ func TestUnreadKeysAndMissingVersionAreAnswered(t *testing.T) {
 	}
 }
 
-// In stateful mode the client's event stream is a GET held open for the whole
-// session. It does no work and must not take a slot from the session's calls.
-func TestInflightCapCountsOnlyPosts(t *testing.T) {
-	release := make(chan struct{})
-	started := make(chan struct{}, 1)
-	h := inflightMiddleware(1, 50*time.Millisecond, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			started <- struct{}{}
-			<-release
-		}
-		w.WriteHeader(http.StatusOK)
-	}))
-	done := make(chan struct{})
-	go func() {
-		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/mcp", nil))
-		close(done)
-	}()
-	<-started
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}")))
-	if rec.Code != http.StatusOK {
-		t.Errorf("a POST while the stream is open: got %d, want 200", rec.Code)
-	}
-	close(release)
-	<-done
-}
-
 // Keys are matched without regard to case, as the decode does, and what is
 // echoed back is bounded.
 func TestUnreadKeysMatchTheDecodeAndAreBounded(t *testing.T) {

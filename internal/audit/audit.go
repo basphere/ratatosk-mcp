@@ -1,6 +1,4 @@
-package main
-
-// Audit stream (P3 of docs/logging-design.md). The operational log answers
+// Package audit is the audit stream (P3 of docs/logging-design.md). The operational log answers
 // "is the system sick"; this answers "who did what" — and its whole point is
 // request content, which is why it exists only behind an explicit opt-in
 // (MCP_AUDIT=metadata|full, default off). In the installed deployment the
@@ -16,12 +14,12 @@ package main
 // prompted the agent is knowledge the agent layer holds; an MCP-layer audit
 // record cannot manufacture it, and the docs say so. The trace_id (when the
 // caller sends W3C trace context) is the join key across those layers.
+package audit
 
 import (
 	"context"
 	"encoding/json"
 	"io"
-	"os"
 	"sort"
 	"time"
 
@@ -30,20 +28,21 @@ import (
 	"github.com/basphere/ratatosk-mcp/internal/logging"
 )
 
-// auditMode is resolved once at startup: "" (off), "metadata", or "full".
-var auditMode string
+// Auditor writes audit records. A nil *Auditor, like one with mode "", is
+// off.
+type Auditor struct {
+	// mode is resolved once at startup (MCP_AUDIT, internal/config): ""
+	// (off), "metadata", or "full".
+	mode string
+	// out receives the records, one-line JSON, on the same stream as the
+	// operational log (stderr — stdout belongs to the stdio transport); a
+	// test hands its own buffer.
+	out io.Writer
+}
 
-// auditOut is swappable for tests; records are one-line JSON, same stream as
-// the operational log (stderr — stdout belongs to the stdio transport).
-var auditOut io.Writer = os.Stderr
-
-func initAudit() {
-	switch os.Getenv("MCP_AUDIT") {
-	case "metadata", "full":
-		auditMode = os.Getenv("MCP_AUDIT")
-	default:
-		auditMode = ""
-	}
+// New is an auditor writing mode's records to out.
+func New(mode string, out io.Writer) *Auditor {
+	return &Auditor{mode: mode, out: out}
 }
 
 // auditRecord builds one record. metadata mode carries argument NAMES only —
@@ -84,21 +83,21 @@ func auditRecord(mode, tool string, rawArgs json.RawMessage, outcome string, cli
 	return rec
 }
 
-func auditEmit(rec map[string]any) {
+func (a *Auditor) emit(rec map[string]any) {
 	b, err := json.Marshal(rec)
 	if err != nil {
 		return
 	}
-	auditOut.Write(append(b, '\n'))
+	a.out.Write(append(b, '\n'))
 }
 
-// auditMiddleware observes tools/call on the receiving side — one hook covers
+// Middleware observes tools/call on the receiving side — one hook covers
 // every tool, present and future. With auditing off it is the identity
 // function: zero records, zero overhead beyond a nil check.
-func auditMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
+func (a *Auditor) Middleware(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		res, err := next(ctx, method, req)
-		if auditMode == "" || method != "tools/call" {
+		if a == nil || a.mode == "" || method != "tools/call" {
 			return res, err
 		}
 		p, ok := req.GetParams().(*mcp.CallToolParamsRaw)
@@ -134,11 +133,11 @@ func auditMiddleware(next mcp.MethodHandler) mcp.MethodHandler {
 		if tp, ok := p.Meta["traceparent"].(string); ok && logging.ValidTraceparent(tp) {
 			traceID = tp[3:35]
 		}
-		rec := auditRecord(auditMode, p.Name, p.Arguments, outcome, client, transport, traceID)
+		rec := auditRecord(a.mode, p.Name, p.Arguments, outcome, client, transport, traceID)
 		if sessionID != "" {
 			rec["session_id"] = sessionID
 		}
-		auditEmit(rec)
+		a.emit(rec)
 		return res, err
 	}
 }

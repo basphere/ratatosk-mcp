@@ -1,4 +1,4 @@
-package main
+package httpfront
 
 import (
 	"io"
@@ -64,7 +64,7 @@ func TestRejectBatchMiddleware(t *testing.T) {
 // the refusal taken out of the chain this fails.
 func TestHTTPChainRefusesBatchesBehindTheLimiter(t *testing.T) {
 	calls := 0
-	h := mcpHTTPChain(newRateLimiter(2), 4, time.Second, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := chain(Options{RateLimiter: NewRateLimiter(2), MaxInflight: 4, InflightWait: time.Second}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		calls++
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -91,7 +91,7 @@ func TestHTTPChainRefusesBatchesBehindTheLimiter(t *testing.T) {
 func TestHTTPChainRefusesBatchesBeforeTheInflightCap(t *testing.T) {
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
-	h := mcpHTTPChain(nil, 1, 2*time.Second, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := chain(Options{MaxInflight: 1, InflightWait: 2 * time.Second}, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		started <- struct{}{}
 		<-release
 		w.WriteHeader(http.StatusOK)

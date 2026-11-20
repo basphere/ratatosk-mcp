@@ -1,4 +1,4 @@
-package main
+package httpfront
 
 // Per-caller rate limiting for the HTTP transport (2026-08-10).
 //
@@ -27,7 +27,6 @@ package main
 import (
 	"net"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,9 +38,9 @@ import (
 
 const rateWindow = time.Minute
 
-// rateLimiter is a fixed-window counter keyed by caller address. Restarts
+// RateLimiter is a fixed-window counter keyed by caller address. Restarts
 // reset it, which is acceptable: it bounds abuse, it does not bill anyone.
-type rateLimiter struct {
+type RateLimiter struct {
 	limit int
 	mu    sync.Mutex
 	seen  map[string]*rateBucket
@@ -56,13 +55,14 @@ type rateBucket struct {
 // grow it without limit; the sweep runs only when the bound is crossed.
 const maxTrackedCallers = 10_000
 
-func newRateLimiter(limit int) *rateLimiter {
-	return &rateLimiter{limit: limit, seen: map[string]*rateBucket{}}
+// NewRateLimiter allows each caller limit requests a minute.
+func NewRateLimiter(limit int) *RateLimiter {
+	return &RateLimiter{limit: limit, seen: map[string]*rateBucket{}}
 }
 
-// allow reports whether this caller may proceed, and how many seconds remain
+// Allow reports whether this caller may proceed, and how many seconds remain
 // in the window if it may not.
-func (r *rateLimiter) allow(key string, now time.Time) (bool, int) {
+func (r *RateLimiter) Allow(key string, now time.Time) (bool, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if len(r.seen) > maxTrackedCallers {
@@ -124,8 +124,6 @@ func callerKey(req *http.Request) string {
 	return req.RemoteAddr
 }
 
-// rateLimitMiddleware wraps a handler with per-caller limiting. A nil limiter
-// is the identity, so the self-hosted path costs nothing.
 // callerClassMiddleware tags each request with one bit — is this caller one of
 // the operator's own addresses, or someone else — and puts it on the request
 // context so the upstream call can carry it.
@@ -137,17 +135,11 @@ func callerKey(req *http.Request) string {
 // zero. This restores the distinction without weakening the privacy stance —
 // the address is compared here and discarded, and only the class travels.
 //
-// MCP_SELF_CALLERS is a comma-separated list of addresses; an entry ending in
-// "." is a prefix match. Unset means every caller is external, which is the
-// right default for a deployment that has no "own" traffic.
-func callerClassMiddleware(next http.Handler) http.Handler {
-	raw := strings.Split(os.Getenv("MCP_SELF_CALLERS"), ",")
-	selfCallers := make([]string, 0, len(raw))
-	for _, e := range raw {
-		if e = strings.TrimSpace(e); e != "" {
-			selfCallers = append(selfCallers, e)
-		}
-	}
+// selfCallers is MCP_SELF_CALLERS as internal/config read it: a list of
+// addresses; an entry ending in "." is a prefix match. Empty means every
+// caller is external, which is the right default for a deployment that has no
+// "own" traffic.
+func callerClassMiddleware(selfCallers []string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		key := callerKey(req)
 		class := "external"
@@ -161,14 +153,16 @@ func callerClassMiddleware(next http.Handler) http.Handler {
 	})
 }
 
-func rateLimitMiddleware(rl *rateLimiter, next http.Handler) http.Handler {
+// rateLimitMiddleware wraps a handler with per-caller limiting. A nil limiter
+// is the identity, so the self-hosted path costs nothing.
+func rateLimitMiddleware(rl *RateLimiter, next http.Handler) http.Handler {
 	if rl == nil {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		ok, retry := rl.allow(callerKey(req), time.Now())
+		ok, retry := rl.Allow(callerKey(req), time.Now())
 		if !ok {
-			metrics.RefusedFor(req, "rate_limited") // before the answer; with metrics on it may read up to 4 KiB of the body (metrics.go)
+			metrics.RefusedFor(req, "rate_limited") // before the answer; with metrics on it may read up to 4 KiB of the body (internal/metrics)
 			w.Header().Set("Retry-After", strconv.Itoa(retry))
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusTooManyRequests)
@@ -181,17 +175,4 @@ func rateLimitMiddleware(rl *rateLimiter, next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, req)
 	})
-}
-
-// rateLimitFromEnv reads MCP_RATE_LIMIT_PER_MIN. Absent, zero, or unparseable
-// means off — the default, and what a self-hosted server wants.
-func rateLimitFromEnv(raw string) *rateLimiter {
-	if raw == "" {
-		return nil
-	}
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		return nil
-	}
-	return newRateLimiter(n)
 }

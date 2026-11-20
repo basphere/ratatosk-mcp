@@ -1,8 +1,7 @@
-package main
+package httpfront
 
 import (
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/basphere/ratatosk-mcp/internal/metrics"
@@ -18,8 +17,9 @@ import (
 // other caller's answer with it. Requests over the cap wait briefly for a slot,
 // then get 503 with Retry-After, which a client can retry.
 //
-// MCP_MAX_INFLIGHT: absent, zero or unparseable means off — the default, and
-// what a single-tenant self-hosted server wants.
+// MCP_MAX_INFLIGHT (internal/config): absent, zero or unparseable means off —
+// the default, and what a single-tenant self-hosted server wants. n is the
+// cap, 0 off.
 func inflightMiddleware(n int, wait time.Duration, next http.Handler) http.Handler {
 	if n <= 0 {
 		return next
@@ -39,7 +39,7 @@ func inflightMiddleware(n int, wait time.Duration, next http.Handler) http.Handl
 		select {
 		case slots <- struct{}{}:
 		case <-t.C:
-			metrics.RefusedFor(req, "busy") // before the answer; with metrics on it may read up to 4 KiB of the body (metrics.go)
+			metrics.RefusedFor(req, "busy") // before the answer; with metrics on it may read up to 4 KiB of the body (internal/metrics)
 			w.Header().Set("Retry-After", "5")
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusServiceUnavailable)
@@ -54,12 +54,4 @@ func inflightMiddleware(n int, wait time.Duration, next http.Handler) http.Handl
 		defer func() { <-slots }()
 		next.ServeHTTP(w, req)
 	})
-}
-
-func inflightFromEnv(raw string) int {
-	n, err := strconv.Atoi(raw)
-	if err != nil || n <= 0 {
-		return 0
-	}
-	return n
 }

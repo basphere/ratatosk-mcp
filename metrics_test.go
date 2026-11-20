@@ -17,6 +17,8 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/basphere/ratatosk-mcp/internal/config"
+	"github.com/basphere/ratatosk-mcp/internal/httpfront"
 	"github.com/basphere/ratatosk-mcp/internal/metrics"
 	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
@@ -94,10 +96,10 @@ func mcpPost(t *testing.T, url, body string, hdr map[string]string) (int, string
 	return resp.StatusCode, resp.Header.Get("Mcp-Session-Id") + "|" + string(b)
 }
 
-func mcpServer(t *testing.T, rl *rateLimiter, stateless bool) *httptest.Server {
+func mcpServer(t *testing.T, rl *httpfront.RateLimiter, stateless bool) *httptest.Server {
 	t.Helper()
 	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return newServer() }, &mcp.StreamableHTTPOptions{Stateless: stateless})
-	ts := httptest.NewServer(mcpMux(mcpHTTPChain(rl, 4, time.Second, h)))
+	ts := httptest.NewServer(httpfront.Handler(h, httpfront.Options{RateLimiter: rl, MaxInflight: 4, InflightWait: time.Second, SelfCallers: config.Read(os.Getenv).SelfCallers, Metrics: mx}))
 	t.Cleanup(ts.Close)
 	return ts
 }
@@ -115,7 +117,7 @@ func toolCall(id int, name, args string) string {
 func TestMetricsCountEveryOutcomeOnce(t *testing.T) {
 	m := withMetrics(t)
 	swapAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
-	ts := mcpServer(t, newRateLimiter(9), true)
+	ts := mcpServer(t, httpfront.NewRateLimiter(9), true)
 	u := ts.URL + "/mcp"
 
 	posts := 0
@@ -221,11 +223,11 @@ func TestMetricsCountBusy(t *testing.T) {
 	m := withMetrics(t)
 	release := make(chan struct{})
 	started := make(chan struct{}, 1)
-	h := mcpHTTPChain(nil, 1, 50*time.Millisecond, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	h := httpfront.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started <- struct{}{}
 		<-release
 		w.WriteHeader(http.StatusOK)
-	}))
+	}), httpfront.Options{MaxInflight: 1, InflightWait: 50 * time.Millisecond, Metrics: m})
 	done := make(chan struct{})
 	go func() {
 		h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(toolCall(1, "check_stack", `{}`))))
@@ -314,7 +316,7 @@ func TestMetricsOffByDefaultAndNotOnTheMCPListener(t *testing.T) {
 		if on {
 			withMetrics(t)
 		}
-		ts := httptest.NewServer(mcpMux(mcpHTTPChain(nil, 0, time.Second, inner)))
+		ts := httptest.NewServer(httpfront.Handler(inner, httpfront.Options{InflightWait: time.Second, Metrics: mx}))
 		for _, p := range []string{"/metrics", "/mcp/metrics", "/healthz/metrics"} {
 			resp, err := http.Get(ts.URL + p)
 			if err != nil {
@@ -350,9 +352,9 @@ func (c *countingBody) Read(b []byte) (int, error) {
 }
 
 // refusingLimiter refuses every request after its first.
-func refusingLimiter() *rateLimiter {
-	rl := newRateLimiter(1)
-	rl.allow("192.0.2.1", time.Now())
+func refusingLimiter() *httpfront.RateLimiter {
+	rl := httpfront.NewRateLimiter(1)
+	rl.Allow("192.0.2.1", time.Now())
 	return rl
 }
 
@@ -368,7 +370,7 @@ func zerosCall(n int) string {
 // with no allocation but the labels; a tool name past the bound is "unknown".
 func TestRefusalLabellingIsBounded(t *testing.T) {
 	m := withMetrics(t)
-	h := mcpHTTPChain(refusingLimiter(), 0, 0, http.NotFoundHandler())
+	h := httpfront.Handler(http.NotFoundHandler(), httpfront.Options{RateLimiter: refusingLimiter(), Metrics: m})
 	body := &countingBody{r: strings.NewReader(zerosCall(64 << 10))}
 	r := httptest.NewRequest(http.MethodPost, "/mcp", body)
 	r.RemoteAddr = "192.0.2.1:1"
@@ -398,60 +400,19 @@ func TestRefusalLabellingIsBounded(t *testing.T) {
 	}
 }
 
-// With metrics off a refusal is the 1.0.0 one: the refusing layer reads not a
-// byte of the body, and answers the same status, headers and body. (The batch
-// check, which sits before the in-flight cap since 1.0.0, peeks the first
-// bytes of a POST; that is the in-flight refusal's 1.0.0 behaviour, so the cap
-// is held to account on its own here.)
-func TestRefusalWithMetricsOffReadsNothing(t *testing.T) {
-	if mx != nil {
-		t.Fatal("metrics are on at the start of a test")
-	}
-	h := mcpHTTPChain(refusingLimiter(), 0, 0, http.NotFoundHandler())
-	body := &countingBody{r: strings.NewReader(zerosCall(64 << 10))}
-	r := httptest.NewRequest(http.MethodPost, "/mcp", body)
-	r.RemoteAddr = "192.0.2.1:1"
-	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, r)
-	if body.n != 0 {
-		t.Errorf("read %d bytes of the body with metrics off", body.n)
-	}
-	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") == "" || rec.Header().Get("Content-Type") != "application/json" ||
-		rec.Body.String() != `{"error":"rate limit exceeded (1 requests/minute per caller)"}` {
-		t.Errorf("refusal %d %v %q differs from 1.0.0's", rec.Code, rec.Header(), rec.Body.String())
-	}
-
-	// The in-flight cap: the slot is held, the next POST waits and is refused.
-	release := make(chan struct{})
-	started := make(chan struct{}, 1)
-	h = inflightMiddleware(1, 20*time.Millisecond, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		started <- struct{}{}
-		<-release
-	}))
-	go h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}")))
-	<-started
-	body = &countingBody{r: strings.NewReader(zerosCall(1 << 10))}
-	rec = httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/mcp", body))
-	close(release)
-	if rec.Code != http.StatusServiceUnavailable || body.n != 0 || rec.Header().Get("Retry-After") != "5" || rec.Body.String() != `{"error":"server busy, retry shortly"}` {
-		t.Errorf("busy refusal with metrics off: %d, read %d bytes, %q", rec.Code, body.n, rec.Body.String())
-	}
-}
-
 // A refused request sent with Expect: 100-continue: metrics on or off, the
 // client sends what 1.0.0 had it send. Reading the body to label a refusal
 // made net/http send 100 Continue, so the client sent a body the server then
 // refused, where 1.0.0 answered the rate limit at once.
 func TestRefusalBehindExpectSendsNoMoreThan100(t *testing.T) {
 	send := func(t *testing.T, outcome string) (status, sent int) {
-		h := mcpHTTPChain(refusingLimiter(), 0, 0, http.NotFoundHandler())
+		h := httpfront.Handler(http.NotFoundHandler(), httpfront.Options{RateLimiter: refusingLimiter(), Metrics: mx})
 		if outcome == "busy" {
 			release, started, held := make(chan struct{}), make(chan struct{}), make(chan struct{})
-			h = mcpHTTPChain(nil, 1, 20*time.Millisecond, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			h = httpfront.Handler(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 				close(started)
 				<-release
-			}))
+			}), httpfront.Options{MaxInflight: 1, InflightWait: 20 * time.Millisecond, Metrics: mx})
 			go func() {
 				h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader("{}")))
 				close(held)
@@ -521,7 +482,7 @@ func BenchmarkRefusedRequestLabel(b *testing.B) {
 				mx = metrics.New("bench")
 			}
 			b.Cleanup(func() { mx = orig })
-			h := mcpHTTPChain(refusingLimiter(), 0, 0, http.NotFoundHandler())
+			h := httpfront.Handler(http.NotFoundHandler(), httpfront.Options{RateLimiter: refusingLimiter(), Metrics: mx})
 			b.ReportAllocs()
 			for b.Loop() {
 				r := httptest.NewRequest(http.MethodPost, "/mcp", bytes.NewReader(body))
