@@ -809,8 +809,14 @@ type lineAttr struct {
 
 // moreLine is one entry of changes_more (1.2.0): a change that did not fit in
 // changes, in one line. Severity is present on security lines only, null there
-// when no grade was found, as in changes. ActionRequired says the change
-// carries action_required; its text is one get_release(changes) away.
+// when no grade was found, as in changes. ActionRequired, AlsoRequired and
+// NoDowngrade say the change carries that step (carriesAStep's reading: a
+// no_downgrade stated or inferred); the text is one get_release(changes) away.
+// RemovedIn is when a deprecation becomes a removal, stated or inferred. A
+// line marked only action_required left the reader unable to tell which
+// security and deprecation lines ask for something: istio 1.27.5 had five
+// security lines with also_required, cilium v1.16.18 three deprecation lines
+// with removed_in (independent review, 2026-11-20).
 type moreLine struct {
 	Version        string          `json:"version"`
 	ID             string          `json:"id"`
@@ -819,6 +825,9 @@ type moreLine struct {
 	Severity       json.RawMessage `json:"severity,omitempty"`
 	Affects        *lineAttr       `json:"affects,omitempty"`
 	ActionRequired bool            `json:"action_required,omitempty"`
+	AlsoRequired   bool            `json:"also_required,omitempty"`
+	NoDowngrade    bool            `json:"no_downgrade,omitempty"`
+	RemovedIn      *lineAttr       `json:"removed_in,omitempty"`
 	// AlsoIn is the entry's also_in, carried onto its line: without it, an
 	// entry moved to a line took with it every backport it stood for —
 	// kubernetes v1.32.11 to its newest lost 10 of 43 security changes
@@ -827,9 +836,14 @@ type moreLine struct {
 }
 
 func lineOf(c briefChange) moreLine {
-	l := moreLine{Version: c.Version, ID: c.ID, Kind: c.Kind, Title: c.Title, Severity: c.Severity, ActionRequired: c.ActionRequired != "", AlsoIn: c.AlsoIn}
+	said := func(a *v2Attr) bool { return a != nil && (a.Status == "stated" || a.Status == "inferred") }
+	l := moreLine{Version: c.Version, ID: c.ID, Kind: c.Kind, Title: c.Title, Severity: c.Severity, AlsoIn: c.AlsoIn,
+		ActionRequired: c.ActionRequired != "", AlsoRequired: c.AlsoRequired != "", NoDowngrade: said(c.NoDowngrade)}
 	if c.Affects != nil {
 		l.Affects = &lineAttr{Text: c.Affects.Text, Status: c.Affects.Status}
+	}
+	if said(c.RemovedIn) {
+		l.RemovedIn = &lineAttr{Text: c.RemovedIn.Text, Status: c.RemovedIn.Status}
 	}
 	return l
 }

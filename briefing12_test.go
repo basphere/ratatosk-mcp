@@ -173,6 +173,15 @@ func TestBriefingListsWhatDidNotFitInOneLine(t *testing.T) {
 	if !slices.Contains(entries, "c#b24") {
 		t.Error("the breaking change with action_required must lead and stay in changes")
 	}
+	// A line marks what its change asks for, whatever the kind.
+	req, nd := "re-register the cluster", &v2Attr{Text: "x", Status: "stated", Reason: "r"}
+	marked := lineOf(briefChange{Kind: "security", AlsoRequired: req, NoDowngrade: nd, RemovedIn: &v2Attr{Text: "v1.21", Status: "inferred", Reason: "r"}})
+	if !marked.AlsoRequired || !marked.NoDowngrade || marked.ActionRequired || marked.RemovedIn == nil || *marked.RemovedIn != (lineAttr{Text: "v1.21", Status: "inferred"}) {
+		t.Errorf("line marks: %+v", marked)
+	}
+	if plain := lineOf(briefChange{Kind: "deprecations", NoDowngrade: &v2Attr{Status: "not_stated"}, RemovedIn: &v2Attr{Status: "not_stated"}}); plain.NoDowngrade || plain.RemovedIn != nil {
+		t.Errorf("a not_stated no_downgrade or removed_in is no mark: %+v", plain)
+	}
 	j, _ := json.Marshal(b.ChangesMore[0])
 	if strings.Contains(string(j), "reason") || strings.Contains(string(j), "body") {
 		t.Errorf("a line is one line: %s", j)

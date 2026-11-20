@@ -309,7 +309,8 @@ func newServer() *mcp.Server {
 			"20 security (most severe first), 20 breaking, 10 deprecations and 10 important_fixes with their body " +
 			"(inside a kind, the ones that say what to do first); changes_omitted counts per kind what is not in " +
 			"changes (left out on your branch, in excluded_on_branch, and backports folded into an entry's also_in " +
-			"aside). changes_more has one line — version, id, kind, title, severity, affects, also_in — for every " +
+			"aside). changes_more has one line — version, id, kind, title, severity, affects, also_in, and what it asks " +
+			"for as marks (action_required, also_required, no_downgrade: true; removed_in) — for every " +
 			"security, breaking and deprecation change changes_omitted counts: none of those three kinds is left " +
 			"out, however long the range. Important fixes past the 10 in changes are only counted, unless kinds " +
 			"names important_fixes: then each has its line too. The answer is not cut to a size; a long range or " +

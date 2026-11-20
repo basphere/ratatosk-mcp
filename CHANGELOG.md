@@ -12,8 +12,10 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `changes_omitted` was a count only, so a cut breaking change or advisory was
   invisible: containerd v2.2.9 to v2.4.2 cut 22 breaking changes, among them
   the removal of `enable_cdi`. A line carries `version`, `id`, `kind`,
-  `title`, `severity` (security only), `affects` (`text`, `status`),
-  `action_required: true` when the change has one, and the entry's `also_in`.
+  `title`, `severity` (security only), `affects` (`text`, `status`), the
+  entry's `also_in`, and marks for what the change asks for:
+  `action_required: true`, `also_required: true`, `no_downgrade: true` and
+  `removed_in` (`text`, `status`).
   None of those three kinds is left out, however long the range, and the
   answer is not cut to a size: a long range or many components make a long
   answer (five components several minors behind: about 300,000 characters,
