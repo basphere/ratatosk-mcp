@@ -124,7 +124,7 @@ JSON に `"serverInfo"` と `"name":"ratatosk"` が見えれば正常です：
 
 ```
 event: message
-data: {"jsonrpc":"2.0","id":1,"result":{…,"serverInfo":{"name":"ratatosk","version":"1.1.0"}}}
+data: {"jsonrpc":"2.0","id":1,"result":{…,"serverInfo":{"name":"ratatosk","version":"1.2.0"}}}
 ```
 
 Claude Code なら `claude mcp list` の出力で確認してください：
@@ -191,10 +191,10 @@ Gemini CLI、Antigravity と一緒に使うときの基本の選び方です。
 ### Claude Code
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0
 ```
 
-`1.1.0` の部分には任意の
+`1.2.0` の部分には任意の
 [リリースタグ](https://github.com/basphere/ratatosk-mcp/releases)を
 指定できます。常に最新を追うなら `latest` を使ってください。
 [バージョン固定](#バージョン固定)を参照してください。
@@ -210,7 +210,7 @@ Claude Desktop は CLI の代わりに設定ファイル
   "mcpServers": {
     "ratatosk": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:1.1.0"]
+      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:1.2.0"]
     }
   }
 }
@@ -224,16 +224,16 @@ Claude Desktop は CLI の代わりに設定ファイル
 ### その他の stdio クライアント
 
 以下のクライアントはどれも同じコマンド
-`docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0` を実行します。違うのは
+`docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0` を実行します。違うのは
 書く場所だけです。
 
 | クライアント | 場所 |
 |---|---|
 | ChatGPT デスクトップアプリ | 設定 → MCP servers → Add server で STDIO を選び、コマンドを入れます。Codex と `~/.codex/config.toml` を共有します（[ドキュメント](https://learn.chatgpt.com/docs/extend/mcp)） |
-| Codex | `~/.codex/config.toml` に書きます。`[mcp_servers.ratatosk]` に `command = "docker"`、`args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.1.0"]`、`startup_timeout_sec = 60`（初回の実行でイメージを取得するため） |
+| Codex | `~/.codex/config.toml` に書きます。`[mcp_servers.ratatosk]` に `command = "docker"`、`args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.2.0"]`、`startup_timeout_sec = 60`（初回の実行でイメージを取得するため） |
 | Gemini CLI | `~/.gemini/settings.json` に書きます。上の Claude Desktop と同じ `mcpServers` ブロックです |
 | Antigravity | `~/.gemini/config/mcp_config.json` に書きます。上の Claude Desktop と同じ `mcpServers` ブロックです |
-| Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0` |
+| Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0` |
 
 ChatGPT（ウェブ）と grok.com は手元のマシンのコマンドではなく URL に接続するため、
 ホスト型エンドポイントを登録します。
@@ -253,7 +253,7 @@ stdio に対応した MCP クライアントであれば、いずれも同じ手
 
 ```bash
 claude mcp list
-# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0 - ✔ Connected
+# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0 - ✔ Connected
 ```
 
 そのうえで、エージェントにこう聞いてみてください：
@@ -304,7 +304,7 @@ kubectl get pods -l app.kubernetes.io/name=ratatosk-mcp
 
 ```bash
 kubectl logs deploy/ratatosk-mcp
-# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.1.0","rate_limit":"off","max_inflight":"off"}
+# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.2.0","rate_limit":"off","max_inflight":"off"}
 ```
 
 ヘルスチェックまで確認するなら：
@@ -496,7 +496,7 @@ kagent ランタイムはこの一覧を守ります。Claude Harness（`spec.cl
 docker で HTTP モードを直接起動する例：
 
 ```bash
-docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.1.0
+docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.2.0
 ```
 
 ### メモリと同時実行
@@ -558,7 +558,7 @@ CPU を分け合うため、16 個を同時に実行した場合、所要時間�
 
 ```bash
 # docker
-docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:1.1.0
+docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:1.2.0
 
 # Helm
 helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=metadata
@@ -568,7 +568,7 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=met
 同じストリーム（stderr）に残ります：
 
 ```json
-{"argument_names":["components","detail"],"client_name":"my-agent","client_version":"1.1.0","event":"audit","level":"INFO","msg":"audit","outcome":"ok","service":"mcp","time":"2026-07-31T02:54:47.029169122Z","tool":"check_stack","transport":"stdio"}
+{"argument_names":["components","detail"],"client_name":"my-agent","client_version":"1.2.0","event":"audit","level":"INFO","msg":"audit","outcome":"ok","service":"mcp","time":"2026-07-31T02:54:47.029169122Z","tool":"check_stack","transport":"stdio"}
 ```
 
 サーバーをステートフル（状態保持）HTTP モード（チャートのデフォルト）で
@@ -691,7 +691,7 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9
 
 ## バージョン固定
 
-- **コンテナイメージ**：リリースごとにバージョンタグ（例：`1.1.0`）で自動
+- **コンテナイメージ**：リリースごとにバージョンタグ（例：`1.2.0`）で自動
   ビルドされ、マルチアーキテクチャ（`linux/amd64`、`linux/arm64`）です。
   `latest` は最新リリースを追います。再現可能なデプロイにはバージョンタグを
   固定してください。
@@ -700,7 +700,7 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9
   クローン後にリリースタグをチェックアウトしてください：
 
   ```bash
-  git -C ratatosk-mcp checkout v1.1.0
+  git -C ratatosk-mcp checkout v1.2.0
   ```
 
   イメージタグはデフォルトでチャートの `appVersion` に従い、`image.tag`

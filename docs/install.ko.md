@@ -73,7 +73,7 @@ curl -s -X POST https://ratatosk.io/mcp \
 
 ```
 event: message
-data: {"jsonrpc":"2.0","id":1,"result":{…,"serverInfo":{"name":"ratatosk","version":"1.1.0"}}}
+data: {"jsonrpc":"2.0","id":1,"result":{…,"serverInfo":{"name":"ratatosk","version":"1.2.0"}}}
 ```
 
 Claude Code에서는 `claude mcp list` 명령의 출력 결과로 연결 상태를 확인합니다.
@@ -106,10 +106,10 @@ stdio는 MCP 클라이언트가 서버를 자식 프로세스로 직접 띄우�
 ### Claude Code
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0
 ```
 
-이미지 태그 자리에는 `1.1.0` 대신 원하는 [릴리스 태그](https://github.com/basphere/ratatosk-mcp/releases)를 지정할 수 있으며, 항상 최신 릴리스를 따라가려면 `latest`를 사용합니다([버전 고정](#버전-고정) 참고).
+이미지 태그 자리에는 `1.2.0` 대신 원하는 [릴리스 태그](https://github.com/basphere/ratatosk-mcp/releases)를 지정할 수 있으며, 항상 최신 릴리스를 따라가려면 `latest`를 사용합니다([버전 고정](#버전-고정) 참고).
 
 ### Claude Desktop
 
@@ -120,7 +120,7 @@ Claude Desktop은 CLI 대신 설정 파일(`claude_desktop_config.json`)로 MCP 
   "mcpServers": {
     "ratatosk": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:1.1.0"]
+      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:1.2.0"]
     }
   }
 }
@@ -130,15 +130,15 @@ Claude Desktop은 CLI 대신 설정 파일(`claude_desktop_config.json`)로 MCP 
 
 ### 기타 stdio 클라이언트
 
-아래 클라이언트들은 모두 동일한 `docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0` 명령을 실행하며, 설정을 등록하는 위치만 다릅니다.
+아래 클라이언트들은 모두 동일한 `docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0` 명령을 실행하며, 설정을 등록하는 위치만 다릅니다.
 
 | 클라이언트 | 등록 위치 및 설정 방법 |
 |---|---|
 | ChatGPT 데스크톱 앱 | 설정 → MCP servers → Add server에서 STDIO를 선택하고 명령 입력 (Codex와 `~/.codex/config.toml` 설정 공유, [공식 설명서](https://learn.chatgpt.com/docs/extend/mcp)) |
-| Codex | 설정 파일 `~/.codex/config.toml`의 `[mcp_servers.ratatosk]`에 `command = "docker"`, `args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.1.0"]`, `startup_timeout_sec = 60`(첫 실행 시 이미지 다운로드 대기 시간) 추가 |
+| Codex | 설정 파일 `~/.codex/config.toml`의 `[mcp_servers.ratatosk]`에 `command = "docker"`, `args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.2.0"]`, `startup_timeout_sec = 60`(첫 실행 시 이미지 다운로드 대기 시간) 추가 |
 | Gemini CLI | 설정 파일 `~/.gemini/settings.json`에 위 Claude Desktop과 동일한 `mcpServers` 블록 추가 |
 | Antigravity | 설정 파일 `~/.gemini/config/mcp_config.json`에 위 Claude Desktop과 동일한 `mcpServers` 블록 추가 |
-| Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0` |
+| Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0` |
 
 ChatGPT 웹 버전과 grok.com은 로컬 컴퓨터의 명령을 실행할 수 없고 원격 URL로만 연결하므로 호스팅 엔드포인트를 사용합니다.
 
@@ -157,7 +157,7 @@ stdio를 지원하는 다른 MCP 클라이언트에서도 동일하게 빌드한
 
 ```bash
 claude mcp list
-# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0 - ✔ Connected
+# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0 - ✔ Connected
 ```
 
 연결 상태가 확인되면 에이전트에게 아래와 같이 질문해 동작을 시험합니다.
@@ -194,7 +194,7 @@ kubectl get pods -l app.kubernetes.io/name=ratatosk-mcp
 
 ```bash
 kubectl logs deploy/ratatosk-mcp
-# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.1.0","rate_limit":"off","max_inflight":"off"}
+# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.2.0","rate_limit":"off","max_inflight":"off"}
 ```
 
 포트 포워딩을 열어 헬스 체크 엔드포인트까지 확인하려면 아래 명령을 실행합니다.
@@ -334,7 +334,7 @@ kagent 도구 서버(`kagent-tool-server`)에는 `k8s_apply_manifest`, `k8s_dele
 Docker로 HTTP 모드를 직접 실행하는 예시는 다음과 같습니다.
 
 ```bash
-docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.1.0
+docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.2.0
 ```
 
 ### 메모리와 동시 처리
@@ -374,7 +374,7 @@ CPU보다 메모리가 먼저 한계에 도달합니다. `check_stack`을 실행
 
 ```bash
 # docker
-docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:1.1.0
+docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:1.2.0
 
 # Helm
 helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=metadata
@@ -383,7 +383,7 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=met
 감사 스트림을 켜면 도구 호출마다 `event:"audit"` JSON 한 줄이 운영 로그와 같은 stderr에 기록됩니다:
 
 ```json
-{"argument_names":["components","detail"],"client_name":"my-agent","client_version":"1.1.0","event":"audit","level":"INFO","msg":"audit","outcome":"ok","service":"mcp","time":"2026-07-31T02:54:47.029169122Z","tool":"check_stack","transport":"stdio"}
+{"argument_names":["components","detail"],"client_name":"my-agent","client_version":"1.2.0","event":"audit","level":"INFO","msg":"audit","outcome":"ok","service":"mcp","time":"2026-07-31T02:54:47.029169122Z","tool":"check_stack","transport":"stdio"}
 ```
 
 서버가 차트 기본값인 상태 유지(stateful) HTTP 모드로 동작할 때는 동시에 접속한 호출자들을 세션 단위로 구분할 수 있도록 HTTP 감사 레코드에 전송 세션 식별자인 `session_id` 필드(예: `"session_id":"T3E77BYZFDDA33SIUSORQ365ZL"`)가 함께 담깁니다. 반면 `statelessHttp`(환경 변수 `MCP_HTTP_STATELESS`)를 켜면 유지되는 세션이 없으므로 `session_id`와 클라이언트가 보고한 `clientInfo`가 모두 빠지고, 아래에서 설명할 `trace_id`로만 호출 단위를 이을 수 있습니다. 감사 스트림에서 호출자를 구분해야 한다면 상태 유지 모드로 실행하거나 호출자가 `traceparent`를 보내도록 구성합니다. 한편 stdio 모드에서는 프로세스 하나에 호출자가 하나뿐이라 구분할 대상이 없으므로 `session_id`가 남지 않습니다.
@@ -454,11 +454,11 @@ helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set metricsPort=9
 
 ## 버전 고정
 
-- **컨테이너 이미지**: 릴리스마다 버전 태그(예: `1.1.0`)가 붙은 멀티 아키텍처(`linux/amd64`, `linux/arm64`) 이미지가 자동 빌드되며, `latest`는 최신 릴리스를 따라갑니다. 재현 가능한 배포 환경에서는 버전 태그를 고정합니다.
+- **컨테이너 이미지**: 릴리스마다 버전 태그(예: `1.2.0`)가 붙은 멀티 아키텍처(`linux/amd64`, `linux/arm64`) 이미지가 자동 빌드되며, `latest`는 최신 릴리스를 따라갑니다. 재현 가능한 배포 환경에서는 버전 태그를 고정합니다.
 - **Helm 차트**: 별도 차트 저장소로 발행하지 않고 저장소를 클론해 설치하므로, 특정 버전에 고정하려면 클론 후 아래 명령으로 원하는 릴리스 태그를 체크아웃합니다.
 
   ```bash
-  git -C ratatosk-mcp checkout v1.1.0
+  git -C ratatosk-mcp checkout v1.2.0
   ```
 
   이미지 태그는 기본적으로 차트의 `appVersion`을 따르며, `image.tag` 설정값으로 덮어쓸 수 있습니다.

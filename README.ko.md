@@ -34,10 +34,10 @@ claude mcp add --transport http ratatosk https://ratatosk.io/mcp
 **설치형(직접 실행)**: 동일한 서버를 로컬 컨테이너나 클러스터 프로세스로 직접 띄우는 방식으로, Docker, Helm 차트, 소스 빌드를 모두 지원합니다. Claude Code와 Docker가 설치된 환경에서는 아래 명령으로 등록합니다.
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0
 ```
 
-현재 릴리스 버전은 `1.1.0`이며, 새 릴리스를 자동으로 따라가려면 태그에 `latest`를 지정합니다.
+현재 릴리스 버전은 `1.2.0`이며, 새 릴리스를 자동으로 따라가려면 태그에 `latest`를 지정합니다.
 
 두 방식 모두 등록 후에는 아래 명령으로 연결 상태를 확인합니다.
 

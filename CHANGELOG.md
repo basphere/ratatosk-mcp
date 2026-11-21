@@ -5,6 +5,8 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-11-21
+
 ### Added
 
 - **`changes_more` in `check_stack` and `check_upgrade`: every security,

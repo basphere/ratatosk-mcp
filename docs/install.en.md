@@ -122,7 +122,7 @@ answering:
 
 ```
 event: message
-data: {"jsonrpc":"2.0","id":1,"result":{…,"serverInfo":{"name":"ratatosk","version":"1.1.0"}}}
+data: {"jsonrpc":"2.0","id":1,"result":{…,"serverInfo":{"name":"ratatosk","version":"1.2.0"}}}
 ```
 
 With Claude Code, check the `claude mcp list` output:
@@ -188,10 +188,10 @@ laptop with Claude Code, Claude Desktop, Codex, Gemini CLI or Antigravity.
 ### Claude Code
 
 ```bash
-claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0
+claude mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0
 ```
 
-In place of `1.1.0` you can use any
+In place of `1.2.0` you can use any
 [release tag](https://github.com/basphere/ratatosk-mcp/releases), or
 `latest` to always track the newest release. See
 [Version pinning](#version-pinning).
@@ -207,7 +207,7 @@ Claude Desktop registers MCP servers through a config file
   "mcpServers": {
     "ratatosk": {
       "command": "docker",
-      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:1.1.0"]
+      "args": ["run", "-i", "--rm", "ghcr.io/basphere/ratatosk-mcp:1.2.0"]
     }
   }
 }
@@ -220,16 +220,16 @@ Desktop documentation. If you would rather install nothing, register the
 ### Other stdio clients
 
 Every client below runs the same command,
-`docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0`; only where you put
+`docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0`; only where you put
 it differs.
 
 | Client | Where |
 |---|---|
 | ChatGPT desktop app | Settings → MCP servers → Add server, choose STDIO, enter the command. It shares `~/.codex/config.toml` with Codex ([docs](https://learn.chatgpt.com/docs/extend/mcp)) |
-| Codex | `~/.codex/config.toml`: `[mcp_servers.ratatosk]` with `command = "docker"`, `args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.1.0"]` and `startup_timeout_sec = 60` (the first run pulls the image) |
+| Codex | `~/.codex/config.toml`: `[mcp_servers.ratatosk]` with `command = "docker"`, `args = ["run", "--rm", "-i", "ghcr.io/basphere/ratatosk-mcp:1.2.0"]` and `startup_timeout_sec = 60` (the first run pulls the image) |
 | Gemini CLI | `~/.gemini/settings.json`: the same `mcpServers` block as Claude Desktop above |
 | Antigravity | `~/.gemini/config/mcp_config.json`: the same `mcpServers` block as Claude Desktop above |
-| Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0` |
+| Grok Build | `grok mcp add ratatosk -- docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0` |
 
 ChatGPT on the web and grok.com connect to a URL, not to a command on your
 machine, so they take the hosted endpoint.
@@ -249,7 +249,7 @@ Any MCP client that speaks stdio works the same way.
 
 ```bash
 claude mcp list
-# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.1.0 - ✔ Connected
+# ratatosk: docker run -i --rm ghcr.io/basphere/ratatosk-mcp:1.2.0 - ✔ Connected
 ```
 
 Then ask your agent:
@@ -299,7 +299,7 @@ One startup log line tells you the serving address and the upstream:
 
 ```bash
 kubectl logs deploy/ratatosk-mcp
-# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.1.0","rate_limit":"off","max_inflight":"off"}
+# {"time":"…","level":"INFO","msg":"listening","service":"mcp","transport":"http","addr":":8080/mcp","mode":"stateful","upstream":"https://ratatosk.io","version":"1.2.0","rate_limit":"off","max_inflight":"off"}
 ```
 
 To check health as well:
@@ -484,7 +484,7 @@ the [chart README](../charts/ratatosk-mcp/README.md).
 Running HTTP mode directly with Docker:
 
 ```bash
-docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.1.0
+docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mcp:1.2.0
 ```
 
 ### Memory and concurrency
@@ -549,7 +549,7 @@ Enable it with `MCP_AUDIT`:
 
 ```bash
 # docker
-docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:1.1.0
+docker run -i --rm -e MCP_AUDIT=metadata ghcr.io/basphere/ratatosk-mcp:1.2.0
 
 # Helm
 helm upgrade ratatosk-mcp ./ratatosk-mcp/charts/ratatosk-mcp --set auditMode=metadata
@@ -559,7 +559,7 @@ When on, every tool call emits one `event:"audit"` JSON line on the same
 stream as the operational logs (stderr):
 
 ```json
-{"argument_names":["components","detail"],"client_name":"my-agent","client_version":"1.1.0","event":"audit","level":"INFO","msg":"audit","outcome":"ok","service":"mcp","time":"2026-07-31T02:54:47.029169122Z","tool":"check_stack","transport":"stdio"}
+{"argument_names":["components","detail"],"client_name":"my-agent","client_version":"1.2.0","event":"audit","level":"INFO","msg":"audit","outcome":"ok","service":"mcp","time":"2026-07-31T02:54:47.029169122Z","tool":"check_stack","transport":"stdio"}
 ```
 
 When the server runs in stateful HTTP mode (the chart default), audit records
@@ -683,7 +683,7 @@ restart still counts the first call.
 ## Version pinning
 
 - **Container image**: built automatically for every release under its
-  version tag (e.g. `1.1.0`), multi-arch (`linux/amd64`, `linux/arm64`).
+  version tag (e.g. `1.2.0`), multi-arch (`linux/amd64`, `linux/arm64`).
   `latest` tracks the newest release; pin a version tag for reproducible
   deployments.
 - **Helm**: the chart is not published to a chart repository; you install
@@ -691,7 +691,7 @@ restart still counts the first call.
   cloning:
 
   ```bash
-  git -C ratatosk-mcp checkout v1.1.0
+  git -C ratatosk-mcp checkout v1.2.0
   ```
 
   The image tag follows the chart's `appVersion` by default and can be
