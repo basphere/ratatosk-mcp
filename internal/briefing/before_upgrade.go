@@ -31,6 +31,17 @@ type briefItem struct {
 // carried "runc and CNI plugins are installed separately" six times, 17 items
 // in all for 8 different texts. The newest is kept because each release words
 // its card anew and the newest wording is the latest reading.
+//
+// Evidence (1.3.0) is carried only by an item without a body. The card writer
+// leaves the body empty when it has nothing to add to the title, and the
+// website shows the release-note lines under such an item; a briefing showed
+// the title alone. 498 of the 858 before_upgrade items on record had no body
+// (2026-11-22), and for 92 of them the reading named identifiers or versions
+// the title does not: cilium v1.20.0 answered "legacy features and CNI
+// configuration upgrade notes" where the note names Mutual Authentication,
+// Kafka-aware policies, the v2alpha1 CiliumNodeConfig API and custom CNI
+// configuration. Two agents asked to read every before_upgrade item had to
+// call get_release for those lines (2026-11-22).
 type UpgradeItem struct {
 	Version string            `json:"version"`
 	Section string            `json:"section"` // prerequisites | known_issues | upgrade_guide
@@ -38,7 +49,10 @@ type UpgradeItem struct {
 	Title   string            `json:"title"`
 	Body    *string           `json:"body"`
 	Folded  []json.RawMessage `json:"folded,omitempty"`
-	AlsoIn  []string          `json:"also_in,omitempty"`
+	// Evidence: the item's evidence as get_release has it, when Body is nil
+	// or empty.
+	Evidence []json.RawMessage `json:"evidence,omitempty"`
+	AlsoIn   []string          `json:"also_in,omitempty"`
 }
 
 // beforeUpgradeOf lists the before_upgrade items of the releases in range
@@ -63,7 +77,11 @@ func beforeUpgradeOf(docs []*release.Doc) []UpgradeItem {
 				if len(it.Folded) > 0 {
 					folded = it.Folded
 				}
-				all = append(all, UpgradeItem{Version: d.Version, Section: sec.name, ID: it.ID, Title: it.Title, Body: it.Body, Folded: folded})
+				var evidence []json.RawMessage
+				if it.Body == nil || strings.TrimSpace(*it.Body) == "" {
+					evidence = it.Evidence
+				}
+				all = append(all, UpgradeItem{Version: d.Version, Section: sec.name, ID: it.ID, Title: it.Title, Body: it.Body, Folded: folded, Evidence: evidence})
 				keys = append(keys, k)
 			}
 		}

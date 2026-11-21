@@ -39,7 +39,8 @@ func checkStackDef() *mcp.Tool {
 			"leave your infrastructure; on the hosted endpoint they transit server memory only and are not logged. " +
 			"Returns, per component, the releases NEWER than the running version up to target_version (default the " +
 			"newest release on the running version's release line — a release line is a tag prefix such as flagd/ or " +
-			"lts-, not a minor version, so v1.36.5 is checked up to v1.37.x; same_minor:true stops at the newest patch " +
+			"lts-, not a minor version, so v1.36.5 is checked up to v1.37.x; same_minor:true — on a component, or once " +
+			"at the top of the call for every component that names no target_version — stops at the newest patch " +
 			"of the running minor), oldest first: before_upgrade items of every release in range (each with its " +
 			"body and folded entries; an item whose text recurs on several releases is listed once, at the newest, " +
 			"with also_in naming the others), and the " +
@@ -58,10 +59,11 @@ func checkStackDef() *mcp.Tool {
 			"security, breaking and deprecation change changes_omitted counts: none of those three kinds is left " +
 			"out, however long the range. Important fixes past the 10 in changes are only counted, unless kinds " +
 			"names important_fixes: then each has its line too. The answer is not cut to a size; a long range or " +
-			"many components make a long answer, and the way to a shorter one is a narrower call — kinds, fewer " +
-			"components, target_version or same_minor. " +
+			"many components make a long answer, and the way to a shorter one is a narrower call — kinds or same_minor " +
+			"for the whole call, fewer components, or target_version on a component. " +
 			"later_in_range carries only problems (regression_fixed, known_issue_fixed). The briefing carries no " +
-			"evidence quotes: read the body and evidence of the entries you report with get_release(project, version, " +
+			"evidence quotes, except on a before_upgrade item that has no body (evidence: the release-note lines it " +
+			"was read from): read the body and evidence of the entries you report with get_release(project, version, " +
 			"changes:[id, …]). " +
 			"kinds keeps the changes of those kinds. " +
 			"summary.counts and summary.warnings add up every release in range (one fix on several " +
@@ -90,7 +92,8 @@ func checkStackDef() *mcp.Tool {
 			"analyzed yet, or misread) are listed in could_not_check — tracked:false means ratatosk knows no " +
 			"project by that slug: check it with list_projects (case and surrounding spaces are ignored); a project not " +
 			"listed there is NOT covered by ratatosk, so the absence of changes is no coverage, not safety. detail:\"full\" returns " +
-			"every release in range verbatim instead. " + DataNote,
+			"every release in range verbatim instead. server_version is the version of the server that built the " +
+			"answer. " + DataNote,
 		InputSchema: checkStackSchema(),
 	}
 }
@@ -169,6 +172,18 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 			return errResult(fmt.Errorf("component %d (%s) sets both same_minor and target_version — pass one: target_version for a given destination, same_minor for the newest patch of the running minor", i+1, truncate(comp.Project, 80))), nil, nil
 		}
 	}
+	// same_minor at the top of the call (1.3.0) is same_minor on every
+	// component. A component that names its own target_version keeps it, and
+	// its note says so: the narrower instruction wins, never silently.
+	if args.SameMinor {
+		for i := range args.Components {
+			if comp := &args.Components[i]; strings.TrimSpace(comp.TargetVersion) == "" {
+				comp.SameMinor = true
+			} else {
+				comp.callSameMinorUnused = true
+			}
+		}
+	}
 
 	roster, err := h.api.Projects(ctx)
 	if err != nil {
@@ -208,6 +223,9 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 		}
 		if comp.unreadKeys != "" {
 			notes = append(notes, fmt.Sprintf("key(s) not read: %s — a component takes project, version, target_version, same_minor and version_source", comp.unreadKeys))
+		}
+		if comp.callSameMinorUnused {
+			notes = append(notes, "the call's same_minor was not applied here: this component names target_version, which was used")
 		}
 		skip := func(reason string) {
 			notes = append(notes, reason)
@@ -469,8 +487,9 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 	}
 
 	out := map[string]any{
-		"components": reports,
-		"privacy":    "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)",
+		"components":     reports,
+		"privacy":        "versions were compared in this process; upstream requests named project slugs only (each project's recent releases, the same whatever version runs)",
+		"server_version": h.version,
 	}
 	if len(cannot) > 0 {
 		out["could_not_check"] = cannot

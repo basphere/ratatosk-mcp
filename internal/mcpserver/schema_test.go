@@ -5,6 +5,7 @@ package mcpserver
 // schema.
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -81,5 +82,55 @@ func TestListArgumentsPassTheSchema(t *testing.T) {
 		if isErr || !strings.Contains(text, `"not_found"`) {
 			t.Errorf("get_release changes %v: error=%v %.300s", kinds, isErr, text)
 		}
+	}
+}
+
+// same_minor at the top of check_stack is same_minor on every component: the
+// schema refused it there before the handler ran, and an agent checking a
+// cluster for patches had set it beside kinds (2026-11-22). A component that
+// names target_version keeps it and says so. The answers name the server.
+// (1.3.0)
+func TestCheckStackTakesSameMinorForTheWholeCall(t *testing.T) {
+	cs := sdkSession(t, Options{Version: "9.9.9", API: upstreamtest.Client(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)), nil)})
+	text, isErr := sdkText(t, cs, "check_stack", map[string]any{
+		"same_minor": true,
+		"components": []any{
+			map[string]any{"project": "etcd", "version": "v3.5.30"},
+			map[string]any{"project": "etcd", "version": "v3.5.31", "target_version": "v3.6.7"},
+		},
+	})
+	if isErr {
+		t.Fatalf("same_minor at the top was refused: %s", text)
+	}
+	var out struct {
+		Components []struct {
+			RunningVersion string `json:"running_version"`
+			TargetVersion  string `json:"target_version"`
+			Note           string `json:"note"`
+		} `json:"components"`
+		ServerVersion string `json:"server_version"`
+	}
+	if err := json.Unmarshal([]byte(text), &out); err != nil || len(out.Components) != 2 {
+		t.Fatalf("answer: %v %.300s", err, text)
+	}
+	if c := out.Components[0]; c.TargetVersion != "v3.5.32" || strings.Contains(c.Note, "same_minor") {
+		t.Errorf("a component without target_version stops at its minor: %+v", c)
+	}
+	if c := out.Components[1]; c.TargetVersion != "v3.6.7" || !strings.Contains(c.Note, "the call's same_minor was not applied here") {
+		t.Errorf("a component with target_version keeps it and says so: %+v", c)
+	}
+	if out.ServerVersion != "9.9.9" {
+		t.Errorf("check_stack server_version %q, want the server's", out.ServerVersion)
+	}
+	text, isErr = sdkText(t, cs, "check_upgrade", map[string]any{"project": "etcd", "from": "v3.5.30", "same_minor": true})
+	if isErr || !strings.Contains(text, `"server_version":"9.9.9"`) {
+		t.Errorf("check_upgrade briefing names no server: error=%v %.300s", isErr, text)
+	}
+	// Without it at the top a component decides for itself, as in 1.2.0.
+	text, _ = sdkText(t, cs, "check_stack", map[string]any{
+		"components": []any{map[string]any{"project": "etcd", "version": "v3.5.30"}},
+	})
+	if !strings.Contains(text, `"target_version":"v3.6.8"`) {
+		t.Errorf("the default still reaches the newest on the line: %.300s", text)
 	}
 }

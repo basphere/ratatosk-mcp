@@ -67,7 +67,7 @@ func New(o Options) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "ratatosk", Version: o.Version}, &mcp.ServerOptions{
 		Instructions: instructions,
 	})
-	tools.Register(server, o.API)
+	tools.Register(server, o.API, o.Version)
 
 	// Added first, so it is the innermost: the audit stream, the deadline and
 	// the counters see a panicked call as an ordinary tool error (counted

@@ -50,12 +50,19 @@ func laterNote(who string) string {
 // handlers are the tool handlers, with the client they read /v2 through.
 type handlers struct {
 	api *upstream.Client
+	// version is the server's version, answered as server_version (1.3.0).
+	// A tool answer said nothing of the server behind it, and serverInfo is
+	// not in an agent's view: asked whether a new release was answering, an
+	// agent could not tell, with an older server deployed beside it
+	// (2026-11-22).
+	version string
 }
 
-// Register adds the tools to s, reading /v2 through api. (A client lists
-// them sorted by name, whatever the order here.)
-func Register(s *mcp.Server, api *upstream.Client) {
-	h := &handlers{api: api}
+// Register adds the tools to s, reading /v2 through api; version is the
+// server's version as the build stamps it. (A client lists them sorted by
+// name, whatever the order here.)
+func Register(s *mcp.Server, api *upstream.Client, version string) {
+	h := &handlers{api: api, version: version}
 	mcp.AddTool(s, listProjectsDef(), h.listProjectsTool)
 	mcp.AddTool(s, getReleaseDef(), h.getReleaseTool)
 	mcp.AddTool(s, listReleasesDef(), h.listReleasesTool)

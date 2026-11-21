@@ -33,14 +33,14 @@ import (
 
 // addedSince are the arguments added after the snapshot's release, by tool;
 // "components" names the keys of one check_stack component.
-var addedSince = map[string][]string{}
+var addedSince = map[string][]string{"check_stack": {"same_minor"}}
 
 // reworded are the tools whose description changed after the snapshot's
 // release. A description is what a model reads to choose a tool and its
 // arguments — one phrase of check_stack's was read the wrong way by 7 of 8
 // agent runs (2026-11-20) — so a change to one is declared here, not slipped
 // in.
-var reworded = map[string]bool{}
+var reworded = map[string]bool{"check_stack": true, "check_upgrade": true}
 
 // stripDescriptions drops every "description" key, so two schemas compare by
 // shape: names, types, required and the rest.

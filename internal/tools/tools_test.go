@@ -27,7 +27,7 @@ import (
 // withAPI points the tool handlers at ts, which is closed when the test ends.
 func withAPI(t *testing.T, ts *httptest.Server) *handlers {
 	t.Helper()
-	return &handlers{api: upstreamtest.Client(t, ts, nil)}
+	return &handlers{api: upstreamtest.Client(t, ts, nil), version: "test"}
 }
 
 type stackOut struct {

@@ -38,6 +38,9 @@ type stackComponent struct {
 	// target_version would otherwise return the whole upgrade path with nothing
 	// to say the bound was ignored. Named in the component's note.
 	unreadKeys string
+	// callSameMinorUnused: the call set same_minor for every component and
+	// this one kept its own target_version. Named in the component's note.
+	callSameMinorUnused bool
 }
 
 // checkStackSchema is the inferred schema with one widening: components also
@@ -193,4 +196,9 @@ type checkStackArgs struct {
 	Detail     string          `json:"detail,omitempty" jsonschema:"brief (default): summary, before_upgrade and the changes that need a decision; full: every release in range verbatim"`
 	Lang       string          `json:"lang,omitempty" jsonschema:"en (default), ko or ja — language of title, body and attribute text"`
 	Kinds      stringList      `json:"kinds,omitempty" jsonschema:"only changes of these kinds, for every component: with brief any of security, breaking, deprecations, important_fixes; with full any of the seven kinds (folded lines are then left out). Omit for every kind"`
+	// SameMinor (1.3.0): checking a whole cluster for patches is one call
+	// with same_minor on every component, and the description listed
+	// same_minor beside kinds, which is set here. An agent set it here and was
+	// refused by the schema before the handler ran (2026-11-22).
+	SameMinor bool `json:"same_minor,omitempty" jsonschema:"true: same_minor for every component — each stops at the newest release of its running minor (v1.36.5 → the newest v1.36.x); a component that names target_version keeps it, and its note says so"`
 }

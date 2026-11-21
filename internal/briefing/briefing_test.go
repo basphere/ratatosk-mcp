@@ -500,3 +500,29 @@ func TestBuildAnswersTheSparsestDocuments(t *testing.T) {
 		}
 	}
 }
+
+// An item without a body is a title alone, and the lines it was read from say
+// what the title leaves out: cilium v1.20.0's prerequisite names the features
+// it is about only in its evidence. An item with a body goes out as before.
+// (1.3.0; 498 of the 858 before_upgrade items on record had no body,
+// 2026-11-22.)
+func TestBeforeUpgradeItemWithoutBodyCarriesItsEvidence(t *testing.T) {
+	ev := json.RawMessage(`{"quote":"You may need to take action if you use Kafka-aware policies","source":"release_notes","url":"https://example.test/notes"}`)
+	d := &release.Doc{Version: "v1.20.0"}
+	d.BeforeUpgrade.Prerequisites = []release.Item{
+		{ID: "c@v1.20.0#a", Title: "legacy features", Body: nil, Evidence: []json.RawMessage{ev}},
+		{ID: "c@v1.20.0#b", Title: "blank body", Body: ptr("  "), Evidence: []json.RawMessage{ev}},
+		{ID: "c@v1.20.0#c", Title: "with a body", Body: ptr("install them separately"), Evidence: []json.RawMessage{ev}},
+		{ID: "c@v1.20.0#d", Title: "no body, no evidence"},
+	}
+	got := beforeUpgradeOf([]*release.Doc{d})
+	if len(got) != 4 {
+		t.Fatalf("%d items, want 4", len(got))
+	}
+	for i, want := range []bool{true, true, false, false} {
+		b, _ := json.Marshal(got[i])
+		if has := strings.Contains(string(b), `"evidence":[{"quote":"You may need to take action if you use Kafka-aware policies"`); has != want {
+			t.Errorf("%s: evidence carried = %v, want %v: %s", got[i].ID, has, want, b)
+		}
+	}
+}

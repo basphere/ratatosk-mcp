@@ -35,14 +35,16 @@ func checkUpgradeDef() *mcp.Tool {
 			"fields are described there), or " +
 			"every release in range verbatim (detail:\"full\"); kinds keeps the changes of those kinds. Read before_upgrade of every release in range — " +
 			"prerequisites and upgrade guides usually sit on the release that starts a new minor. Every security, breaking " +
-			"and deprecation change that changes_omitted counts has its line in changes_more; the briefing carries no evidence quotes, so read the body " +
+			"and deprecation change that changes_omitted counts has its line in changes_more; the briefing carries no evidence quotes " +
+			"(only a before_upgrade item without a body has its own), so read the body " +
 			"and evidence of the entries you report with get_release(project, version, changes:[id, …]). A security " +
 			"change whose advisories from's own branch already fixed at or below from is left out and counted in " +
 			"excluded_on_branch, as check_stack does; if the releases that tell cannot be read, nothing is left out " +
 			"and note says so. An image build suffix on from is read off as in check_stack (version_read_as). gaps lists " +
 			"neighbouring versions whose numbers skip (e.g. v3.5.32 then v3.6.7): releases in between may exist that " +
 			"were not analyzed, so check their release notes yourself. later_for_from is " + laterNote("the from version") +
-			" later_in_range lists the same for every release in range. " + DataNote,
+			" later_in_range lists the same for every release in range. A briefing names the server that built it in " +
+			"server_version. " + DataNote,
 		InputSchema: toolSchema[checkUpgradeArgs]("kinds"),
 	}
 }
@@ -208,6 +210,8 @@ func (h *handlers) checkUpgradeTool(ctx context.Context, req *mcp.CallToolReques
 		"gaps":    gaps,
 		"privacy": "from and to were sent to the server (/v2/upgrade); use check_stack to keep versions on your side",
 		"hint":    briefing.Hint(kindSet),
+		// Not on detail:"full": that answer is /v2's, passed on as received.
+		"server_version": h.version,
 	}
 	if readAs != "" {
 		out["version_read_as"] = readAs
