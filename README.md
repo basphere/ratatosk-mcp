@@ -158,8 +158,9 @@ reduced to their prefix.
 the server's memory to produce the same answer, and are not written down.
 Here is what each layer records:
 
-- The hosted MCP process logs only its startup line; it does not log normal
-  requests.
+- The hosted MCP process logs its startup line along with warning and error
+  lines (such as upstream request failures) and does not log normal requests.
+  Request arguments are not included in any log line.
 - It counts requests by method, tool name, outcome, and one bit for whether
   the call is Ratatosk's own (its checks and tests) or a user's, and keeps per
   tool how long calls took, how large the answers were and how many upstream
