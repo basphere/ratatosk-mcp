@@ -507,22 +507,33 @@ func TestBuildAnswersTheSparsestDocuments(t *testing.T) {
 // (1.3.0; 498 of the 858 before_upgrade items on record had no body,
 // 2026-11-22.)
 func TestBeforeUpgradeItemWithoutBodyCarriesItsEvidence(t *testing.T) {
-	ev := json.RawMessage(`{"quote":"You may need to take action if you use Kafka-aware policies","source":"release_notes","url":"https://example.test/notes"}`)
+	ev := json.RawMessage(`[{"quote":"You may need to take action if you use Kafka-aware policies","source":"release_notes","url":"https://example.test/notes"}]`)
 	d := &release.Doc{Version: "v1.20.0"}
 	d.BeforeUpgrade.Prerequisites = []release.Item{
-		{ID: "c@v1.20.0#a", Title: "legacy features", Body: nil, Evidence: []json.RawMessage{ev}},
-		{ID: "c@v1.20.0#b", Title: "blank body", Body: ptr("  "), Evidence: []json.RawMessage{ev}},
-		{ID: "c@v1.20.0#c", Title: "with a body", Body: ptr("install them separately"), Evidence: []json.RawMessage{ev}},
-		{ID: "c@v1.20.0#d", Title: "no body, no evidence"},
+		{ID: "c@v1.20.0#a", Title: "legacy features", Body: nil, Evidence: ev},
+		{ID: "c@v1.20.0#b", Title: "blank body", Body: ptr("  "), Evidence: ev},
+		// Passed on as received, whatever its shape: it is never read here.
+		{ID: "c@v1.20.0#c", Title: "not an array", Evidence: json.RawMessage(`{"quote":"You may need to take action if you use Kafka-aware policies"}`)},
+		{ID: "c@v1.20.0#d", Title: "with a body", Body: ptr("install them separately"), Evidence: ev},
+		{ID: "c@v1.20.0#e", Title: "no body, no evidence"},
+		{ID: "c@v1.20.0#f", Title: "no body, empty evidence", Evidence: json.RawMessage(` [] `)},
+		{ID: "c@v1.20.0#g", Title: "no body, null evidence", Evidence: json.RawMessage(`null`)},
 	}
 	got := beforeUpgradeOf([]*release.Doc{d})
-	if len(got) != 4 {
-		t.Fatalf("%d items, want 4", len(got))
+	want := []bool{true, true, true, false, false, false, false}
+	if len(got) != len(want) {
+		t.Fatalf("%d items, want %d", len(got), len(want))
 	}
-	for i, want := range []bool{true, true, false, false} {
-		b, _ := json.Marshal(got[i])
-		if has := strings.Contains(string(b), `"evidence":[{"quote":"You may need to take action if you use Kafka-aware policies"`); has != want {
-			t.Errorf("%s: evidence carried = %v, want %v: %s", got[i].ID, has, want, b)
+	for i, carried := range want {
+		b, err := json.Marshal(got[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if has := strings.Contains(string(b), `"evidence":`); has != carried {
+			t.Errorf("%s: evidence carried = %v, want %v: %s", got[i].ID, has, carried, b)
+		}
+		if carried && !strings.Contains(string(b), `"quote":"You may need to take action if you use Kafka-aware policies"`) {
+			t.Errorf("%s: the evidence is not the item's own: %s", got[i].ID, b)
 		}
 	}
 }

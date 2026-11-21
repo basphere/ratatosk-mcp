@@ -82,18 +82,27 @@ func confessionNote(src string) string {
 // running-as-target and read the guaranteed zero changes as "no issues". An
 // empty-by-construction range is therefore refused loudly (field ignored,
 // note says why and teaches the intended use) instead of honored silently.
-func resolveTarget(currentKey []int, targetRaw string) ([]int, string) {
+// callSameMinor: the call set same_minor for every component, so an ignored
+// target leaves this component with that range, and the note says which.
+func resolveTarget(currentKey []int, targetRaw string, callSameMinor bool) ([]int, string) {
 	if targetRaw == "" {
 		return nil, ""
 	}
 	targetKey := version.NormalizeVersion(targetRaw)
 	if targetKey == nil {
+		if callSameMinor {
+			return nil, "target_version could not be parsed; ignored, and the call's same_minor applies"
+		}
 		return nil, "target_version could not be parsed; ignored"
 	}
 	if version.Compare(targetKey, currentKey) <= 0 {
+		shown := "the full upgrade path is shown"
+		if callSameMinor {
+			shown = "the call's same_minor applies"
+		}
 		return nil, fmt.Sprintf("target_version (%s) is not above the running version, so the checked range "+
-			"(running, target] is empty by construction — the field was ignored and the full upgrade path is shown. "+
-			"To preview one upgrade hop, keep version = what is running now and set target_version to the destination.", targetRaw)
+			"(running, target] is empty by construction — the field was ignored and %s. "+
+			"To preview one upgrade hop, keep version = what is running now and set target_version to the destination.", targetRaw, shown)
 	}
 	return targetKey, ""
 }

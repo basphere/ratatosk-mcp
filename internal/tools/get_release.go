@@ -8,7 +8,7 @@ package tools
 // 2026-11-20 all had at least one get_release answer dropped to a file by
 // their client (84 answers) — Claude Code hands a tool answer over 50,000
 // characters to the model as a file, not as text. The briefing, in turn,
-// carries no evidence. kinds keeps the kinds that ask for a decision ("between
+// carries no evidence for a change. kinds keeps the kinds that ask for a decision ("between
 // the briefing and the whole release"), and changes fetches the few entries a
 // briefing named, with body and evidence. Both are arguments on the tools that
 // already exist (owner's decision, 2026-11-20 — no new tool).

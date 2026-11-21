@@ -37,8 +37,8 @@ type briefItem struct {
 // website shows the release-note lines under such an item; a briefing showed
 // the title alone. 498 of the 858 before_upgrade items on record had no body
 // (2026-11-22), and for 92 of them the reading named identifiers or versions
-// the title does not: cilium v1.20.0 answered "legacy features and CNI
-// configuration upgrade notes" where the note names Mutual Authentication,
+// the title does not: cilium v1.20.0 answered "Upgrade guidance for legacy
+// features and CNI configurations" where the note names Mutual Authentication,
 // Kafka-aware policies, the v2alpha1 CiliumNodeConfig API and custom CNI
 // configuration. Two agents asked to read every before_upgrade item had to
 // call get_release for those lines (2026-11-22).
@@ -51,8 +51,8 @@ type UpgradeItem struct {
 	Folded  []json.RawMessage `json:"folded,omitempty"`
 	// Evidence: the item's evidence as get_release has it, when Body is nil
 	// or empty.
-	Evidence []json.RawMessage `json:"evidence,omitempty"`
-	AlsoIn   []string          `json:"also_in,omitempty"`
+	Evidence json.RawMessage `json:"evidence,omitempty"`
+	AlsoIn   []string        `json:"also_in,omitempty"`
 }
 
 // beforeUpgradeOf lists the before_upgrade items of the releases in range
@@ -77,8 +77,8 @@ func beforeUpgradeOf(docs []*release.Doc) []UpgradeItem {
 				if len(it.Folded) > 0 {
 					folded = it.Folded
 				}
-				var evidence []json.RawMessage
-				if it.Body == nil || strings.TrimSpace(*it.Body) == "" {
+				var evidence json.RawMessage
+				if e := strings.TrimSpace(string(it.Evidence)); (it.Body == nil || strings.TrimSpace(*it.Body) == "") && e != "" && e != "null" && e != "[]" {
 					evidence = it.Evidence
 				}
 				all = append(all, UpgradeItem{Version: d.Version, Section: sec.name, ID: it.ID, Title: it.Title, Body: it.Body, Folded: folded, Evidence: evidence})

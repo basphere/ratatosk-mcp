@@ -51,9 +51,6 @@ func (r *stackRun) check(ctx context.Context, comp stackComponent) error {
 	if comp.unreadKeys != "" {
 		notes = append(notes, fmt.Sprintf("key(s) not read: %s — a component takes project, version, target_version, same_minor and version_source", comp.unreadKeys))
 	}
-	if comp.callSameMinorUnused {
-		notes = append(notes, "the call's same_minor was not applied here: this component names target_version, which was used")
-	}
 	skip := func(reason string) {
 		notes = append(notes, reason)
 		rep.Note = strings.Join(notes, "; ")
@@ -142,9 +139,25 @@ func (r *stackRun) check(ctx context.Context, comp stackComponent) error {
 		return nil
 	}
 	currentKey := version.NormalizeVersion(running)
-	targetKey, targetNote := resolveTarget(currentKey, comp.TargetVersion)
+	// The call's same_minor against what the component says for itself. A
+	// target_version that cannot be used falls back to the call's same_minor,
+	// not to the whole release line: decided on the key alone, a target at or
+	// below the running version answered the whole line under a note that the
+	// target "was used" (independent review, 2026-11-22).
+	sameMinor := comp.SameMinor
+	targetKey, targetNote := resolveTarget(currentKey, comp.TargetVersion, comp.callSameMinor == callSameMinorOrTarget)
 	if targetNote != "" {
 		notes = append(notes, targetNote)
+	}
+	switch comp.callSameMinor {
+	case callSameMinorOff:
+		notes = append(notes, "the call's same_minor was not applied here: this component sets same_minor:false")
+	case callSameMinorOrTarget:
+		if targetKey != nil {
+			notes = append(notes, "the call's same_minor was not applied here: this component names target_version, which was used")
+		} else {
+			sameMinor = true
+		}
 	}
 	if overBudget {
 		skip("not checked: this call already read as many releases as one call may — call check_stack again with the remaining components")
@@ -161,7 +174,7 @@ func (r *stackRun) check(ctx context.Context, comp stackComponent) error {
 	}
 	var inRange []release.Row
 	var resolved string
-	if comp.SameMinor {
+	if sameMinor {
 		if t := releaseline.SameMinorTarget(rows, running); t != "" {
 			target = t
 			inRange, resolved = releaseline.UpgradeRange(rows, running, t)

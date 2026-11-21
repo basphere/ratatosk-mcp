@@ -134,7 +134,7 @@ func NewEtcd() *Fake {
 			"v3.5.31": Doc("v3.5.31", "", "", `[`+sec("etcd@v3.5.31#a", "GHSA-aaaa")+`]`, ""),
 			"v3.5.32": Doc("v3.5.32", "", "", "", ""),
 			"v3.6.7": Doc("v3.6.7", `{"security":1,"breaking":1,"deprecations":0,"important_fixes":0,"enhancements":2,"dependency_updates":0,"other":0}`,
-				`{"prerequisites":[],"known_issues":[],"upgrade_guide":[{"id":"etcd@v3.6.7#g","title":"read the 3.6 upgrade guide","body":null,"evidence":[],"folded":[]}]}`,
+				`{"prerequisites":[],"known_issues":[],"upgrade_guide":[{"id":"etcd@v3.6.7#g","title":"read the 3.6 upgrade guide","body":null,"evidence":[{"quote":"Before upgrading to 3.6, read the upgrade guide.","source":"release_notes","url":"https://example.test/etcd/v3.6.7"}],"folded":[]}]}`,
 				`[`+sec("etcd@v3.6.7#a", "GHSA-aaaa")+`,`+
 					`{"id":"etcd@v3.6.7#k","kind":"breaking","title":"v2store removed","body":"long","affects":{"text":"","status":"not_stated"},"action_required":"migrate","no_downgrade":{"text":"","status":"stated"},"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"also_touches":[],"evidence":[],"later":[]},`+
 					`{"id":"etcd@v3.6.7#e","kind":"enhancements","title":"new flag","body":null,"affects":{"text":"","status":"not_stated"},"to_use":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, ""),

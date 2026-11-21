@@ -38,10 +38,22 @@ type stackComponent struct {
 	// target_version would otherwise return the whole upgrade path with nothing
 	// to say the bound was ignored. Named in the component's note.
 	unreadKeys string
-	// callSameMinorUnused: the call set same_minor for every component and
-	// this one kept its own target_version. Named in the component's note.
-	callSameMinorUnused bool
+	// sameMinorSaid: the component carried a same_minor key, true or false.
+	// Only an explicit false is told apart by it, when the call sets
+	// same_minor for every component.
+	sameMinorSaid bool
+	// callSameMinor says how the call's same_minor meets what this component
+	// says for itself; "" when the call set none or the component just takes it.
+	callSameMinor string
 }
+
+const (
+	// The component set same_minor:false: it keeps its own range.
+	callSameMinorOff = "off"
+	// The component named a target_version: used if it can be, and the
+	// call's same_minor if it cannot.
+	callSameMinorOrTarget = "or-target"
+)
 
 // checkStackSchema is the inferred schema with one widening: components also
 // accepts the JSON-encoded-string form. Without this the SDK refuses that shape
@@ -176,7 +188,9 @@ func (c *stackComponent) UnmarshalJSON(b []byte) error {
 			// Lower-cased: the decode above matches field names without regard
 			// to case, so "Project" was read and must not be reported unread.
 			switch strings.ToLower(k) {
-			case "project", "name", "version", "target_version", "version_source", "same_minor":
+			case "same_minor":
+				c.sameMinorSaid = true
+			case "project", "name", "version", "target_version", "version_source":
 			default:
 				unread = append(unread, k)
 			}
@@ -200,5 +214,5 @@ type checkStackArgs struct {
 	// with same_minor on every component, and the description listed
 	// same_minor beside kinds, which is set here. An agent set it here and was
 	// refused by the schema before the handler ran (2026-11-22).
-	SameMinor bool `json:"same_minor,omitempty" jsonschema:"true: same_minor for every component — each stops at the newest release of its running minor (v1.36.5 → the newest v1.36.x); a component that names target_version keeps it, and its note says so"`
+	SameMinor bool `json:"same_minor,omitempty" jsonschema:"true: same_minor for every component — each stops at the newest release of its running minor (v1.36.5 → the newest v1.36.x); what a component says for itself wins, and its note says so: same_minor:false keeps its default range, and a target_version above the running version is used"`
 }

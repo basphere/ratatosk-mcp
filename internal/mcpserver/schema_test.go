@@ -126,6 +126,55 @@ func TestCheckStackTakesSameMinorForTheWholeCall(t *testing.T) {
 	if isErr || !strings.Contains(text, `"server_version":"9.9.9"`) {
 		t.Errorf("check_upgrade briefing names no server: error=%v %.300s", isErr, text)
 	}
+	// What a component says for itself, case by case: a target that cannot be
+	// used leaves the call's same_minor in force — decided on the key alone it
+	// answered the whole release line under a note that the target "was used"
+	// (independent review, 2026-11-22); same_minor:false keeps the component's
+	// default range; a component that could not be checked says nothing of it.
+	text, isErr = sdkText(t, cs, "check_stack", map[string]any{
+		"same_minor": true,
+		"components": []any{
+			map[string]any{"project": "etcd", "version": "v3.5.31", "target_version": "v3.5.30"},
+			map[string]any{"project": "etcd", "version": "v3.5.30", "target_version": "banana"},
+			map[string]any{"project": "etcd", "version": "v3.5.30", "same_minor": false},
+			map[string]any{"project": "nope", "version": "v1", "target_version": "v2"},
+		},
+	})
+	if err := json.Unmarshal([]byte(text), &out); isErr || err != nil || len(out.Components) != 4 {
+		t.Fatalf("answer: error=%v %v %.300s", isErr, err, text)
+	}
+	for i, want := range []struct{ target, note, not string }{
+		{"v3.5.32", "the field was ignored and the call's same_minor applies", "was used"},
+		{"v3.5.32", "could not be parsed; ignored, and the call's same_minor applies", "was used"},
+		{"v3.6.8", "this component sets same_minor:false", "was used"},
+		{"", "unknown project name", "same_minor"},
+	} {
+		c := out.Components[i]
+		if c.TargetVersion != want.target || !strings.Contains(c.Note, want.note) || strings.Contains(c.Note, want.not) {
+			t.Errorf("component %d: target %q note %q, want target %q, a note with %q and without %q", i, c.TargetVersion, c.Note, want.target, want.note, want.not)
+		}
+	}
+	// "same_minor": false and no same_minor are one component, as in 1.2.0.
+	text, _ = sdkText(t, cs, "check_stack", map[string]any{
+		"components": []any{
+			map[string]any{"project": "etcd", "version": "v3.5.30"},
+			map[string]any{"project": "etcd", "version": "v3.5.30", "same_minor": false},
+		},
+	})
+	if err := json.Unmarshal([]byte(text), &out); err != nil || len(out.Components) != 1 || !strings.Contains(out.Components[0].Note, "listed 2 times") {
+		t.Errorf("duplicates fold as before: %v %.300s", err, text)
+	}
+	// A before_upgrade item without a body carries its evidence in both
+	// briefings; etcd v3.6.7's upgrade guide is one.
+	for tool, args := range map[string]map[string]any{
+		"check_stack":   {"components": []any{map[string]any{"project": "etcd", "version": "v3.5.30"}}},
+		"check_upgrade": {"project": "etcd", "from": "v3.5.30"},
+	} {
+		text, isErr = sdkText(t, cs, tool, args)
+		if isErr || !strings.Contains(text, `"body":null,"evidence":[{"quote":"Before upgrading to 3.6, read the upgrade guide."`) {
+			t.Errorf("%s: the item without a body carries no evidence: error=%v %.400s", tool, isErr, text)
+		}
+	}
 	// Without it at the top a component decides for itself, as in 1.2.0.
 	text, _ = sdkText(t, cs, "check_stack", map[string]any{
 		"components": []any{map[string]any{"project": "etcd", "version": "v3.5.30"}},

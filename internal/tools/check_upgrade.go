@@ -210,7 +210,8 @@ func (h *handlers) checkUpgradeTool(ctx context.Context, req *mcp.CallToolReques
 		"gaps":    gaps,
 		"privacy": "from and to were sent to the server (/v2/upgrade); use check_stack to keep versions on your side",
 		"hint":    briefing.Hint(kindSet),
-		// Not on detail:"full": that answer is /v2's, passed on as received.
+		// Not on detail:"full": that answer is /v2's own document, and this
+		// server adds to it only what the call made necessary.
 		"server_version": h.version,
 	}
 	if readAs != "" {

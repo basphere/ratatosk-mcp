@@ -40,13 +40,13 @@ func TestConfessionNote(t *testing.T) {
 
 func TestResolveTarget(t *testing.T) {
 	cur := version.NormalizeVersion("v1.36.8")
-	if k, note := resolveTarget(cur, "v1.37.0"); k == nil || note != "" {
+	if k, note := resolveTarget(cur, "v1.37.0", false); k == nil || note != "" {
 		t.Errorf("valid target refused: %v %q", k, note)
 	}
-	if k, note := resolveTarget(cur, "v1.36.8"); k != nil || !strings.Contains(note, "empty by construction") {
+	if k, note := resolveTarget(cur, "v1.36.8", false); k != nil || !strings.Contains(note, "empty by construction") {
 		t.Errorf("self-nullifying target honored: %v %q", k, note)
 	}
-	if k, note := resolveTarget(cur, "nonsense"); k != nil || note == "" {
+	if k, note := resolveTarget(cur, "nonsense", false); k != nil || note == "" {
 		t.Errorf("unparseable target honored: %v %q", k, note)
 	}
 }

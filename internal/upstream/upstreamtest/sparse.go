@@ -29,7 +29,7 @@ func SparseShapes() []Sparse {
 	nullDoc := `{"project":null,"version":null,"released_at":null,"url":null,"counts":null,"warnings":null,"processing":null,` +
 		`"before_upgrade":null,"changes":null,"later":null}`
 	nullItems := func(v string) string {
-		return fmt.Sprintf(`{"version":%q,"warnings":null,"before_upgrade":{"prerequisites":[{"id":null,"title":null,"body":null,"folded":[null]},null],`+
+		return fmt.Sprintf(`{"version":%q,"warnings":null,"before_upgrade":{"prerequisites":[{"id":null,"title":null,"body":null,"folded":[null],"evidence":{"quote":null}},null],`+
 			`"known_issues":null,"upgrade_guide":[]},"changes":[{"id":null,"kind":"security","title":null,"body":null,"severity":"critical",`+
 			`"advisories":["CVE-2026-0001"],"affects":null,"action_required":null,"also_required":null,"no_downgrade":null,`+
 			`"removed_in":null,"security_unclear":null,"workaround":null,"regression_since":null,"later":[null]},`+

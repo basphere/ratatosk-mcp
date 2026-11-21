@@ -48,9 +48,10 @@ type Item struct {
 	// Folded holds entries kept under the item ({title, body}); passed on as
 	// received (a briefing's before_upgrade carries them since 1.2.0).
 	Folded []json.RawMessage `json:"folded"`
-	// Evidence holds the release-note lines the item was read from
-	// ({quote, source, url}); passed on as received.
-	Evidence []json.RawMessage `json:"evidence"`
+	// Evidence holds the release-note lines the item was read from (an array
+	// of {quote, source, url}); passed on as received and never read here,
+	// so a shape the server changes cannot fail the release it sits on.
+	Evidence json.RawMessage `json:"evidence"`
 }
 
 // Change is one change of a release.

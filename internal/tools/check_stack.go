@@ -38,8 +38,8 @@ func checkStackDef() *mcp.Tool {
 			"Returns, per component, the releases NEWER than the running version up to target_version (default the " +
 			"newest release on the running version's release line — a release line is a tag prefix such as flagd/ or " +
 			"lts-, not a minor version, so v1.36.5 is checked up to v1.37.x; same_minor:true — on a component, or once " +
-			"at the top of the call for every component that names no target_version — stops at the newest patch " +
-			"of the running minor), oldest first: before_upgrade items of every release in range (each with its " +
+			"at the top of the call for every component that does not set same_minor:false or a target_version " +
+			"above its running version — stops at the newest patch of the running minor), oldest first: before_upgrade items of every release in range (each with its " +
 			"body and folded entries; an item whose text recurs on several releases is listed once, at the newest, " +
 			"with also_in naming the others), and the " +
 			"changes that need a decision — security, breaking, deprecations, important_fixes — with affects, " +
@@ -170,15 +170,20 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 			return errResult(fmt.Errorf("component %d (%s) sets both same_minor and target_version — pass one: target_version for a given destination, same_minor for the newest patch of the running minor", i+1, truncate(comp.Project, 80))), nil, nil
 		}
 	}
-	// same_minor at the top of the call (1.3.0) is same_minor on every
-	// component. A component that names its own target_version keeps it, and
-	// its note says so: the narrower instruction wins, never silently.
+	// same_minor at the top of the call (1.3.0) is the default of every
+	// component. What a component says for itself wins — same_minor:false, or
+	// a target_version — and its note says so; whether a target_version can be
+	// used is known only once the component's releases are read, so that case
+	// is settled there (stackRun.check).
 	if args.SameMinor {
 		for i := range args.Components {
-			if comp := &args.Components[i]; strings.TrimSpace(comp.TargetVersion) == "" {
+			switch comp := &args.Components[i]; {
+			case comp.sameMinorSaid && !comp.SameMinor:
+				comp.callSameMinor = callSameMinorOff
+			case strings.TrimSpace(comp.TargetVersion) != "":
+				comp.callSameMinor = callSameMinorOrTarget
+			default:
 				comp.SameMinor = true
-			} else {
-				comp.callSameMinorUnused = true
 			}
 		}
 	}
@@ -204,6 +209,7 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 	for _, comp := range args.Components {
 		comp.Project = slugArg(comp.Project)
 		comp.sentKeys = ""
+		comp.sameMinorSaid = false // read above; "same_minor": false and no same_minor are one component
 		if times[comp]++; times[comp] == 1 {
 			comps = append(comps, comp)
 		}
