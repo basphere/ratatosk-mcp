@@ -11,10 +11,12 @@ response, and example questions you can put to an agent. For connecting the
 server itself (hosted endpoint, Docker, Helm, kagent), see the
 [installation guide](install.en.md).
 
-A parameter or response field that the first 1.x release did not have ends
-with the release it arrived in, written in full (`Since 1.2.0.`). A server
-older than that release rejects the parameter and does not send the field;
-the [changelog](../CHANGELOG.md) has each release.
+A parameter or response field that the first 1.x release did not have ends with
+the release it arrived in, written in full (`Since 1.2.0.`). A server running a
+version earlier than the one shown does not send the response field and rejects
+calls that include the parameter with an error. A parameter inside a
+`check_stack` component is ignored instead, and its name appears in that
+component's `note`. The [changelog](../CHANGELOG.md) has each release.
 
 > **Measured 2026-11-20**: every response below came back from this server
 > running against the ratatosk.io `/v2` API. Release data accrues hourly, so
