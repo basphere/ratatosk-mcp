@@ -149,12 +149,16 @@ func (r *stackRun) check(ctx context.Context, comp stackComponent) error {
 	if targetNote != "" {
 		notes = append(notes, targetNote)
 	}
+	// Said only of a component that is checked (appended below, past the last
+	// skip): one in could_not_check carried "target_version, which was used"
+	// when nothing of it was read (docs review, 2026-11-21).
+	callNote := ""
 	switch comp.callSameMinor {
 	case callSameMinorOff:
-		notes = append(notes, "the call's same_minor was not applied here: this component sets same_minor:false")
+		callNote = "the call's same_minor was not applied here: this component sets same_minor:false"
 	case callSameMinorOrTarget:
 		if targetKey != nil {
-			notes = append(notes, "the call's same_minor was not applied here: this component names target_version, which was used")
+			callNote = "the call's same_minor was not applied here: this component names target_version, which was used"
 		} else {
 			sameMinor = true
 		}
@@ -208,6 +212,9 @@ func (r *stackRun) check(ctx context.Context, comp stackComponent) error {
 		rep.TargetVersion = "" // the range end resolved above sits below the running version
 		skip(n)
 		return nil
+	}
+	if callNote != "" {
+		notes = append(notes, callNote)
 	}
 	// A target above every analyzed release: the range stops at the newest
 	// analyzed one and the target itself was never read. Without a word that

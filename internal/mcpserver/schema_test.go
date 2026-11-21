@@ -138,9 +138,10 @@ func TestCheckStackTakesSameMinorForTheWholeCall(t *testing.T) {
 			map[string]any{"project": "etcd", "version": "v3.5.30", "target_version": "banana"},
 			map[string]any{"project": "etcd", "version": "v3.5.30", "same_minor": false},
 			map[string]any{"project": "nope", "version": "v1", "target_version": "v2"},
+			map[string]any{"project": "etcd", "version": "v9.9.9", "target_version": "v10.0.0"},
 		},
 	})
-	if err := json.Unmarshal([]byte(text), &out); isErr || err != nil || len(out.Components) != 4 {
+	if err := json.Unmarshal([]byte(text), &out); isErr || err != nil || len(out.Components) != 5 {
 		t.Fatalf("answer: error=%v %v %.300s", isErr, err, text)
 	}
 	for i, want := range []struct{ target, note, not string }{
@@ -148,6 +149,7 @@ func TestCheckStackTakesSameMinorForTheWholeCall(t *testing.T) {
 		{"v3.5.32", "could not be parsed; ignored, and the call's same_minor applies", "was used"},
 		{"v3.6.8", "this component sets same_minor:false", "was used"},
 		{"", "unknown project name", "same_minor"},
+		{"", "newer than every analyzed release", "same_minor"},
 	} {
 		c := out.Components[i]
 		if c.TargetVersion != want.target || !strings.Contains(c.Note, want.note) || strings.Contains(c.Note, want.not) {
