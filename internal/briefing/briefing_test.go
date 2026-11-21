@@ -505,7 +505,7 @@ func TestBuildAnswersTheSparsestDocuments(t *testing.T) {
 // what the title leaves out: cilium v1.20.0's prerequisite names the features
 // it is about only in its evidence. An item with a body goes out as before.
 // (1.3.0; 498 of the 858 before_upgrade items on record had no body,
-// 2026-11-22.)
+// 2026-11-21.)
 func TestBeforeUpgradeItemWithoutBodyCarriesItsEvidence(t *testing.T) {
 	ev := json.RawMessage(`[{"quote":"You may need to take action if you use Kafka-aware policies","source":"release_notes","url":"https://example.test/notes"}]`)
 	d := &release.Doc{Version: "v1.20.0"}

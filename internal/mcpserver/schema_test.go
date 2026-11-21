@@ -87,7 +87,7 @@ func TestListArgumentsPassTheSchema(t *testing.T) {
 
 // same_minor at the top of check_stack is same_minor on every component: the
 // schema refused it there before the handler ran, and an agent checking a
-// cluster for patches had set it beside kinds (2026-11-22). A component that
+// cluster for patches had set it beside kinds (2026-11-21). A component that
 // names target_version keeps it and says so. The answers name the server.
 // (1.3.0)
 func TestCheckStackTakesSameMinorForTheWholeCall(t *testing.T) {
@@ -129,7 +129,7 @@ func TestCheckStackTakesSameMinorForTheWholeCall(t *testing.T) {
 	// What a component says for itself, case by case: a target that cannot be
 	// used leaves the call's same_minor in force — decided on the key alone it
 	// answered the whole release line under a note that the target "was used"
-	// (independent review, 2026-11-22); same_minor:false keeps the component's
+	// (independent review, 2026-11-21); same_minor:false keeps the component's
 	// default range; a component that could not be checked says nothing of it.
 	text, isErr = sdkText(t, cs, "check_stack", map[string]any{
 		"same_minor": true,

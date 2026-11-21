@@ -213,6 +213,6 @@ type checkStackArgs struct {
 	// SameMinor (1.3.0): checking a whole cluster for patches is one call
 	// with same_minor on every component, and the description listed
 	// same_minor beside kinds, which is set here. An agent set it here and was
-	// refused by the schema before the handler ran (2026-11-22).
+	// refused by the schema before the handler ran (2026-11-21).
 	SameMinor bool `json:"same_minor,omitempty" jsonschema:"true: same_minor for every component — each stops at the newest release of its running minor (v1.36.5 → the newest v1.36.x); what a component says for itself wins, and its note says so: same_minor:false keeps its default range, and a target_version above the running version is used"`
 }

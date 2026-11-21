@@ -169,7 +169,7 @@ func TestEveryPackageHasADocComment(t *testing.T) {
 // argument shapes, range selection, the briefing and two tool handlers — and
 // taking it apart cost a restructuring of its own (1.2.0, 2026-11-21). A
 // feature that pushes a file past the line splits it in the same change
-// (the owner, 2026-11-22). Test files are not held to it.
+// (the owner, 2026-11-21). Test files are not held to it.
 const maxSourceLines = 500
 
 // longFiles are the source files allowed past maxSourceLines, each with why

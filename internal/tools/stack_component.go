@@ -143,7 +143,7 @@ func (r *stackRun) check(ctx context.Context, comp stackComponent) error {
 	// target_version that cannot be used falls back to the call's same_minor,
 	// not to the whole release line: decided on the key alone, a target at or
 	// below the running version answered the whole line under a note that the
-	// target "was used" (independent review, 2026-11-22).
+	// target "was used" (independent review, 2026-11-21).
 	sameMinor := comp.SameMinor
 	targetKey, targetNote := resolveTarget(currentKey, comp.TargetVersion, comp.callSameMinor == callSameMinorOrTarget)
 	if targetNote != "" {

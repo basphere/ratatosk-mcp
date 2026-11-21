@@ -36,12 +36,12 @@ type briefItem struct {
 // leaves the body empty when it has nothing to add to the title, and the
 // website shows the release-note lines under such an item; a briefing showed
 // the title alone. 498 of the 858 before_upgrade items on record had no body
-// (2026-11-22), and for 92 of them the reading named identifiers or versions
+// (2026-11-21), and for 92 of them the reading named identifiers or versions
 // the title does not: cilium v1.20.0 answered "Upgrade guidance for legacy
 // features and CNI configurations" where the note names Mutual Authentication,
 // Kafka-aware policies, the v2alpha1 CiliumNodeConfig API and custom CNI
 // configuration. Two agents asked to read every before_upgrade item had to
-// call get_release for those lines (2026-11-22).
+// call get_release for those lines (2026-11-21).
 type UpgradeItem struct {
 	Version string            `json:"version"`
 	Section string            `json:"section"` // prerequisites | known_issues | upgrade_guide

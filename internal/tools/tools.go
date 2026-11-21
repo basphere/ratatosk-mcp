@@ -54,7 +54,7 @@ type handlers struct {
 	// A tool answer said nothing of the server behind it, and serverInfo is
 	// not in an agent's view: asked whether a new release was answering, an
 	// agent could not tell, with an older server deployed beside it
-	// (2026-11-22).
+	// (2026-11-21).
 	version string
 }
 
