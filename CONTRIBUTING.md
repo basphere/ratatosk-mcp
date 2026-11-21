@@ -42,6 +42,14 @@ built. `main.buildVersion` is the exception: the release build sets it with
 that. (`briefing`'s per-kind caps are a variable only so that the regression
 harness can lift them in a test.)
 
+Each source file does one job, and any non-test source file over 500 lines is
+split by responsibility. The top-level test (`go test .`) enforces this limit
+and fails if a source file exceeds 500 lines unless the file is listed in that
+test with the reason it is not split. If adding a feature pushes a file past
+500 lines, split the file in the same change; before 1.2.0, one file grew to
+2,217 lines (covering argument types, range selection, briefing assembly, and
+handlers for two tools) and required a separate cleanup pass to divide.
+
 ## Tests and test data
 
 - A test sits beside the code it tests, in a `_test.go` file of the same
@@ -68,6 +76,30 @@ harness can lift them in a test.)
   copy is edited only to follow a rename, and is removed with the recorded
   ranges when 2.0 ships; their row in `testdata/README.md` lists what goes
   with them.
+
+## Release number increment rules
+
+Release numbers follow `X.Y.Z`, and each position increments according to how
+the change affects clients:
+
+- **Major (`X`)**: removing an existing tool, parameter, or response field, or
+  changing its name or meaning; changing a default value so the same call
+  returns a response with a different meaning; rejecting input that was
+  previously accepted.
+- **Minor (`Y`)**: adding a tool, parameter, response field, or newly accepted
+  input.
+- **Patch (`Z`)**: fixing behavior without adding surface area, including
+  values that differed from the documented meaning, server crashes, error
+  messages, wording in tool descriptions and `hint`, and security updates to
+  the server's own dependencies.
+- **No release**: documentation changes and test changes do not require a
+  release. Code cleanup does not require a release when it preserves existing
+  behavior.
+
+When a release combines multiple kinds of changes, increment only the highest
+applicable position and reset lower positions to `0`. Shipping a change in
+meaning as a lower increment causes clients written against an older version
+to produce wrong answers without an error.
 
 ## Version numbers in the docs
 

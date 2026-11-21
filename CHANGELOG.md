@@ -5,6 +5,46 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+### Added
+
+- **`same_minor` at the top level of `check_stack`**: setting `true` at the
+  top level applies `same_minor` to every component, stopping each range at
+  the newest release of the running minor (v1.36.5 to the newest v1.36.x). A
+  cluster-wide patch-only call applies the same value to all components. A
+  component's own `same_minor: false` or a valid `target_version` above the
+  running version takes precedence and is recorded in its `note`, whereas an
+  unusable `target_version` (at or below the running version, or unreadable)
+  is ignored in favor of the top-level `same_minor`. The tool description
+  previously listed `kinds` and `same_minor` side by side for narrowing
+  responses even though `kinds` was top-level and `same_minor` was
+  per-component. This caused an agent's top-level call to fail schema
+  validation with `unexpected additional properties ["same_minor"]`
+  (2026-11-21). On a five-component stack (kubernetes v1.36.5, containerd
+  v2.2.9, coredns v1.14.7, cilium v1.20.2, envoy v1.37.6), top-level
+  `same_minor` reduces the Korean response from about 198,000 characters to
+  about 45,000 characters (2026-11-21).
+- **`evidence` on a `before_upgrade` item without a body, in a briefing**: a
+  `before_upgrade` item in a briefing now carries `evidence` (`quote`,
+  `source`, `url`, in the same shape as `get_release`) when the item has no
+  `body` and has evidence; items with a body still omit `evidence` in the
+  briefing. Out of 858 `before_upgrade` items in the dataset, 498 have no
+  `body` (2026-11-21); for example, a prerequisite in cilium v1.20.0 had no
+  body and had the title "Upgrade guidance for legacy features and CNI
+  configurations", while the affected features (Mutual Authentication,
+  Kafka-aware policies, `cilium.io/v2alpha1` `CiliumNodeConfig`, and custom
+  CNI configuration) appeared only in the release-note passage, forcing an
+  extra `get_release` call. Across the five-component stack above, this adds
+  about 2,000 characters to the response (from 196,051 to 198,029 characters).
+- **`server_version` at the top level of `check_stack` and in a
+  `check_upgrade` briefing**: carries the version of the ratatosk-mcp server
+  that produced the response (such as `1.3.0` on a released image, or `dev` on
+  a non-release build), present in `check_stack` responses (`brief` and
+  `full`) and in `check_upgrade` briefings, and absent when `check_upgrade` is
+  called with `detail: "full"`. Although the protocol handshake exposes
+  `serverInfo`, an agent sees only tool responses and previously could not
+  tell which server version answered when an older server deployment remained
+  in the same cluster alongside a new one (2026-11-21).
+
 ## [1.2.0] — 2026-11-21
 
 ### Added
