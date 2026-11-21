@@ -20,7 +20,7 @@ commit as the folder and the test that reads it.
 | Bundle | What it is | Made | Read by | Goes with | Remove when |
 |---|---|---|---|---|---|
 | `internal/briefing/testdata/ranges/` | Seven live `/v2/upgrade` answers (argo, cilium, containerd, envoy, istio, kubernetes, kyverno), cut to the security changes the briefing folds, settles or links, with every model-written text replaced by a short token | 2026-11-18, from ratatosk.io ([Ranges](#ranges)) | `TestRangesAnswerAs100PlusDistinctAdvisories`, `TestRangesLeaveNoSecurityChangeUnaccounted` | `internal/briefing/frozen100_test.go`, `internal/briefing/ranges_test.go` | 2.0 ships: the 1.x promise that a 1.0.0 client never gets a poorer answer ends there. Drop the `assertSameAs100` calls in `internal/briefing/distinct_advisories_test.go` too; `TestRangesLeaveNoSecurityChangeUnaccounted` (a 1.2.0 property) needs ranges of its own then, cut the same way |
-| `internal/mcpserver/testdata/release-snapshot/` | `tools/list` as the latest release answers it (1.1.0, commit 2613481): names, annotations, descriptions, input schemas | 2026-11-20, from the v1.1.0 tag ([Release snapshot](#release-snapshot)) | `TestToolsListIs110PlusTheNewArguments` | none | Replaced when a release is tagged, by that release's snapshot. One is kept: the rule is additions only, so each release held to the one before chains back to 1.0.0. The test's file name and its list of added arguments move with it |
+| `internal/mcpserver/testdata/release-snapshot/` | `tools/list` as the latest release answers it (1.2.0, commit 5809306): names, annotations, descriptions, input schemas | 2026-11-21, from the v1.2.0 tag ([Release snapshot](#release-snapshot)) | `TestToolsListIsTheLatestReleasePlusWhatIsDeclared` | none | Replaced when a release is tagged, by that release's snapshot. One is kept: the rule is additions only, so each release held to the one before chains back to 1.0.0. The test finds the file by its place, so only its two lists (arguments added, tools reworded) are emptied with it |
 | `internal/version/testdata/` | `version-golden.json`, a verbatim copy of the ratatosk worker's version answer key, which the worker, the web card sorter and this package are all tested against | 2026-08-13, copied from the ratatosk app repository (the JSON's `_copy` block says how) | `TestGoldenNormalize`, `TestGoldenSplitLine`, `TestGoldenCompare` | none | Not removed: refreshed verbatim whenever the worker's copy changes |
 
 ## Ranges
@@ -57,6 +57,4 @@ cd /tmp/mcp-release && go build -o ratatosk-mcp .
   | jq -S --indent 1 'select(.id == 2) | .result.tools' > tools-list-X.Y.Z.json
 ```
 
-Run against v1.1.0 on 2026-11-21, this gives the committed
-`tools-list-1.1.0.json` as JSON value for value; that file was written by
-Go's encoder, which spells `<` as `\u003c`, and the test compares values.
+The committed file is this command's output for the tag in its name.
