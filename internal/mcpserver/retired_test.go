@@ -70,6 +70,14 @@ func TestRetiredArgumentsAreAcceptedAndIgnored(t *testing.T) {
 			t.Errorf("upstream was asked in another language: %s", u)
 		}
 	}
+	// list_projects never took lang: a call that sends it is refused, as
+	// 1.2.0 refused it.
+	if text, isErr := sdkText(t, cs, "list_projects", map[string]any{"lang": "ko"}); !isErr || !strings.Contains(text, "lang") {
+		t.Errorf("list_projects with lang: error=%v %.300s", isErr, text)
+	}
+	if text, isErr := sdkText(t, cs, "list_projects", map[string]any{}); isErr {
+		t.Errorf("list_projects: %.300s", text)
+	}
 }
 
 // Why the middleware exists: the SDK checks a call against the schema before

@@ -161,10 +161,13 @@ func TestToolsListIsTheLatestReleasePlusWhatIsDeclared(t *testing.T) {
 			if _, ok := props[a]; ok {
 				t.Errorf("%s still lists the argument %s that retired names", name, a)
 			}
-			if !slices.Contains(tools.RetiredArguments, a) {
+			if !slices.Contains(tools.RetiredArguments[name], a) {
 				t.Errorf("%s: %s is not in tools.RetiredArguments, so a call that sends it is refused", name, a)
 			}
 			delete(oldProps, a)
+		}
+		if got := tools.RetiredArguments[name]; !slices.Equal(got, retired[name]) {
+			t.Errorf("%s: the server ignores %v, retired names %v", name, got, retired[name])
 		}
 		if !reflect.DeepEqual(schema, want) {
 			a, _ := json.Marshal(want)

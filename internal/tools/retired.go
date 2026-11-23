@@ -20,10 +20,15 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// RetiredArguments are the keys a tools/call may carry and no tool reads.
-var RetiredArguments = []string{"lang"}
+// RetiredArguments are, by tool, the keys a tools/call may carry that the tool
+// no longer reads: only the tools that took them. list_projects never took
+// lang, and a call that sends it is refused as 1.2.0 refused it (review,
+// 2026-11-23).
+var RetiredArguments = map[string][]string{
+	"check_stack": {"lang"}, "check_upgrade": {"lang"}, "get_release": {"lang"}, "list_releases": {"lang"}, "search": {"lang"},
+}
 
-// IgnoreRetiredArguments is a receiving middleware: it takes the keys of
+// IgnoreRetiredArguments is a receiving middleware: it takes the called tool's
 // RetiredArguments off a tools/call's arguments before the call is checked
 // against the tool's schema. The request it passes on is a copy; the one the
 // middleware around it holds keeps what the client sent.
@@ -33,12 +38,16 @@ func IgnoreRetiredArguments(next mcp.MethodHandler) mcp.MethodHandler {
 		if method != "tools/call" || !ok || call.Params == nil || len(call.Params.Arguments) == 0 {
 			return next(ctx, method, req)
 		}
+		retired := RetiredArguments[call.Params.Name]
+		if len(retired) == 0 {
+			return next(ctx, method, req)
+		}
 		fields, err := readObject(call.Params.Arguments)
 		if err != nil {
 			return next(ctx, method, req) // not an object: the SDK answers it as before
 		}
 		kept := slices.DeleteFunc(slices.Clone(fields), func(f objField) bool {
-			return slices.Contains(RetiredArguments, f.Key)
+			return slices.Contains(retired, f.Key)
 		})
 		if len(kept) == len(fields) {
 			return next(ctx, method, req)
