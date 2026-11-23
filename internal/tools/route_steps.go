@@ -224,6 +224,10 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 	byMinor := map[string]*upgradeStep{}
 	keys := map[string][]int{}
 	var order []string
+	// A release without a version is in no step, nor is anything read from
+	// it: it made a step named "" (review, 2026-11-23). /v2 sends a version on
+	// every release; this is a server that does not.
+	noVersion := func(v string) bool { return strings.TrimSpace(v) == "" }
 	stepOf := func(v string) *upgradeStep {
 		m, major, key := minorOf(v)
 		s, ok := byMinor[m]
@@ -240,6 +244,9 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 	}
 	if in.b.Releases != nil {
 		for _, r := range *in.b.Releases {
+			if noVersion(r.Version) {
+				continue
+			}
 			s := stepOf(r.Version)
 			s.versions = append(s.versions, r.Version)
 			if r.Processing {
@@ -260,11 +267,18 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 			// first meets it. At the newest it sat in a later step than the
 			// first upgrade that asks for it (review, 2026-11-23). The id stays
 			// the briefing's: it is the one the evidence is read by.
-			s := stepOf(earliestOf(it.Version, it.AlsoIn))
+			v := earliestOf(it.Version, it.AlsoIn)
+			if noVersion(v) {
+				continue
+			}
+			s := stepOf(v)
 			s.MustRead = append(s.MustRead, mustReadLine{ID: it.ID, Title: it.Title, Why: []string{"before_upgrade"}})
 		}
 	}
 	for _, e := range stepEntries(in.b) {
+		if noVersion(e.version) {
+			continue
+		}
 		s := stepOf(e.version)
 		if covered[e.kind] {
 			s.Counts[e.kind]++

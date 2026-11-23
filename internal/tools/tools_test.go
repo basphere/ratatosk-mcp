@@ -379,6 +379,15 @@ func TestToolsAnswerTheSparsestUpstream(t *testing.T) {
 				res, _, err := c.call(h)
 				if err != nil || res == nil || len(res.Content) == 0 {
 					t.Errorf("%s on %s: no answer (err %v)", c.name, s.Name, err)
+					return
+				}
+				// The shape of two steps reaches the route, and a release
+				// without a version makes no step of its own.
+				if s.Name == "null items, two steps" && (c.name == "check_upgrade" || c.name == "check_stack") {
+					text := res.Content[0].(*mcp.TextContent).Text
+					if !strings.HasPrefix(text, `{"answer_kind":"route"`) || strings.Contains(text, `"line":""`) {
+						t.Errorf("%s on %s: %.600s", c.name, s.Name, text)
+					}
 				}
 			}()
 		}

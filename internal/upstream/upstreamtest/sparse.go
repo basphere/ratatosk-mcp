@@ -21,10 +21,13 @@ type Sparse struct {
 }
 
 // SparseShapes are the shapes a Sparse takes. The project is etcd, its
-// releases v3.5.30 and v3.6.8 where a shape names any. The last shape's
-// documents carry a critical security change citing CVE-2026-0001 on every
-// release and no warnings: from v3.5.30 the change on v3.6.8 is one the
-// running branch already fixed, which is the path that failed.
+// releases v3.5.30 and v3.6.8 where a shape names any. The "null items"
+// shapes' documents carry a critical security change citing CVE-2026-0001 on
+// every release and no warnings: from v3.5.30 the change on v3.6.8 is one the
+// running branch already fixed, which is the path that failed. The last shape
+// is a range of two steps, so check_stack and check_upgrade answer it with a
+// route, and one of its releases has no version: such a release made a step
+// named "" (review, 2026-11-23).
 func SparseShapes() []Sparse {
 	nullDoc := `{"project":null,"version":null,"released_at":null,"url":null,"counts":null,"warnings":null,"processing":null,` +
 		`"before_upgrade":null,"changes":null,"later":null}`
@@ -37,6 +40,7 @@ func SparseShapes() []Sparse {
 			`{"id":null,"kind":"breaking","affects":{"text":null,"status":null},"no_downgrade":{"text":null,"status":null},`+
 			`"removed_in":{"text":null,"status":"stated"}},null],"later":[null]}`, v)
 	}
+	versionless := strings.Replace(nullItems("-"), `"version":"-"`, `"version":null`, 1)
 	return []Sparse{
 		{Name: "null bodies", Projects: `null`, Releases: `null`, Upgrade: `null`, Search: `null`,
 			Doc: func(string) string { return `null` }},
@@ -65,6 +69,17 @@ func SparseShapes() []Sparse {
 			Search: `{"in_analysis":[{"project":"etcd","version":"v3.6.8","matched":{"id":null,"kind":null,"title":null}},null],` +
 				`"in_release_notes":[null],"in_linked_documents":null}`,
 			Doc: nullItems},
+		{Name: "null items, two steps", Projects: `{"projects":[{"slug":"etcd"}]}`,
+			Releases: `{"releases":[{"project":"etcd","version":"v3.6.8"},{"project":"etcd","version":"v3.5.32"},` +
+				`{"project":"etcd","version":"v3.5.31"},{"project":"etcd","version":"v3.5.30"},null],"next_before":null}`,
+			Upgrade: `{"project":"etcd","from":"v3.5.30","to":"v3.6.8","releases":[` + nullItems("v3.5.31") + `,` + versionless +
+				`,` + nullItems("v3.6.8") + `,null],"gaps":null,"later_for_from":[null]}`,
+			Doc: func(v string) string {
+				if v == "v3.5.32" {
+					return versionless
+				}
+				return nullItems(v)
+			}},
 	}
 }
 
