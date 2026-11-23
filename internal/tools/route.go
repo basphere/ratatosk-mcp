@@ -29,6 +29,7 @@ package tools
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -37,6 +38,21 @@ import (
 	"github.com/basphere/ratatosk-mcp/internal/briefing"
 	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/releaseline"
+)
+
+// routeDescribe opens check_stack's and check_upgrade's descriptions: what a
+// call without detail answers. The first %s says where the steps are, the
+// second what a range of one step is answered as.
+const routeDescribe = "Without detail, the first answer is a route (answer_kind \"route\"): %s one step per minor " +
+	"version naming every security, breaking and deprecation change by title (must_read and lines), with counts and " +
+	"advisories, no details. Get one step's changes in full with its next call; read the evidence of a change with " +
+	"its verify call. %s detail:\"brief\" answers the whole range as one briefing, described below. "
+
+var (
+	upgradeRouteDescription = fmt.Sprintf(routeDescribe, "for the range,",
+		"A range of one step is answered as a briefing (answer_kind \"briefing\").")
+	stackRouteDescription = fmt.Sprintf(routeDescribe, "per component,",
+		"A component of one step is answered as a briefing (answer_kind \"briefing\"); one that could not be checked as before.")
 )
 
 // notIncluded is what a briefing does not carry, said in the answer.

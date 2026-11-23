@@ -109,3 +109,27 @@ func TestDescriptionsSayWhatALineIsAndWhereEvidenceIs(t *testing.T) {
 		}
 	}
 }
+
+// check_stack's and check_upgrade's first answer without detail is a route
+// (1.3.0): the descriptions and the detail argument say so first, and no
+// sentence still calls detail:"brief" the default.
+func TestDescriptionsSayTheFirstAnswerIsARoute(t *testing.T) {
+	d := toolDescriptions(t)
+	for _, tool := range currentToolsList(t) {
+		name := tool["name"].(string)
+		if name != "check_stack" && name != "check_upgrade" {
+			continue
+		}
+		if !strings.HasPrefix(d[name], `Without detail, the first answer is a route (answer_kind "route")`) {
+			t.Errorf("%s description: %.200s", name, d[name])
+		}
+		if strings.Contains(d[name], `"brief\", default`) || strings.Contains(d[name], `brief", default`) {
+			t.Errorf("%s still says brief is the default", name)
+		}
+		props := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+		detail, _ := props["detail"].(map[string]any)["description"].(string)
+		if !strings.HasPrefix(detail, "omit for a route") || strings.Contains(detail, "(default)") {
+			t.Errorf("%s detail: %q", name, detail)
+		}
+	}
+}

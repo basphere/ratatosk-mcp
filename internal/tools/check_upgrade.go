@@ -26,12 +26,12 @@ func checkUpgradeDef() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "check_upgrade",
 		Annotations: &mcp.ToolAnnotations{Title: "What one upgrade brings", ReadOnlyHint: true},
-		Description: "Everything between the version you run (from, exclusive) and a target (to, inclusive; default " +
+		Description: upgradeRouteDescription + "Everything between the version you run (from, exclusive) and a target (to, inclusive; default " +
 			"the newest release on from's release line — a release line is a tag prefix such as flagd/ or lts-, not a " +
 			"minor version, so from v1.36.5 the default reaches v1.37.x; same_minor:true stops at the newest patch of " +
 			"from's minor), computed BY THE SERVER: from and to are sent upstream. To keep " +
 			"running versions on your side, use check_stack instead — it compares locally and sends only project " +
-			"slugs. Returns a briefing (detail:\"brief\", default) in the same form as one check_stack component (the " +
+			"slugs. Returns a briefing (detail:\"brief\") in the same form as one check_stack component (the " +
 			"fields are described there), or " +
 			"every release in range verbatim (detail:\"full\"); kinds keeps the changes of those kinds. Read before_upgrade of every release in range — " +
 			"prerequisites and upgrade guides usually sit on the release that starts a new minor. Every security, breaking " +
@@ -53,7 +53,7 @@ type checkUpgradeArgs struct {
 	Project   string     `json:"project" jsonschema:"project slug, e.g. etcd"`
 	From      string     `json:"from" jsonschema:"the version you run now (exclusive), as the project publishes it"`
 	To        string     `json:"to,omitempty" jsonschema:"target version (inclusive); omit for the newest release on the same release line (a tag prefix such as flagd/ or lts-, not a minor: from v1.36.5 that reaches v1.37.x — use same_minor to stay on v1.36.x)"`
-	Detail    string     `json:"detail,omitempty" jsonschema:"brief (default) or full (every release in range verbatim)"`
+	Detail    string     `json:"detail,omitempty" jsonschema:"omit for a route (steps naming every security, breaking and deprecation change by title, with next and verify calls); brief: the whole range as one briefing; full: every release in range verbatim"`
 	Lang      string     `json:"lang,omitempty" jsonschema:"en (default), ko or ja"`
 	Kinds     stringList `json:"kinds,omitempty" jsonschema:"only changes of these kinds: with brief any of security, breaking, deprecations, important_fixes; with full any of the seven kinds (folded lines are then left out). Omit for every kind"`
 	SameMinor bool       `json:"same_minor,omitempty" jsonschema:"true: stop at the newest release of from's minor (v1.36.5 → the newest v1.36.x) instead of the newest on its release line; not together with to"`

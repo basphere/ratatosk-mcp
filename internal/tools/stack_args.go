@@ -207,7 +207,7 @@ func (c *stackComponent) UnmarshalJSON(b []byte) error {
 
 type checkStackArgs struct {
 	Components stackComponents `json:"components" jsonschema:"the running stack to check"`
-	Detail     string          `json:"detail,omitempty" jsonschema:"brief (default): summary, before_upgrade and the changes that need a decision; full: every release in range verbatim"`
+	Detail     string          `json:"detail,omitempty" jsonschema:"omit for a route (steps naming every security, breaking and deprecation change by title, with next and verify calls); brief: the whole range as one briefing; full: every release in range verbatim"`
 	Lang       string          `json:"lang,omitempty" jsonschema:"en (default), ko or ja — language of title, body and attribute text"`
 	Kinds      stringList      `json:"kinds,omitempty" jsonschema:"only changes of these kinds, for every component: with brief any of security, breaking, deprecations, important_fixes; with full any of the seven kinds (folded lines are then left out). Omit for every kind"`
 	// SameMinor (1.3.0): checking a whole cluster for patches is one call

@@ -32,7 +32,7 @@ func checkStackDef() *mcp.Tool {
 	return &mcp.Tool{
 		Name:        "check_stack",
 		Annotations: &mcp.ToolAnnotations{Title: "Check a running stack", ReadOnlyHint: true},
-		Description: "Check the user's running component versions. Versions are compared INSIDE THIS SERVER " +
+		Description: stackRouteDescription + "Check the user's running component versions. Versions are compared INSIDE THIS SERVER " +
 			"PROCESS: for each component it reads the project's recent releases by slug — the same requests whatever " +
 			"version you run — so running versions are never sent upstream. Run the server yourself and they never " +
 			"leave your infrastructure; on the hosted endpoint they transit server memory only and are not logged. " +
