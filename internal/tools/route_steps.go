@@ -128,8 +128,11 @@ type stepsIn struct {
 	// next is the call that answers the releases above from up to to; nil
 	// gives the steps no next.
 	next func(from, to string) *toolCall
-	// from is the version the first step starts above.
-	from string
+	// from is the version the first step starts above, as the call passed it:
+	// the first step's next starts there. fromRead is the same version as the
+	// briefing read it, an image build suffix dropped (version_read_as); ""
+	// when nothing was dropped.
+	from, fromRead string
 }
 
 // stepEntry is one change of the briefing, as the steps read it.
@@ -289,8 +292,14 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 	prev := in.from
 	// The first step is compared with the version it starts above: Prometheus
 	// v2.51.2 → v3.16.0 crosses its major there, and so does OPA v0.34.2 →
-	// v1.22.4 (2026-11-23).
-	_, prevMajor, _ := minorOf(in.from)
+	// v1.22.4 (2026-11-23). It is compared as read: with its build suffix,
+	// envoy v1.36.5-<build> made a boundary of its first step, 1.36 (review,
+	// 2026-11-23).
+	read := in.fromRead
+	if read == "" {
+		read = in.from
+	}
+	_, prevMajor, _ := minorOf(read)
 	for i := range steps {
 		s := &steps[i]
 		if prevMajor >= 0 && s.major >= 0 && s.major != prevMajor {

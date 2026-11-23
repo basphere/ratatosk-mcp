@@ -144,8 +144,9 @@ func (h *handlers) upgradeAnswer(out map[string]any, args checkUpgradeArgs, b *b
 		return textResult(orderedObject(nil, out, upgradeOrder))
 	}
 	project, _ := out["project"].(string)
+	readAs, _ := out["version_read_as"].(string)
 	kinds, _ := kindsArg(args.Kinds, true)
-	steps := upgradeSteps(stepsIn{project: project, b: b, docs: docs, kinds: kinds, from: args.From,
+	steps := upgradeSteps(stepsIn{project: project, b: b, docs: docs, kinds: kinds, from: args.From, fromRead: readAs,
 		next: func(from, to string) *toolCall {
 			return &toolCall{Tool: "check_upgrade", Arguments: upgradeCallArgs{Project: project, From: from, To: to,
 				Detail: "brief", Kinds: args.Kinds}}
@@ -195,7 +196,7 @@ func (h *handlers) stackAnswer(out map[string]any, run *stackRun, args checkStac
 		if rep.Summary != nil {
 			project := rep.Project
 			steps := upgradeSteps(stepsIn{project: project, b: &rep.Briefing, docs: rep.rangeDocs, kinds: run.kinds,
-				from: rep.RunningVersion,
+				from: rep.RunningVersion, fromRead: rep.VersionReadAs,
 				next: func(from, to string) *toolCall {
 					return &toolCall{Tool: "check_stack", Arguments: stackCallArgs{
 						Components: []stackCallComponent{{Project: project, Version: from, TargetVersion: to}},

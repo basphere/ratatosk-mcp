@@ -230,3 +230,27 @@ func TestReleaseNotesPageNamesTheGitHubRepository(t *testing.T) {
 		t.Errorf("no GitHub repository: %q", got)
 	}
 }
+
+// A version with an image build suffix is compared without it, as the briefing
+// reads it: the first step is not a major boundary. envoy v1.36.5-<build> got
+// major_boundary on its first step, 1.36 (review, 2026-11-23). The first
+// step's next still starts at the version as passed.
+func TestRouteReadsABuildSuffixOffTheVersionItStartsAbove(t *testing.T) {
+	tag := "v3.5.30-1789133542-cbec91f666af0bf742da986d43832932dbb26b82"
+	var comps []json.RawMessage
+	topField(t, etcdAnswer(t, stackCall(checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: tag}}})), "components", &comps)
+	for name, text := range map[string]string{
+		"check_upgrade": etcdAnswer(t, upgradeCall(checkUpgradeArgs{Project: "etcd", From: tag})),
+		"check_stack":   string(comps[0]),
+	} {
+		var steps []upgradeStep
+		topField(t, text, "steps", &steps)
+		if len(steps) != 2 || steps[0].MajorBoundary || steps[1].MajorBoundary {
+			t.Errorf("%s: steps %+v", name, steps)
+			continue
+		}
+		if next, _ := json.Marshal(steps[0].Next); !strings.Contains(string(next), `"`+tag+`"`) {
+			t.Errorf("%s: the first step's next does not start at the version as passed: %s", name, next)
+		}
+	}
+}
