@@ -339,6 +339,10 @@ func TestRouteSaysHowToReadLaterEvents(t *testing.T) {
 	if strings.Contains(read, "in full") {
 		t.Error("read_first still says next gives a step's changes in full")
 	}
+	if !strings.Contains(read, "important fixes are only counted unless kinds names them") ||
+		strings.Contains(read, "every other one a line in changes_more") {
+		t.Error("read_first does not say what next leaves of important fixes")
+	}
 }
 
 // A change on a release without a version would be in no step while totals

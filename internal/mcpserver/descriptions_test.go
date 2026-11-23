@@ -138,6 +138,12 @@ func TestDescriptionsSayTheFirstAnswerIsARoute(t *testing.T) {
 		if strings.Contains(d[name], "in full with its next call") {
 			t.Errorf("%s still says next answers a step in full", name)
 		}
+		// Past the cap, important fixes have no line unless kinds names them
+		// (review, 2026-11-23).
+		if !strings.Contains(d[name], "important fixes are only counted unless kinds names them") ||
+			strings.Contains(d[name], "every other one a line in changes_more") {
+			t.Errorf("%s does not say what next leaves of important fixes", name)
+		}
 		props := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
 		detail, _ := props["detail"].(map[string]any)["description"].(string)
 		if !strings.HasPrefix(detail, "omit for a route") || strings.Contains(detail, "(default)") {

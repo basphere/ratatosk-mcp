@@ -51,8 +51,9 @@ const routeDescribe = "Without detail, the first answer is a route (answer_kind 
 	"version, neighbouring steps without a must_read line folded into one (never across a major), naming every " +
 	"security, breaking and deprecation change by title (must_read and lines; important fixes too when kinds names " +
 	"them), with counts and advisories, no details. A step's next call answers that step as a briefing " +
-	"(detail:\"brief\": in each kind up to a cap of changes with their body, every other one a line in changes_more); " +
-	"its verify call reads the evidence of its must_read lines, and get_release(project, changes:[id, …]) that of a " +
+	"(detail:\"brief\": in each kind up to a cap of changes with their body; past the cap, each security, breaking " +
+	"and deprecation change has a line in changes_more, and important fixes are only counted unless kinds names " +
+	"them); its verify call reads the evidence of its must_read lines, and get_release(project, changes:[id, …]) that of a " +
 	"line. %s detail:\"brief\" answers the whole range as one briefing, described below. "
 
 var (
@@ -81,7 +82,8 @@ const notIncluded = "evidence quotes are not in this answer, except on a before_
 const readFirst = "This answer is a route: for each upgrade step it names every security, breaking and deprecation " +
 	"change by title (must_read: the ones that ask something of the operator; lines: the rest), without their " +
 	"details. A step's next answers that step as a briefing (detail:\"brief\": in each kind up to a cap of changes " +
-	"with their body, every other one a line in changes_more); get_release(project, changes:[id, …]) gives a change " +
+	"with their body; past the cap, each security, breaking and deprecation change has a line in changes_more, and " +
+	"important fixes are only counted unless kinds names them); get_release(project, changes:[id, …]) gives a change " +
 	"whole with its evidence, and verify does so for a step's must_read lines - read the evidence of a change before " +
 	"you report it. Do not judge a change from its title alone: a " +
 	"change whose step you did not open is reported as \"not inspected\", never as no impact. If you fill a range " +
