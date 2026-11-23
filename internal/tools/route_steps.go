@@ -255,7 +255,12 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 	}
 	if in.b.Upgrade != nil {
 		for _, it := range *in.b.Upgrade {
-			s := stepOf(it.Version)
+			// An item that recurs is listed once, at the newest release, with
+			// also_in naming the others; it is read in the step where the range
+			// first meets it. At the newest it sat in a later step than the
+			// first upgrade that asks for it (review, 2026-11-23). The id stays
+			// the briefing's: it is the one the evidence is read by.
+			s := stepOf(earliestOf(it.Version, it.AlsoIn))
 			s.MustRead = append(s.MustRead, mustReadLine{ID: it.ID, Title: it.Title, Why: []string{"before_upgrade"}})
 		}
 	}
@@ -348,6 +353,18 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 		s.Verify = verifyCalls(in.project, s.MustRead)
 	}
 	return steps
+}
+
+// earliestOf is the oldest of v and others; a version that does not read as
+// one is passed over.
+func earliestOf(v string, others []string) string {
+	best, key := v, version.NormalizeVersion(v)
+	for _, o := range others {
+		if k := version.NormalizeVersion(o); len(k) > 0 && (len(key) == 0 || version.Compare(k, key) < 0) {
+			best, key = o, k
+		}
+	}
+	return best
 }
 
 func byVersion(a, b string) int {

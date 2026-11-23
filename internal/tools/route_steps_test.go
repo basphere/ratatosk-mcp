@@ -210,3 +210,30 @@ func TestStepsNameImportantFixesWhenKindsNamesThem(t *testing.T) {
 		}
 	}
 }
+
+// A before_upgrade item that recurs on several releases is listed by the
+// briefing once, at the newest, with also_in naming the others; a route puts
+// it in the step where the range first meets it — before the upgrade that
+// first needs it — keeping the id the briefing gives (review, 2026-11-23).
+func TestStepsPutARecurringBeforeUpgradeItemWhereItFirstAppears(t *testing.T) {
+	b := &briefing.Briefing{
+		Releases: briefedRange("v1.0.0", "v1.0.1", "v1.1.0", "v1.2.0"),
+		Upgrade: &[]briefing.UpgradeItem{
+			{Version: "v1.2.0", ID: "p@v1.2.0#runc", Title: "runc is installed separately", AlsoIn: []string{"v1.1.0", "v1.0.1"}},
+			{Version: "v1.2.0", ID: "p@v1.2.0#new", Title: "new on 1.2"},
+		},
+	}
+	steps := upgradeSteps(stepsIn{project: "p", b: b})
+	var got []string
+	for _, s := range steps {
+		var ids []string
+		for _, m := range s.MustRead {
+			ids = append(ids, m.ID)
+		}
+		got = append(got, fmt.Sprintf("%s %v", s.Line, ids))
+	}
+	want := []string{"1.0 [p@v1.2.0#runc]", "1.1 []", "1.2 [p@v1.2.0#new]"}
+	if !slices.Equal(got, want) {
+		t.Errorf("steps %q, want %q", got, want)
+	}
+}
