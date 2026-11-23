@@ -14,8 +14,9 @@ package mcpserver
 // repository root.
 //
 // What may differ from the snapshot: the arguments listed in addedSince, the
-// description of a tool named in reworded, and the descriptions of arguments.
-// Both lists are emptied when the snapshot is replaced.
+// arguments listed in retired, the description of a tool named in reworded,
+// and the descriptions of arguments. The three lists are emptied when the
+// snapshot is replaced.
 
 import (
 	"context"
@@ -29,11 +30,21 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/basphere/ratatosk-mcp/internal/mcpserver/mcpservertest"
+	"github.com/basphere/ratatosk-mcp/internal/tools"
 )
 
 // addedSince are the arguments added after the snapshot's release, by tool;
 // "components" names the keys of one check_stack component.
 var addedSince = map[string][]string{"check_stack": {"same_minor"}}
+
+// retired are the arguments taken out of the listing after the snapshot's
+// release, by tool: a call that sends one is still answered, as the same call
+// without it (tools.RetiredArguments; TestRetiredArgumentsAreAcceptedAndIgnored).
+// lang left every tool in 1.3.0 — the answers are English alone (the owner,
+// 2026-11-23).
+var retired = map[string][]string{
+	"check_stack": {"lang"}, "check_upgrade": {"lang"}, "get_release": {"lang"}, "list_releases": {"lang"}, "search": {"lang"},
+}
 
 // reworded are the tools whose description changed after the snapshot's
 // release. A description is what a model reads to choose a tool and its
@@ -144,7 +155,18 @@ func TestToolsListIsTheLatestReleasePlusWhatIsDeclared(t *testing.T) {
 				delete(cprops, a)
 			}
 		}
-		if want := stripDescriptions(old["inputSchema"]); !reflect.DeepEqual(schema, want) {
+		want := stripDescriptions(old["inputSchema"]).(map[string]any)
+		oldProps, _ := want["properties"].(map[string]any)
+		for _, a := range retired[name] {
+			if _, ok := props[a]; ok {
+				t.Errorf("%s still lists the argument %s that retired names", name, a)
+			}
+			if !slices.Contains(tools.RetiredArguments, a) {
+				t.Errorf("%s: %s is not in tools.RetiredArguments, so a call that sends it is refused", name, a)
+			}
+			delete(oldProps, a)
+		}
+		if !reflect.DeepEqual(schema, want) {
 			a, _ := json.Marshal(want)
 			c, _ := json.Marshal(schema)
 			t.Errorf("%s input schema is not %s's plus the declared arguments:\n  then %s\n  now  %s", name, snap, a, c)

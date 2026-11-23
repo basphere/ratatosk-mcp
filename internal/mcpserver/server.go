@@ -73,6 +73,8 @@ func New(o Options) *mcp.Server {
 	// the counters see a panicked call as an ordinary tool error (counted
 	// outcome="error").
 	server.AddReceivingMiddleware(recoverMiddleware)
+	// Inside the audit stream, so the audit records what the client sent.
+	server.AddReceivingMiddleware(tools.IgnoreRetiredArguments)
 	// Audit stream (P3): observes tools/call when MCP_AUDIT is set; the
 	// identity function otherwise. See internal/audit and docs/logging-design.md.
 	server.AddReceivingMiddleware(o.Audit.Middleware)

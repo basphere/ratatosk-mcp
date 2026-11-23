@@ -88,20 +88,13 @@ func errResult(err error) *mcp.CallToolResult {
 	}
 }
 
-// langArg validates the optional lang argument shared by every tool that
-// returns text. An unknown value is refused rather than silently read as
-// English: an agent that asked for Korean and got English would not notice.
-func langArg(lang string) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(lang)) {
-	case "", "en":
-		return "en", nil
-	case "ko":
-		return "ko", nil
-	case "ja":
-		return "ja", nil
-	}
-	return "", fmt.Errorf(`lang must be "en", "ko" or "ja"`)
-}
+// answerLang is the language every tool reads /v2 in (1.3.0): the answers are
+// English alone — an agent puts an answer in its user's language itself, and
+// one set of descriptions, hints and tests describes every answer (the owner,
+// 2026-11-23). The upstream client sends no lang for English, so each request
+// is the one a call without lang made before. A lang a client still sends is
+// taken off the call before it reaches a tool (IgnoreRetiredArguments).
+const answerLang = "en"
 
 // slugArg reads a project slug the way /v2/projects spells every one of them:
 // lower case, no surrounding space (79 of 79 on 2026-11-15). Matched as sent,

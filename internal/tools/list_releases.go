@@ -34,15 +34,10 @@ type listReleasesArgs struct {
 	Since   string `json:"since,omitempty" jsonschema:"YYYY-MM-DD — released on or after this date (UTC)"`
 	Before  string `json:"before,omitempty" jsonschema:"paging: pass next_before from the previous answer"`
 	Limit   int    `json:"limit,omitempty" jsonschema:"how many releases, default 10, max 50"`
-	Lang    string `json:"lang,omitempty" jsonschema:"en (default), ko or ja — the language of the website links in url"`
 }
 
 func (h *handlers) listReleasesTool(ctx context.Context, req *mcp.CallToolRequest, args listReleasesArgs) (*mcp.CallToolResult, any, error) {
 	ctx = logging.RequestContext(ctx, "list_releases", req)
-	lang, err := langArg(args.Lang)
-	if err != nil {
-		return errResult(err), nil, nil
-	}
 	if args.Kind != "" && !containsStr(release.Kinds, args.Kind) {
 		return errResult(fmt.Errorf("kind must be one of %s", strings.Join(release.Kinds, "|"))), nil, nil
 	}
@@ -73,7 +68,7 @@ func (h *handlers) listReleasesTool(ctx context.Context, req *mcp.CallToolReques
 	if limit > 50 {
 		limit = 50
 	}
-	raw, err := h.api.ReleasesRaw(ctx, upstream.ReleasesQuery{Project: project, Kind: args.Kind, Since: args.Since, Before: args.Before, Limit: limit, Lang: lang}, false)
+	raw, err := h.api.ReleasesRaw(ctx, upstream.ReleasesQuery{Project: project, Kind: args.Kind, Since: args.Since, Before: args.Before, Limit: limit, Lang: answerLang}, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}

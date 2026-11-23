@@ -55,7 +55,6 @@ func getReleaseDef() *mcp.Tool {
 type getReleaseArgs struct {
 	Project string     `json:"project" jsonschema:"project slug, e.g. envoy"`
 	Version string     `json:"version,omitempty" jsonschema:"release version as published, e.g. v1.38.3; omit for the latest release (or, with changes, for the releases the ids name)"`
-	Lang    string     `json:"lang,omitempty" jsonschema:"en (default), ko or ja — language of title, body and attribute text; evidence quotes stay verbatim"`
 	Kinds   stringList `json:"kinds,omitempty" jsonschema:"only changes of these kinds (any of security, breaking, deprecations, important_fixes, enhancements, dependency_updates, other); folded lines are then left out. [security, breaking, deprecations, important_fixes] reads what asks for a decision. Omit for the whole release"`
 	Changes stringList `json:"changes,omitempty" jsonschema:"ids of changes or before_upgrade items (from a briefing's changes, changes_more or before_upgrade), up to 50: only those, with body and evidence; ids not found are listed in not_found. Without version, the releases the ids name are read (up to 10). Not together with kinds"`
 }
@@ -65,10 +64,6 @@ func (h *handlers) getReleaseTool(ctx context.Context, req *mcp.CallToolRequest,
 	project := slugArg(args.Project)
 	if project == "" {
 		return errResult(fmt.Errorf("project is required")), nil, nil
-	}
-	lang, err := langArg(args.Lang)
-	if err != nil {
-		return errResult(err), nil, nil
 	}
 	kindSet, err := kindsArg(args.Kinds, false)
 	if err != nil {
@@ -88,7 +83,7 @@ func (h *handlers) getReleaseTool(ctx context.Context, req *mcp.CallToolRequest,
 	// releases they name are read — the latest alone answered every id of
 	// another release as not found (independent review, 2026-11-20).
 	if ver == "" && len(ids) > 0 {
-		return h.pickedReleases(ctx, project, ids, lang)
+		return h.pickedReleases(ctx, project, ids, answerLang)
 	}
 	if ver == "" {
 		// "Latest" is decided in one place, the API: /v2/projects carries each
@@ -119,7 +114,7 @@ func (h *handlers) getReleaseTool(ctx context.Context, req *mcp.CallToolRequest,
 			return errResult(fmt.Errorf("project %s is tracked by ratatosk but has no analyzed release yet — there is no release to show", project)), nil, nil
 		}
 	}
-	raw, err := h.api.ReleaseRaw(ctx, project, ver, lang, false)
+	raw, err := h.api.ReleaseRaw(ctx, project, ver, answerLang, false)
 	if err != nil {
 		return errResult(err), nil, nil
 	}

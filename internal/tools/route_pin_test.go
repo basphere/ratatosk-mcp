@@ -34,8 +34,9 @@ var beforeRoute = []struct {
 }{
 	{"check_upgrade brief", upgradeCall(checkUpgradeArgs{Project: "etcd", From: "v3.5.30", Detail: "brief"}), 0, true,
 		"a1b34b8759f2a26956c531278ae4fba6509076aad0307c208c4175684c273f71"},
-	{"check_upgrade brief kinds lang", upgradeCall(checkUpgradeArgs{Project: "etcd", From: "v3.5.30", Detail: "brief",
-		Kinds: stringList{"security"}, Lang: "en"}), 0, true,
+	// Taken with lang "en", which sent no lang upstream: lang left in 1.3.0.
+	{"check_upgrade brief kinds", upgradeCall(checkUpgradeArgs{Project: "etcd", From: "v3.5.30", Detail: "brief",
+		Kinds: stringList{"security"}}), 0, true,
 		"2cf7cb434f053b099aaf53696258d1f0a05438dbe8c4ef6d6acd1fd25e5954b3"},
 	{"check_upgrade one step", upgradeCall(checkUpgradeArgs{Project: "etcd", From: "v3.6.7"}), 3, true,
 		"3f30b879d29c54a20818cec56d57c24e53f8661c1777f28472d6e6c42ef39730"},
@@ -45,7 +46,7 @@ var beforeRoute = []struct {
 		{Project: "etcd", Version: "v3.5.30", VersionSource: "user"}, {Project: "nope", Version: "v1.0.0"}}, Detail: "brief"}), 0, true,
 		"f1ef44f2e17acfaab13f91fb12b426baec270e6cc8696c8c478789864ea9fdd8"},
 	{"check_stack brief kinds", stackCall(checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.6.7"}},
-		Detail: "brief", Kinds: stringList{"security"}, Lang: "en"}), 0, true,
+		Detail: "brief", Kinds: stringList{"security"}}), 0, true, // taken with lang "en", as above
 		"fb946adc760dc28d9dfee405a6bff2752aa471e66327232d59b323a00d7d1769"},
 	{"check_stack full", stackCall(checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}, Detail: "full"}), 0, false,
 		"4f36cbaab22c366f532da223619424a4574a0382c9f8a029ac7521123aab61f5"},

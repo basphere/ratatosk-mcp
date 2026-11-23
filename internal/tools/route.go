@@ -145,10 +145,10 @@ func (h *handlers) upgradeAnswer(out map[string]any, args checkUpgradeArgs, b *b
 	}
 	project, _ := out["project"].(string)
 	kinds, _ := kindsArg(args.Kinds, true)
-	steps := upgradeSteps(stepsIn{project: project, b: b, docs: docs, kinds: kinds, lang: args.Lang, from: args.From,
+	steps := upgradeSteps(stepsIn{project: project, b: b, docs: docs, kinds: kinds, from: args.From,
 		next: func(from, to string) *toolCall {
 			return &toolCall{Tool: "check_upgrade", Arguments: upgradeCallArgs{Project: project, From: from, To: to,
-				Detail: "brief", Kinds: args.Kinds, Lang: args.Lang}}
+				Detail: "brief", Kinds: args.Kinds}}
 		}})
 	if len(steps) <= 1 {
 		return textResult(orderedObject(briefingFront(), out, upgradeOrder))
@@ -195,11 +195,11 @@ func (h *handlers) stackAnswer(out map[string]any, run *stackRun, args checkStac
 		if rep.Summary != nil {
 			project := rep.Project
 			steps := upgradeSteps(stepsIn{project: project, b: &rep.Briefing, docs: rep.rangeDocs, kinds: run.kinds,
-				lang: args.Lang, from: rep.RunningVersion,
+				from: rep.RunningVersion,
 				next: func(from, to string) *toolCall {
 					return &toolCall{Tool: "check_stack", Arguments: stackCallArgs{
 						Components: []stackCallComponent{{Project: project, Version: from, TargetVersion: to}},
-						Detail:     "brief", Kinds: args.Kinds, Lang: args.Lang}}
+						Detail:     "brief", Kinds: args.Kinds}}
 				}})
 			if len(steps) > 1 {
 				raw = routeComponent(rep, steps, run.kinds)

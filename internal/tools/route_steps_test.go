@@ -111,16 +111,16 @@ func TestVerifySplitsWhatOneCallCannotTake(t *testing.T) {
 		}
 		return out
 	}
-	if _, ok := verifyCalls("p", lines(50, 10), "").(*toolCall); !ok {
+	if _, ok := verifyCalls("p", lines(50, 10)).(*toolCall); !ok {
 		t.Error("50 ids in 10 releases: one call")
 	}
 	for _, c := range []struct{ n, releases, calls int }{{51, 1, 2}, {11, 11, 2}, {120, 3, 3}} {
-		calls, ok := verifyCalls("p", lines(c.n, c.releases), "en").([]*toolCall)
+		calls, ok := verifyCalls("p", lines(c.n, c.releases)).([]*toolCall)
 		if !ok || len(calls) != c.calls {
 			t.Errorf("%d ids in %d releases: %d calls, want %d", c.n, c.releases, len(calls), c.calls)
 		}
 	}
-	if verifyCalls("p", nil, "") != nil {
+	if verifyCalls("p", nil) != nil {
 		t.Error("no line: no verify")
 	}
 }

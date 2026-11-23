@@ -23,15 +23,16 @@ func TestGetReleaseWithoutVersionReadsTheLatest(t *testing.T) {
 	f := upstreamtest.NewEtcd()
 	f.Projects = `{"projects":[{"slug":"etcd","name":"etcd","latest":{"version":"v3.6.7","released_on":"2026-07-01"}},{"slug":"envoy","name":"Envoy","latest":null}]}`
 	h := withAPI(t, httptest.NewServer(f.Handler(t)))
-	res, _, err := h.getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "etcd", Lang: "ko"})
+	res, _, err := h.getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "etcd"})
 	if err != nil || res.IsError {
 		t.Fatalf("get_release: %v %+v", err, res)
 	}
 	if !strings.Contains(res.Content[0].(*mcp.TextContent).Text, `"version":"v3.6.7"`) {
 		t.Fatalf("not the latest: %s", res.Content[0].(*mcp.TextContent).Text)
 	}
-	if reqs := f.Requests(); !slices.Contains(reqs, "/v2/releases/etcd/v3.6.7?lang=ko") {
-		t.Fatalf("lang not passed: %v", reqs)
+	// Read in English, which sends no lang (1.3.0: the answers are English alone).
+	if reqs := f.Requests(); !slices.Contains(reqs, "/v2/releases/etcd/v3.6.7") {
+		t.Fatalf("not read in English: %v", reqs)
 	}
 	// A tracked project with nothing analyzed is told so; an unknown slug is told
 	// to check the slug. Both used to get "check the slug" (spiffe, 2026-11-15).
@@ -40,9 +41,6 @@ func TestGetReleaseWithoutVersionReadsTheLatest(t *testing.T) {
 		if text := res.Content[0].(*mcp.TextContent).Text; !res.IsError || !strings.Contains(text, want) {
 			t.Fatalf("%s: got %q, want %q", slug, text, want)
 		}
-	}
-	if res, _, _ := h.getReleaseTool(context.Background(), nil, getReleaseArgs{Project: "etcd", Lang: "de"}); !res.IsError {
-		t.Fatal("an unknown lang was read as English")
 	}
 }
 

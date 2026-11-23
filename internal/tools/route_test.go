@@ -70,7 +70,7 @@ func TestBriefOrdersTheFields(t *testing.T) {
 // check_upgrade: two steps are a route; the call a step names answers that
 // step as a briefing.
 func TestRouteAndItsNextCallAnswersOneStep(t *testing.T) {
-	args := checkUpgradeArgs{Project: "etcd", From: "v3.5.30", Kinds: stringList{"security", "breaking", "deprecations"}, Lang: "en"}
+	args := checkUpgradeArgs{Project: "etcd", From: "v3.5.30", Kinds: stringList{"security", "breaking", "deprecations"}}
 	route := etcdAnswer(t, upgradeCall(args))
 	want := []string{"answer_kind", "report_ready", "read_first", "server_version", "privacy", "project", "from", "to",
 		"not_read", "later_for_from", "later_in_range", "excluded_on_branch", "totals", "shown_here", "steps"}
@@ -98,7 +98,7 @@ func TestRouteAndItsNextCallAnswersOneStep(t *testing.T) {
 	if !reflect.DeepEqual(totals, map[string]int{"security": 1, "breaking": 1, "deprecations": 0}) {
 		t.Errorf("totals %v", totals)
 	}
-	if !strings.Contains(route, `"next":{"tool":"check_upgrade","arguments":{"project":"etcd","from":"v3.5.32","to":"v3.6.8","detail":"brief","kinds":["security","breaking","deprecations"],"lang":"en"}}`) {
+	if !strings.Contains(route, `"next":{"tool":"check_upgrade","arguments":{"project":"etcd","from":"v3.5.32","to":"v3.6.8","detail":"brief","kinds":["security","breaking","deprecations"]}}`) {
 		t.Errorf("step 3.6 next: %s", route)
 	}
 	// Titles, never details: no body, no evidence, no release list.
@@ -139,7 +139,7 @@ func TestRouteAnswersOneStepAsABriefing(t *testing.T) {
 // Every counted change of a step is named by title — the ones with a mark in
 // must_read, the rest in lines — and shown_here counts them.
 func TestRouteNamesEveryChangeByTitle(t *testing.T) {
-	args := checkUpgradeArgs{Project: "etcd", From: "v3.5.30", Kinds: stringList{"security", "breaking", "deprecations"}, Lang: "en"}
+	args := checkUpgradeArgs{Project: "etcd", From: "v3.5.30", Kinds: stringList{"security", "breaking", "deprecations"}}
 	route := etcdAnswer(t, upgradeCall(args))
 	var read string
 	topField(t, route, "read_first", &read)

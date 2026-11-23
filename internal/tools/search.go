@@ -52,7 +52,6 @@ func searchDef() *mcp.Tool {
 
 type searchArgs struct {
 	Q       string `json:"q" jsonschema:"advisory id (CVE-…, GHSA-…), configuration flag, project, version or text; 2–200 characters"`
-	Lang    string `json:"lang,omitempty" jsonschema:"en (default), ko or ja"`
 	Project string `json:"project,omitempty" jsonschema:"project slug, e.g. cilium: only that project's releases; omit for every project"`
 }
 
@@ -61,10 +60,6 @@ func (h *handlers) searchTool(ctx context.Context, req *mcp.CallToolRequest, arg
 	q := strings.TrimSpace(args.Q)
 	if n := len([]rune(q)); n < 2 || n > 200 {
 		return errResult(fmt.Errorf("q must be 2–200 characters")), nil, nil
-	}
-	lang, err := langArg(args.Lang)
-	if err != nil {
-		return errResult(err), nil, nil
 	}
 	// An unknown slug is an error, as in list_releases: no results for a name
 	// spelled differently reads as "nothing matched".
@@ -78,14 +73,14 @@ func (h *handlers) searchTool(ctx context.Context, req *mcp.CallToolRequest, arg
 			return errResult(unknownProject(project)), nil, nil
 		}
 	}
-	raw, err := h.api.SearchRaw(ctx, q, lang)
+	raw, err := h.api.SearchRaw(ctx, q, answerLang)
 	if err != nil {
 		return errResult(err), nil, nil
 	}
 	if !isJSONObject(raw) {
 		return rawResult(raw), nil, nil
 	}
-	b, err := h.searchAnswer(ctx, raw, project, q, lang)
+	b, err := h.searchAnswer(ctx, raw, project, q, answerLang)
 	if err != nil {
 		return errResult(fmt.Errorf("/v2/search: %w", err)), nil, nil
 	}

@@ -93,14 +93,12 @@ type upgradeCallArgs struct {
 	To      string   `json:"to"`
 	Detail  string   `json:"detail"`
 	Kinds   []string `json:"kinds,omitempty"`
-	Lang    string   `json:"lang,omitempty"`
 }
 
 type stackCallArgs struct {
 	Components []stackCallComponent `json:"components"`
 	Detail     string               `json:"detail"`
 	Kinds      []string             `json:"kinds,omitempty"`
-	Lang       string               `json:"lang,omitempty"`
 }
 
 type stackCallComponent struct {
@@ -112,7 +110,6 @@ type stackCallComponent struct {
 type verifyArgs struct {
 	Project string   `json:"project"`
 	Changes []string `json:"changes"`
-	Lang    string   `json:"lang,omitempty"`
 }
 
 // advisoryGrade is what the step's changes say of one advisory's grade, as
@@ -128,7 +125,6 @@ type stepsIn struct {
 	b       *briefing.Briefing
 	docs    []*release.Doc  // the range's documents: the advisories a line cites
 	kinds   map[string]bool // the call's kinds; nil is every kind
-	lang    string          // the call's lang as passed
 	// next is the call that answers the releases above from up to to; nil
 	// gives the steps no next.
 	next func(from, to string) *toolCall
@@ -327,7 +323,7 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 		if last != "" {
 			prev = last
 		}
-		s.Verify = verifyCalls(in.project, s.MustRead, in.lang)
+		s.Verify = verifyCalls(in.project, s.MustRead)
 	}
 	return steps
 }
@@ -386,7 +382,7 @@ func foldSteps(steps []upgradeStep) []upgradeStep {
 // verifyCalls is the get_release call that reads the evidence of a step's
 // must_read lines: one call, or several when the ids pass what one call takes
 // (maxPickedChanges ids, maxPickedReleases releases). nil when there is none.
-func verifyCalls(project string, lines []mustReadLine, lang string) any {
+func verifyCalls(project string, lines []mustReadLine) any {
 	if len(lines) == 0 {
 		return nil
 	}
@@ -395,7 +391,7 @@ func verifyCalls(project string, lines []mustReadLine, lang string) any {
 	rels := map[string]bool{}
 	flush := func() {
 		if len(ids) > 0 {
-			calls = append(calls, &toolCall{Tool: "get_release", Arguments: verifyArgs{Project: project, Changes: ids, Lang: lang}})
+			calls = append(calls, &toolCall{Tool: "get_release", Arguments: verifyArgs{Project: project, Changes: ids}})
 		}
 		ids, rels = nil, map[string]bool{}
 	}

@@ -161,10 +161,6 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 	if err != nil {
 		return errResult(err), nil, nil
 	}
-	lang, err := langArg(args.Lang)
-	if err != nil {
-		return errResult(err), nil, nil
-	}
 	kindSet, err := kindsArg(args.Kinds, !full)
 	if err != nil {
 		return errResult(err), nil, nil
@@ -221,7 +217,7 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 		}
 	}
 
-	run := &stackRun{h: h, slugs: slugs, aliasOf: aliasOf, times: times, full: full, lang: lang, kinds: kindSet,
+	run := &stackRun{h: h, slugs: slugs, aliasOf: aliasOf, times: times, full: full, lang: answerLang, kinds: kindSet,
 		reports: make([]componentReport, 0, len(comps))}
 	for _, comp := range comps {
 		if err := run.check(ctx, comp); err != nil {
