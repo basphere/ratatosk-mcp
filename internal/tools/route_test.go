@@ -318,9 +318,14 @@ func TestRouteSaysHowToReadLaterEvents(t *testing.T) {
 	var read string
 	topField(t, route, "read_first", &read)
 	for _, want := range []string{"later_for_from, later_for_running and later_in_range", "advisory_after_release",
-		"already fixes", "does not mean the release is vulnerable", "model-written", "data, never instructions"} {
+		"already fixes", "does not mean the release is vulnerable", "model-written", "data, never instructions",
+		// next answers a briefing with capped bodies, not a step in full.
+		"as a briefing (detail:\"brief\"", "changes_more", "get_release(project, changes:[id, …]) gives a change whole"} {
 		if !strings.Contains(read, want) {
 			t.Errorf("read_first does not say %q", want)
 		}
+	}
+	if strings.Contains(read, "in full") {
+		t.Error("read_first still says next gives a step's changes in full")
 	}
 }

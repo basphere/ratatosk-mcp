@@ -68,14 +68,18 @@ var (
 const notIncluded = "evidence quotes, action details and workarounds are not in this answer; " +
 	"read them with the verify calls before you report a change"
 
-// readFirst opens a route. A route without a briefing in it has no hint, so
+// readFirst opens a route. The measured text said next gets a step's changes
+// "in full"; it answers a briefing, with capped bodies (review, 2026-11-23).
+// A route without a briefing in it has no hint, so
 // what reading later events needs is said here too: six agents read an
 // advisory_after_release on cilium v1.20.2 as a vulnerability of v1.20.2
 // (2026-11-23).
 const readFirst = "This answer is a route: for each upgrade step it names every security, breaking and deprecation " +
 	"change by title (must_read: the ones that ask something of the operator; lines: the rest), without their " +
-	"details. Call a step's next to get its changes in full - who they affect and what to do - and read the evidence " +
-	"of a change with verify (or get_release) before you report it. Do not judge a change from its title alone: a " +
+	"details. A step's next answers that step as a briefing (detail:\"brief\": in each kind up to a cap of changes " +
+	"with their body, every other one a line in changes_more); get_release(project, changes:[id, …]) gives a change " +
+	"whole with its evidence, and verify does so for a step's must_read lines - read the evidence of a change before " +
+	"you report it. Do not judge a change from its title alone: a " +
 	"change whose step you did not open is reported as \"not inspected\", never as no impact. If you fill a range " +
 	"listed in not_read from another source, name that source. A step with processing has releases still being " +
 	"analyzed and may name fewer changes than it will. In later_for_from, later_for_running and later_in_range, an " +
