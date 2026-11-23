@@ -126,10 +126,25 @@ func TestDescriptionsSayTheFirstAnswerIsARoute(t *testing.T) {
 		if strings.Contains(d[name], `"brief\", default`) || strings.Contains(d[name], `brief", default`) {
 			t.Errorf("%s still says brief is the default", name)
 		}
+		// What the route is, as it is: steps fold, next answers a briefing with
+		// capped bodies, verify reads the must_read lines only (review,
+		// 2026-11-23).
+		for _, want := range []string{"folded into one", "as a briefing (detail:\"brief\"", "changes_more",
+			"verify call reads the evidence of its must_read lines", "get_release(project, changes:[id, …]) that of a line"} {
+			if !strings.Contains(d[name], want) {
+				t.Errorf("%s description does not say %q", name, want)
+			}
+		}
+		if strings.Contains(d[name], "in full with its next call") {
+			t.Errorf("%s still says next answers a step in full", name)
+		}
 		props := tool["inputSchema"].(map[string]any)["properties"].(map[string]any)
 		detail, _ := props["detail"].(map[string]any)["description"].(string)
 		if !strings.HasPrefix(detail, "omit for a route") || strings.Contains(detail, "(default)") {
 			t.Errorf("%s detail: %q", name, detail)
 		}
+	}
+	if !strings.Contains(d["check_stack"], "When no component has more than one step, the whole answer is a briefing, with answer_kind at the top only") {
+		t.Error("check_stack does not say what an answer of one-step components is")
 	}
 }

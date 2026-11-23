@@ -42,17 +42,26 @@ import (
 
 // routeDescribe opens check_stack's and check_upgrade's descriptions: what a
 // call without detail answers. The first %s says where the steps are, the
-// second what a range of one step is answered as.
+// second what a range of one step is answered as. The measured text said "one
+// step per minor version", "get one step's changes in full with its next
+// call" and "read the evidence of a change with its verify call"; steps fold,
+// next answers a briefing with capped bodies, and verify reads the must_read
+// lines only (review, 2026-11-23).
 const routeDescribe = "Without detail, the first answer is a route (answer_kind \"route\"): %s one step per minor " +
-	"version naming every security, breaking and deprecation change by title (must_read and lines), with counts and " +
-	"advisories, no details. Get one step's changes in full with its next call; read the evidence of a change with " +
-	"its verify call. %s detail:\"brief\" answers the whole range as one briefing, described below. "
+	"version, neighbouring steps without a must_read line folded into one (never across a major), naming every " +
+	"security, breaking and deprecation change by title (must_read and lines; important fixes too when kinds names " +
+	"them), with counts and advisories, no details. A step's next call answers that step as a briefing " +
+	"(detail:\"brief\": in each kind up to a cap of changes with their body, every other one a line in changes_more); " +
+	"its verify call reads the evidence of its must_read lines, and get_release(project, changes:[id, …]) that of a " +
+	"line. %s detail:\"brief\" answers the whole range as one briefing, described below. "
 
 var (
 	upgradeRouteDescription = fmt.Sprintf(routeDescribe, "for the range,",
 		"A range of one step is answered as a briefing (answer_kind \"briefing\").")
 	stackRouteDescription = fmt.Sprintf(routeDescribe, "per component,",
-		"A component of one step is answered as a briefing (answer_kind \"briefing\"); one that could not be checked as before.")
+		"A component of one step is answered as a briefing (answer_kind \"briefing\"); one that could not be checked as "+
+			"before. When no component has more than one step, the whole answer is a briefing, with answer_kind at the "+
+			"top only.")
 )
 
 // notIncluded is what a briefing does not carry, said in the answer.
