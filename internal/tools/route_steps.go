@@ -36,7 +36,8 @@ import (
 	"github.com/basphere/ratatosk-mcp/internal/version"
 )
 
-// stepKinds are the kinds a step counts and names.
+// stepKinds are the kinds a step counts and names; important_fixes too when
+// the call's kinds names it (upgradeSteps).
 var stepKinds = []string{"security", "breaking", "deprecations"}
 
 // upgradeStep is one step of a route.
@@ -50,8 +51,8 @@ type upgradeStep struct {
 	// 2026-11-23).
 	Advisories map[string]string `json:"advisories,omitempty"`
 	MustRead   []mustReadLine    `json:"must_read"`
-	// Lines name every other security, breaking and deprecation change of the
-	// step by title (see the file comment for why).
+	// Lines name every other change of the kinds the step counts by title
+	// (see the file comment for why).
 	Lines  []stepLine `json:"lines,omitempty"`
 	Next   *toolCall  `json:"next,omitempty"`
 	Verify any        `json:"verify,omitempty"`
@@ -209,6 +210,12 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 		if in.kinds == nil || in.kinds[k] {
 			covered[k] = true
 		}
+	}
+	// Important fixes only when kinds names them: then the briefing lists every
+	// one, and a route that asked for them answered none (review, 2026-11-23).
+	// Without kinds a step holds the three kinds that were measured.
+	if in.kinds["important_fixes"] {
+		covered["important_fixes"] = true
 	}
 	byMinor := map[string]*upgradeStep{}
 	keys := map[string][]int{}

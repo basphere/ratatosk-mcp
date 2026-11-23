@@ -3,6 +3,7 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -170,5 +171,42 @@ func TestMustReadTakesTheFourMarks(t *testing.T) {
 	}
 	if b, _ := json.Marshal(steps[0]); strings.Contains(string(b), `"advisories"`) {
 		t.Errorf("no advisory cited, yet %s", b)
+	}
+}
+
+// Important fixes are counted and named in a step when the call's kinds names
+// them, and only then: by default a step holds the three kinds measured
+// (security, breaking, deprecations), as a briefing lists every important fix
+// only when kinds names them (review, 2026-11-23).
+func TestStepsNameImportantFixesWhenKindsNamesThem(t *testing.T) {
+	b := &briefing.Briefing{
+		Releases: briefedRange("v1.0.0"),
+		Changes: []briefing.Change{
+			{Version: "v1.0.0", ID: "p@v1.0.0#s", Kind: "security", Title: "s"},
+			{Version: "v1.0.0", ID: "p@v1.0.0#f", Kind: "important_fixes", Title: "f"},
+		},
+		ChangesMore: []briefing.MoreLine{{Version: "v1.0.0", ID: "p@v1.0.0#g", Kind: "important_fixes", Title: "g"}},
+	}
+	lineIDs := func(s upgradeStep) []string {
+		var out []string
+		for _, l := range s.Lines {
+			out = append(out, l.ID)
+		}
+		return out
+	}
+	for _, c := range []struct {
+		kinds  map[string]bool
+		counts map[string]int
+		lines  []string
+	}{
+		{nil, map[string]int{"security": 1, "breaking": 0, "deprecations": 0}, []string{"p@v1.0.0#s"}},
+		{map[string]bool{"important_fixes": true}, map[string]int{"important_fixes": 2}, []string{"p@v1.0.0#f", "p@v1.0.0#g"}},
+		{map[string]bool{"security": true, "important_fixes": true}, map[string]int{"security": 1, "important_fixes": 2},
+			[]string{"p@v1.0.0#s", "p@v1.0.0#f", "p@v1.0.0#g"}},
+	} {
+		s := upgradeSteps(stepsIn{project: "p", b: b, kinds: c.kinds})[0]
+		if !reflect.DeepEqual(s.Counts, c.counts) || !slices.Equal(lineIDs(s), c.lines) {
+			t.Errorf("kinds %v: counts %v lines %v, want %v %v", c.kinds, s.Counts, lineIDs(s), c.counts, c.lines)
+		}
 	}
 }

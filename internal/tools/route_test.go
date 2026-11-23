@@ -254,3 +254,26 @@ func TestRouteReadsABuildSuffixOffTheVersionItStartsAbove(t *testing.T) {
 		}
 	}
 }
+
+// With important_fixes in kinds, the route names every important fix of the
+// range in its steps, as many as totals counts.
+func TestRouteNamesImportantFixesWhenKindsNamesThem(t *testing.T) {
+	h := upgradeServer(t, changeDoc("p", "v0.9.5", map[string]int{"important_fixes": 12}, 5), changeDoc("p", "v1.0.0", map[string]int{"important_fixes": 3, "security": 1}, 5))
+	_, route := runUpgrade(t, h, checkUpgradeArgs{Project: "p", From: "v0.9.0", Kinds: stringList{"important_fixes"}})
+	var steps []upgradeStep
+	topField(t, route, "steps", &steps)
+	var totals map[string]int
+	topField(t, route, "totals", &totals)
+	counted, named := 0, 0
+	for _, s := range steps {
+		counted += s.Counts["important_fixes"]
+		for _, l := range s.Lines {
+			if l.Kind == "important_fixes" {
+				named++
+			}
+		}
+	}
+	if len(steps) != 2 || totals["important_fixes"] == 0 || counted != totals["important_fixes"] || named != counted {
+		t.Errorf("%d steps; totals %v, counted %d, named %d", len(steps), totals, counted, named)
+	}
+}
