@@ -242,7 +242,10 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 			// also_in naming the others; it is read in the step where the range
 			// first meets it. At the newest it sat in a later step than the
 			// first upgrade that asks for it (review, 2026-11-23). Its id is the
-			// one it has on that release, which the step's next answers with.
+			// one it has on that release. A step of several releases the item
+			// recurs on answers its next with the newest one's id instead, so
+			// the two differ there (4 of the 10 items of containerd v2.2.9 and
+			// Argo CD v3.4.4, 2026-11-23); both name the item.
 			v := earliestOf(it.Version, it.AlsoIn)
 			if noVersion(v) {
 				return nil

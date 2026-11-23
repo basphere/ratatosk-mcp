@@ -239,10 +239,11 @@ func TestStepsPutARecurringBeforeUpgradeItemWhereItFirstAppears(t *testing.T) {
 }
 
 // A recurring before_upgrade item put in the step where it first appears
-// carries the id it has on that release — the id that step's next answers
-// with — found in the range's documents as the briefing groups recurring items
-// (the section and the fingerprint after "#"); verify reads by it. Without
-// that release's document it keeps the briefing's id. containerd's step 2.2
+// carries the id it has on that release, found in the range's documents as the
+// briefing groups recurring items (the section and the fingerprint after "#");
+// verify reads by it. Without that release's document it keeps the briefing's
+// id. The step's next names it by the newest of the step's releases it is on,
+// so the two ids are the same only when the step holds one of them. containerd's step 2.2
 // named containerd@v2.4.2#8989b49f where its next answered
 // containerd@v2.2.10#8989b49f (review, 2026-11-23).
 func TestStepsGiveARecurringItemTheIdOfItsFirstRelease(t *testing.T) {
