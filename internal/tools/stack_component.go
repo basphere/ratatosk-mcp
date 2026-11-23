@@ -323,6 +323,7 @@ func (r *stackRun) check(ctx context.Context, comp stackComponent) error {
 		var settled int
 		rep.Briefing, settled = briefing.Build(rangeDocs, alreadyFixed, currentKey)
 		rep.Briefing.Narrow(r.kinds)
+		rep.rangeDocs, rep.allDocs = rangeDocs, docs
 		if settled > 0 {
 			notes = append(notes, fmt.Sprintf(
 				"%d security change(s) in range were excluded: their advisories are already fixed at or below %s on your branch",

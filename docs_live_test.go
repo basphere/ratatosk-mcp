@@ -131,7 +131,8 @@ func TestDocsExamplesAgainstLive(t *testing.T) {
 	}
 	want, got := map[string]bool{}, map[string]bool{}
 	keyPaths(entry, "", want)
-	live := liveCall(t, cs, "check_stack", `{"components":[{"project":"etcd","version":"v3.5.30"},{"project":"cert-manager","version":"v1.19.2"}]}`)
+	// detail brief: a change entry is a briefing's; a route names changes by title only (1.3.0).
+	live := liveCall(t, cs, "check_stack", `{"components":[{"project":"etcd","version":"v3.5.30"},{"project":"cert-manager","version":"v1.19.2"}],"detail":"brief"}`)
 	keyPaths(live, "", got)
 	var missing []string
 	for p := range want {

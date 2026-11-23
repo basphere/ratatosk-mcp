@@ -169,8 +169,8 @@ func TestCheckStackTakesSameMinorForTheWholeCall(t *testing.T) {
 	// A before_upgrade item without a body carries its evidence in both
 	// briefings; etcd v3.6.7's upgrade guide is one.
 	for tool, args := range map[string]map[string]any{
-		"check_stack":   {"components": []any{map[string]any{"project": "etcd", "version": "v3.5.30"}}},
-		"check_upgrade": {"project": "etcd", "from": "v3.5.30"},
+		"check_stack":   {"components": []any{map[string]any{"project": "etcd", "version": "v3.5.30"}}, "detail": "brief"},
+		"check_upgrade": {"project": "etcd", "from": "v3.5.30", "detail": "brief"},
 	} {
 		text, isErr = sdkText(t, cs, tool, args)
 		if isErr || !strings.Contains(text, `"body":null,"evidence":[{"quote":"Before upgrading to 3.6, read the upgrade guide."`) {

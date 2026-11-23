@@ -81,7 +81,7 @@ func TestCheckStackCachesPublicDocuments(t *testing.T) {
 func TestCheckStackBriefing(t *testing.T) {
 	f := upstreamtest.NewEtcd()
 	h := withAPI(t, httptest.NewServer(f.Handler(t)))
-	out := runStack(t, h, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}})
+	out := runStack(t, h, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}, Detail: "brief"})
 	c := out.Components[0]
 
 	var vers []string
@@ -190,7 +190,7 @@ func TestBriefingKeepsALaterFixOnTheRunningBranch(t *testing.T) {
 		`[{"id":"etcd@v3.5.32#b","kind":"security","title":"complete fix for GHSA-bbbb","body":null,"severity":"critical","advisories":["GHSA-bbbb"],`+
 			`"affects":{"text":"gRPC listener","status":"stated"},"also_required":null,"security_unclear":false,"silent_failure":false,"workaround":null,"regression_since":null,"evidence":[],"later":[]}]`, "")
 	h := withAPI(t, httptest.NewServer(f.Handler(t)))
-	c := runStack(t, h, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}}).Components[0]
+	c := runStack(t, h, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}, Detail: "brief"}).Components[0]
 
 	var ids []string
 	for _, ch := range c.Changes {
@@ -378,7 +378,8 @@ func TestCheckStackNotesATargetNewerThanEveryAnalyzedRelease(t *testing.T) {
 // later_in_range carries what was learned about the releases in range: the
 // v1.20.3 BackendTLSPolicy regression fixed in v1.20.4 was in no briefing.
 // (1.2.0; measured answers of 2026-11-19 and 11-20 — docs/design/mcp-answer-shape.md
-// in the ratatosk app repository.)
+// in the ratatosk app repository.) A route carries it too, as no step counts
+// it (1.3.0).
 func TestLaterInRangeCarriesWhatWasLearnedAboutTheRange(t *testing.T) {
 	f := upstreamtest.NewEtcd()
 	ev := `{"seq":2,"at":"2026-08-02T00:00:00Z","type":"regression_fixed","project":"etcd","version":"v3.6.7","fixed_in":"v3.6.8","title":"lease regression"}`
@@ -386,24 +387,30 @@ func TestLaterInRangeCarriesWhatWasLearnedAboutTheRange(t *testing.T) {
 	i := strings.LastIndex(d, `"later":[]}`) // the release's own later, after its changes'
 	f.Docs["v3.6.7"] = d[:i] + `"later":[` + ev + `]}`
 	h := withAPI(t, httptest.NewServer(f.Handler(t)))
-	res, _, _ := h.checkStackTool(context.Background(), nil, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}, {Project: "etcd", Version: "v3.6.8"}}})
-	var out struct {
-		Components []struct {
-			LaterInRange    *[]json.RawMessage      `json:"later_in_range"`
-			LaterForRunning []json.RawMessage       `json:"later_for_running"`
-			BeforeUpgrade   *[]briefing.UpgradeItem `json:"before_upgrade"`
-		} `json:"components"`
-	}
-	json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &out)
-	c := out.Components[0]
-	if c.LaterInRange == nil || len(*c.LaterInRange) != 1 || !strings.Contains(string((*c.LaterInRange)[0]), "lease regression") {
-		t.Errorf("later_in_range %v", c.LaterInRange)
-	}
-	if len(c.LaterForRunning) != 1 {
-		t.Errorf("later_for_running stays the running version's: %s", c.LaterForRunning)
-	}
-	if e := out.Components[1]; e.LaterInRange == nil || len(*e.LaterInRange) != 0 || e.BeforeUpgrade == nil || len(*e.BeforeUpgrade) != 0 {
-		t.Errorf("an empty range answers later_in_range [] and before_upgrade [], not absent: %+v", e)
+	for _, detail := range []string{"", "brief"} {
+		res, _, _ := h.checkStackTool(context.Background(), nil, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}, {Project: "etcd", Version: "v3.6.8"}}, Detail: detail})
+		var out struct {
+			Components []struct {
+				AnswerKind      string                  `json:"answer_kind"`
+				LaterInRange    *[]json.RawMessage      `json:"later_in_range"`
+				LaterForRunning []json.RawMessage       `json:"later_for_running"`
+				BeforeUpgrade   *[]briefing.UpgradeItem `json:"before_upgrade"`
+			} `json:"components"`
+		}
+		json.Unmarshal([]byte(res.Content[0].(*mcp.TextContent).Text), &out)
+		c := out.Components[0]
+		if want := map[string]string{"": "route", "brief": ""}[detail]; c.AnswerKind != want {
+			t.Errorf("detail %q: answer_kind %q, want %q", detail, c.AnswerKind, want)
+		}
+		if c.LaterInRange == nil || len(*c.LaterInRange) != 1 || !strings.Contains(string((*c.LaterInRange)[0]), "lease regression") {
+			t.Errorf("detail %q: later_in_range %v", detail, c.LaterInRange)
+		}
+		if len(c.LaterForRunning) != 1 {
+			t.Errorf("detail %q: later_for_running stays the running version's: %s", detail, c.LaterForRunning)
+		}
+		if e := out.Components[1]; e.LaterInRange == nil || len(*e.LaterInRange) != 0 || e.BeforeUpgrade == nil || len(*e.BeforeUpgrade) != 0 {
+			t.Errorf("detail %q: an empty range answers later_in_range [] and before_upgrade [], not absent: %+v", detail, e)
+		}
 	}
 }
 
@@ -452,7 +459,7 @@ func TestImageBuildSuffixIsReadWithoutItAndSaid(t *testing.T) {
 // (1.2.0: get_release's kinds and changes, kinds on the briefing tools.)
 func TestKindsNarrowABriefing(t *testing.T) {
 	h := withAPI(t, httptest.NewServer(upstreamtest.NewEtcd().Handler(t)))
-	c := runStack(t, h, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}, Kinds: stringList{"breaking"}}).Components[0]
+	c := runStack(t, h, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}, Kinds: stringList{"breaking"}, Detail: "brief"}).Components[0]
 	if len(c.Changes) != 1 || c.Changes[0].Kind != "breaking" || c.Summary.Counts["security"] != 1 {
 		t.Errorf("kinds breaking: %+v summary %+v", c.Changes, c.Summary)
 	}

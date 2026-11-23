@@ -164,8 +164,8 @@ func TestCheckUpgradeReadsABuildSuffixOffFrom(t *testing.T) {
 func TestCheckUpgradeSettlesWhatFromsBranchFixedLikeCheckStack(t *testing.T) {
 	f := upstreamtest.NewEtcd()
 	h := withAPI(t, httptest.NewServer(f.Handler(t)))
-	stack := runStack(t, h, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}}).Components[0]
-	res, _, _ := h.checkUpgradeTool(context.Background(), nil, checkUpgradeArgs{Project: "etcd", From: "v3.5.30"})
+	stack := runStack(t, h, checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}, Detail: "brief"}).Components[0]
+	res, _, _ := h.checkUpgradeTool(context.Background(), nil, checkUpgradeArgs{Project: "etcd", From: "v3.5.30", Detail: "brief"})
 	text := res.Content[0].(*mcp.TextContent).Text
 	var up struct {
 		Changes          []briefing.Change          `json:"changes"`
@@ -182,7 +182,7 @@ func TestCheckUpgradeSettlesWhatFromsBranchFixedLikeCheckStack(t *testing.T) {
 	for _, c := range up.Changes {
 		b = append(b, c.ID)
 	}
-	if !slices.Equal(a, b) {
+	if len(a) == 0 || !slices.Equal(a, b) {
 		t.Errorf("check_upgrade %v, check_stack %v", b, a)
 	}
 	ex := up.ExcludedOnBranch

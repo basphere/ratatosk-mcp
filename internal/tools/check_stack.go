@@ -23,6 +23,7 @@ import (
 
 	"github.com/basphere/ratatosk-mcp/internal/briefing"
 	"github.com/basphere/ratatosk-mcp/internal/logging"
+	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/releaseline"
 )
 
@@ -112,6 +113,11 @@ type componentReport struct {
 	LaterForRunning []json.RawMessage `json:"later_for_running,omitempty"`
 	Full            []json.RawMessage `json:"releases_full,omitempty"` // detail:"full" only
 	FullOmitted     int               `json:"releases_full_omitted,omitempty"`
+	// The documents the briefing was built from, and every one the call read
+	// for the component: a route reads its steps' advisories and the
+	// project's release notes page from them (stackAnswer).
+	rangeDocs []*release.Doc
+	allDocs   map[string]*release.Doc
 }
 
 // untrackedReason answers a component whose project is neither a slug nor an
@@ -236,6 +242,5 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 		return res, nil, err
 	}
 	out["hint"] = briefing.Hint(kindSet)
-	res, err := jsonResult(out)
-	return res, nil, err
+	return h.stackAnswer(out, run, args)
 }

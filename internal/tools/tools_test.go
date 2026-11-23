@@ -342,6 +342,9 @@ func TestToolsAnswerTheSparsestUpstream(t *testing.T) {
 		{"check_upgrade", func(h *handlers) (*mcp.CallToolResult, any, error) {
 			return h.checkUpgradeTool(ctx, nil, checkUpgradeArgs{Project: "etcd", From: "v3.5.30"})
 		}},
+		{"check_upgrade brief", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.checkUpgradeTool(ctx, nil, checkUpgradeArgs{Project: "etcd", From: "v3.5.30", Detail: "brief"})
+		}},
 		{"check_upgrade same_minor", func(h *handlers) (*mcp.CallToolResult, any, error) {
 			return h.checkUpgradeTool(ctx, nil, checkUpgradeArgs{Project: "etcd", From: "v3.5.30", SameMinor: true})
 		}},
@@ -350,6 +353,9 @@ func TestToolsAnswerTheSparsestUpstream(t *testing.T) {
 		}},
 		{"check_stack", func(h *handlers) (*mcp.CallToolResult, any, error) {
 			return h.checkStackTool(ctx, nil, stack(stackComponent{Project: "etcd", Version: "v3.5.30"}, ""))
+		}},
+		{"check_stack brief", func(h *handlers) (*mcp.CallToolResult, any, error) {
+			return h.checkStackTool(ctx, nil, stack(stackComponent{Project: "etcd", Version: "v3.5.30"}, "brief"))
 		}},
 		{"check_stack target", func(h *handlers) (*mcp.CallToolResult, any, error) {
 			return h.checkStackTool(ctx, nil, stack(stackComponent{Project: "etcd", Version: "v3.5.30", TargetVersion: "v3.6.8"}, ""))

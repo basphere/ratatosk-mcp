@@ -241,8 +241,7 @@ func (h *handlers) checkUpgradeTool(ctx context.Context, req *mcp.CallToolReques
 	if b.ExcludedOnBranch != nil {
 		out["excluded_on_branch"] = b.ExcludedOnBranch
 	}
-	res, err := jsonResult(out)
-	return res, nil, err
+	return h.upgradeAnswer(out, args, &b, docs)
 }
 
 // joinNotes joins the non-empty notes with "; ".
