@@ -229,7 +229,9 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 		}
 	}
 	cited := map[string][]string{}
+	docOf := map[string]*release.Doc{}
 	for _, d := range in.docs {
+		docOf[d.Version] = d
 		for _, c := range d.Changes {
 			cited[c.ID] = advisory.RecognisedIDs(c.Advisories)
 		}
@@ -239,14 +241,14 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 			// An item that recurs is listed once, at the newest release, with
 			// also_in naming the others; it is read in the step where the range
 			// first meets it. At the newest it sat in a later step than the
-			// first upgrade that asks for it (review, 2026-11-23). The id stays
-			// the briefing's: it is the one the evidence is read by.
+			// first upgrade that asks for it (review, 2026-11-23). Its id is the
+			// one it has on that release, which the step's next answers with.
 			v := earliestOf(it.Version, it.AlsoIn)
 			if noVersion(v) {
 				return nil
 			}
 			s := stepOf(v)
-			s.MustRead = append(s.MustRead, mustReadLine{ID: it.ID, Title: it.Title, Why: []string{"before_upgrade"}})
+			s.MustRead = append(s.MustRead, mustReadLine{ID: itemIDOn(it, docOf[v]), Title: it.Title, Why: []string{"before_upgrade"}})
 		}
 	}
 	for _, e := range stepEntries(in.b) {
@@ -353,6 +355,32 @@ func earliestOf(v string, others []string) string {
 		}
 	}
 	return best
+}
+
+// itemIDOn is the id a before_upgrade item has on release d: the item of the
+// same section with the same fingerprint after "#", as the briefing groups the
+// items that recur. It is read from the document, never composed; without the
+// document, or when it has no such item, the briefing's id stays.
+func itemIDOn(it briefing.UpgradeItem, d *release.Doc) string {
+	_, fp, ok := strings.Cut(it.ID, "#")
+	if d == nil || d.Version == it.Version || !ok || fp == "" {
+		return it.ID
+	}
+	var items []release.Item
+	switch it.Section {
+	case "prerequisites":
+		items = d.BeforeUpgrade.Prerequisites
+	case "known_issues":
+		items = d.BeforeUpgrade.KnownIssues
+	case "upgrade_guide":
+		items = d.BeforeUpgrade.UpgradeGuide
+	}
+	for _, x := range items {
+		if _, f, ok := strings.Cut(x.ID, "#"); ok && f == fp {
+			return x.ID
+		}
+	}
+	return it.ID
 }
 
 func byVersion(a, b string) int {

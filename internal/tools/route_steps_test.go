@@ -237,3 +237,47 @@ func TestStepsPutARecurringBeforeUpgradeItemWhereItFirstAppears(t *testing.T) {
 		t.Errorf("steps %q, want %q", got, want)
 	}
 }
+
+// A recurring before_upgrade item put in the step where it first appears
+// carries the id it has on that release — the id that step's next answers
+// with — found in the range's documents as the briefing groups recurring items
+// (the section and the fingerprint after "#"); verify reads by it. Without
+// that release's document it keeps the briefing's id. containerd's step 2.2
+// named containerd@v2.4.2#8989b49f where its next answered
+// containerd@v2.2.10#8989b49f (review, 2026-11-23).
+func TestStepsGiveARecurringItemTheIdOfItsFirstRelease(t *testing.T) {
+	doc := func(v string, guide ...string) *release.Doc {
+		d := &release.Doc{Version: v}
+		for _, id := range guide {
+			d.BeforeUpgrade.UpgradeGuide = append(d.BeforeUpgrade.UpgradeGuide, release.Item{ID: id})
+		}
+		d.BeforeUpgrade.Prerequisites = []release.Item{{ID: "p@" + v + "#cni"}} // the same fingerprint in another section
+		return d
+	}
+	b := &briefing.Briefing{
+		Releases: briefedRange("v1.0.1", "v1.1.0", "v1.2.0"),
+		Upgrade: &[]briefing.UpgradeItem{
+			{Version: "v1.2.0", Section: "upgrade_guide", ID: "p@v1.2.0#runc", Title: "runc", AlsoIn: []string{"v1.0.1", "v1.1.0"}},
+			{Version: "v1.2.0", Section: "upgrade_guide", ID: "p@v1.2.0#cni", Title: "cni", AlsoIn: []string{"v1.1.0"}},
+		},
+	}
+	docs := []*release.Doc{doc("v1.0.1", "p@v1.0.1#other", "p@v1.0.1#runc"), doc("v1.2.0", "p@v1.2.0#runc", "p@v1.2.0#cni")}
+	steps := upgradeSteps(stepsIn{project: "p", b: b, docs: docs})
+	var got []string
+	for _, s := range steps {
+		var ids []string
+		for _, m := range s.MustRead {
+			ids = append(ids, m.ID)
+		}
+		v, _ := json.Marshal(s.Verify)
+		got = append(got, fmt.Sprintf("%s %v %s", s.Line, ids, v))
+	}
+	want := []string{
+		`1.0 [p@v1.0.1#runc] {"tool":"get_release","arguments":{"project":"p","changes":["p@v1.0.1#runc"]}}`,
+		`1.1 [p@v1.2.0#cni] {"tool":"get_release","arguments":{"project":"p","changes":["p@v1.2.0#cni"]}}`, // no v1.1.0 document
+		`1.2 [] null`,
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("steps\n%q\nwant\n%q", got, want)
+	}
+}
