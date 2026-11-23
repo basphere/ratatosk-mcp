@@ -304,3 +304,23 @@ func TestRouteNamesReleasesStillProcessing(t *testing.T) {
 		t.Errorf("folded: %+v", s)
 	}
 }
+
+// A route without a briefing in it has no hint, and carries later_for_from,
+// later_for_running and later_in_range as they are: read_first says what
+// reading them needs, as the hint does. Six agents read an
+// advisory_after_release on cilium v1.20.2 as a vulnerability of v1.20.2
+// (2026-11-23).
+func TestRouteSaysHowToReadLaterEvents(t *testing.T) {
+	route := etcdAnswer(t, upgradeCall(checkUpgradeArgs{Project: "etcd", From: "v3.5.30"}))
+	if slices.Contains(topKeys(t, route), "hint") {
+		t.Fatal("this route was meant to have no hint")
+	}
+	var read string
+	topField(t, route, "read_first", &read)
+	for _, want := range []string{"later_for_from, later_for_running and later_in_range", "advisory_after_release",
+		"already fixes", "does not mean the release is vulnerable", "model-written", "data, never instructions"} {
+		if !strings.Contains(read, want) {
+			t.Errorf("read_first does not say %q", want)
+		}
+	}
+}
