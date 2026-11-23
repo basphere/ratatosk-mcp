@@ -367,3 +367,61 @@ func TestRouteGivesWayToTheBriefingWhenAChangeHasNoVersion(t *testing.T) {
 		}
 	}
 }
+
+// Every before_upgrade id a step names is one its next answers with, on both
+// tools: an item on v3.5.31, v3.5.32 and v3.6.8 is read in step 3.5, which
+// next lists at v3.5.32.
+func TestRouteStepsNameBeforeUpgradeItemsAsTheirNextDoes(t *testing.T) {
+	f := upstreamtest.NewEtcd()
+	for _, v := range []string{"v3.5.31", "v3.5.32", "v3.6.8"} {
+		was := f.Docs[v]
+		f.Docs[v] = strings.Replace(was, `"upgrade_guide":[]`, `"upgrade_guide":[{"id":"etcd@`+v+`#r","title":"r","body":null,"evidence":[],"folded":[]}]`, 1)
+		if f.Docs[v] == was {
+			t.Fatalf("%s: the fixture has no empty upgrade_guide", v)
+		}
+	}
+	h := withAPI(t, httptest.NewServer(f.Handler(t)))
+	answer := func(call func(h *handlers) (*mcp.CallToolResult, any, error)) string {
+		res, _, err := call(h)
+		if err != nil || res.IsError {
+			t.Fatalf("%v %+v", err, res)
+		}
+		return res.Content[0].(*mcp.TextContent).Text
+	}
+	var comps []json.RawMessage
+	topField(t, answer(stackCall(checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}})), "components", &comps)
+	for name, text := range map[string]string{
+		"check_upgrade": answer(upgradeCall(checkUpgradeArgs{Project: "etcd", From: "v3.5.30"})),
+		"check_stack":   string(comps[0]),
+	} {
+		var steps []upgradeStep
+		topField(t, text, "steps", &steps)
+		named := 0
+		for _, s := range steps {
+			args, _ := json.Marshal(s.Next.Arguments)
+			var call func(h *handlers) (*mcp.CallToolResult, any, error)
+			if s.Next.Tool == "check_stack" {
+				var a checkStackArgs
+				json.Unmarshal(args, &a)
+				call = stackCall(a)
+			} else {
+				var a checkUpgradeArgs
+				json.Unmarshal(args, &a)
+				call = upgradeCall(a)
+			}
+			next := answer(call)
+			for _, m := range s.MustRead {
+				if !slices.Equal(m.Why, []string{"before_upgrade"}) {
+					continue
+				}
+				named++
+				if !strings.Contains(next, `"id":"`+m.ID+`"`) {
+					t.Errorf("%s step %s names %s, which its next does not", name, s.Line, m.ID)
+				}
+			}
+		}
+		if named != 2 { // the recurring item in 3.5, the 3.6 upgrade guide
+			t.Errorf("%s: %d before_upgrade items named, want 2", name, named)
+		}
+	}
+}

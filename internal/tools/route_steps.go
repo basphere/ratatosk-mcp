@@ -229,9 +229,7 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 		}
 	}
 	cited := map[string][]string{}
-	docOf := map[string]*release.Doc{}
 	for _, d := range in.docs {
-		docOf[d.Version] = d
 		for _, c := range d.Changes {
 			cited[c.ID] = advisory.RecognisedIDs(c.Advisories)
 		}
@@ -242,16 +240,13 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 			// also_in naming the others; it is read in the step where the range
 			// first meets it. At the newest it sat in a later step than the
 			// first upgrade that asks for it (review, 2026-11-23). Its id is the
-			// one it has on that release. A step of several releases the item
-			// recurs on answers its next with the newest one's id instead, so
-			// the two differ there (4 of the 10 items of containerd v2.2.9 and
-			// Argo CD v3.4.4, 2026-11-23); both name the item.
+			// one the step's next answers with (itemIDInStep).
 			v := earliestOf(it.Version, it.AlsoIn)
 			if noVersion(v) {
 				return nil
 			}
 			s := stepOf(v)
-			s.MustRead = append(s.MustRead, mustReadLine{ID: itemIDOn(it, docOf[v]), Title: it.Title, Why: []string{"before_upgrade"}})
+			s.MustRead = append(s.MustRead, mustReadLine{ID: itemIDInStep(it, in.docs, v), Title: it.Title, Why: []string{"before_upgrade"}})
 		}
 	}
 	for _, e := range stepEntries(in.b) {
@@ -360,30 +355,40 @@ func earliestOf(v string, others []string) string {
 	return best
 }
 
-// itemIDOn is the id a before_upgrade item has on release d: the item of the
-// same section with the same fingerprint after "#", as the briefing groups the
-// items that recur. It is read from the document, never composed; without the
-// document, or when it has no such item, the briefing's id stays.
-func itemIDOn(it briefing.UpgradeItem, d *release.Doc) string {
+// itemIDInStep is the id a before_upgrade item has in the step of release v:
+// on the last of docs, in their order, that is of v's minor and has the item
+// — the same section and the same fingerprint after "#", as the briefing
+// groups the items that recur. The step's next briefs those releases, and a
+// briefing lists a recurring item at the last one, so the two ids are the
+// same. It is read from a document, never composed; when none has the item the
+// briefing's id stays.
+func itemIDInStep(it briefing.UpgradeItem, docs []*release.Doc, v string) string {
 	_, fp, ok := strings.Cut(it.ID, "#")
-	if d == nil || d.Version == it.Version || !ok || fp == "" {
+	if !ok || fp == "" {
 		return it.ID
 	}
-	var items []release.Item
-	switch it.Section {
-	case "prerequisites":
-		items = d.BeforeUpgrade.Prerequisites
-	case "known_issues":
-		items = d.BeforeUpgrade.KnownIssues
-	case "upgrade_guide":
-		items = d.BeforeUpgrade.UpgradeGuide
-	}
-	for _, x := range items {
-		if _, f, ok := strings.Cut(x.ID, "#"); ok && f == fp {
-			return x.ID
+	minor, _, _ := minorOf(v)
+	id := it.ID
+	for _, d := range docs {
+		if m, _, _ := minorOf(d.Version); m != minor {
+			continue
+		}
+		var items []release.Item
+		switch it.Section {
+		case "prerequisites":
+			items = d.BeforeUpgrade.Prerequisites
+		case "known_issues":
+			items = d.BeforeUpgrade.KnownIssues
+		case "upgrade_guide":
+			items = d.BeforeUpgrade.UpgradeGuide
+		}
+		for _, x := range items {
+			if _, f, ok := strings.Cut(x.ID, "#"); ok && f == fp {
+				id = x.ID
+			}
 		}
 	}
-	return it.ID
+	return id
 }
 
 func byVersion(a, b string) int {

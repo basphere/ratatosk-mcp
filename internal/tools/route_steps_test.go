@@ -239,14 +239,14 @@ func TestStepsPutARecurringBeforeUpgradeItemWhereItFirstAppears(t *testing.T) {
 }
 
 // A recurring before_upgrade item put in the step where it first appears
-// carries the id it has on that release, found in the range's documents as the
+// carries the id it has on the newest of the step's releases that have it —
+// the id the step's next answers with, as a briefing lists a recurring item at
+// the newest release of its range — found in the range's documents as the
 // briefing groups recurring items (the section and the fingerprint after "#");
-// verify reads by it. Without that release's document it keeps the briefing's
-// id. The step's next names it by the newest of the step's releases it is on,
-// so the two ids are the same only when the step holds one of them. containerd's step 2.2
-// named containerd@v2.4.2#8989b49f where its next answered
-// containerd@v2.2.10#8989b49f (review, 2026-11-23).
-func TestStepsGiveARecurringItemTheIdOfItsFirstRelease(t *testing.T) {
+// verify reads by it. Without such a document it keeps the briefing's id. The
+// id of the item's first release differed from next's on 4 of 10 items of
+// containerd v2.2.9 and Argo CD v3.4.4 (2026-11-23).
+func TestStepsGiveARecurringItemTheIdItsNextAnswersWith(t *testing.T) {
 	doc := func(v string, guide ...string) *release.Doc {
 		d := &release.Doc{Version: v}
 		for _, id := range guide {
@@ -256,13 +256,16 @@ func TestStepsGiveARecurringItemTheIdOfItsFirstRelease(t *testing.T) {
 		return d
 	}
 	b := &briefing.Briefing{
-		Releases: briefedRange("v1.0.1", "v1.1.0", "v1.2.0"),
+		Releases: briefedRange("v1.0.1", "v1.0.2", "v1.0.3", "v1.1.0", "v1.2.0"),
 		Upgrade: &[]briefing.UpgradeItem{
-			{Version: "v1.2.0", Section: "upgrade_guide", ID: "p@v1.2.0#runc", Title: "runc", AlsoIn: []string{"v1.0.1", "v1.1.0"}},
+			{Version: "v1.2.0", Section: "upgrade_guide", ID: "p@v1.2.0#runc", Title: "runc", AlsoIn: []string{"v1.0.1", "v1.0.2", "v1.1.0"}},
 			{Version: "v1.2.0", Section: "upgrade_guide", ID: "p@v1.2.0#cni", Title: "cni", AlsoIn: []string{"v1.1.0"}},
 		},
 	}
-	docs := []*release.Doc{doc("v1.0.1", "p@v1.0.1#other", "p@v1.0.1#runc"), doc("v1.2.0", "p@v1.2.0#runc", "p@v1.2.0#cni")}
+	docs := []*release.Doc{
+		doc("v1.0.1", "p@v1.0.1#runc"), doc("v1.0.2", "p@v1.0.2#other", "p@v1.0.2#runc"), doc("v1.0.3"), // not on v1.0.3
+		doc("v1.2.0", "p@v1.2.0#runc", "p@v1.2.0#cni"),
+	}
 	steps := upgradeSteps(stepsIn{project: "p", b: b, docs: docs})
 	var got []string
 	for _, s := range steps {
@@ -274,7 +277,7 @@ func TestStepsGiveARecurringItemTheIdOfItsFirstRelease(t *testing.T) {
 		got = append(got, fmt.Sprintf("%s %v %s", s.Line, ids, v))
 	}
 	want := []string{
-		`1.0 [p@v1.0.1#runc] {"tool":"get_release","arguments":{"project":"p","changes":["p@v1.0.1#runc"]}}`,
+		`1.0 [p@v1.0.2#runc] {"tool":"get_release","arguments":{"project":"p","changes":["p@v1.0.2#runc"]}}`,
 		`1.1 [p@v1.2.0#cni] {"tool":"get_release","arguments":{"project":"p","changes":["p@v1.2.0#cni"]}}`, // no v1.1.0 document
 		`1.2 [] null`,
 	}
