@@ -44,6 +44,13 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   `serverInfo`, an agent sees only tool responses and previously could not
   tell which server version answered when an older server deployment remained
   in the same cluster alongside a new one (2026-11-21).
+- **Hosted endpoint in the official registry manifest**: adds a `remotes` entry
+  to `server.json` with transport `streamable-http` and URL
+  `https://ratatosk.io/mcp`. The registered versions `0.10.0`, `1.0.0`,
+  `1.1.0`, and `1.2.0` previously listed only the
+  `ghcr.io/basphere/ratatosk-mcp` container image run over `stdio`, with no
+  `remotes`. Registry-only clients therefore could not find the hosted server,
+  which requires no installation or key (2026-11-22).
 
 ## [1.2.0] — 2026-11-21
 
