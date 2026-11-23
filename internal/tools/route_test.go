@@ -8,12 +8,15 @@ package tools
 import (
 	"encoding/json"
 	"fmt"
+	"net/http/httptest"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/basphere/ratatosk-mcp/internal/briefing"
 	"github.com/basphere/ratatosk-mcp/internal/release"
+	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
 )
 
 func topKeys(t *testing.T, text string) []string {
@@ -275,5 +278,29 @@ func TestRouteNamesImportantFixesWhenKindsNamesThem(t *testing.T) {
 	}
 	if len(steps) != 2 || totals["important_fixes"] == 0 || counted != totals["important_fixes"] || named != counted {
 		t.Errorf("%d steps; totals %v, counted %d, named %d", len(steps), totals, counted, named)
+	}
+}
+
+// A release still being analyzed is named in its step's processing, and
+// read_first says what that means; a step without one has no processing field
+// (review, 2026-11-23).
+func TestRouteNamesReleasesStillProcessing(t *testing.T) {
+	f := upstreamtest.NewEtcd()
+	f.Docs["v3.5.32"] = strings.Replace(f.Docs["v3.5.32"], `"processing":false`, `"processing":true`, 1)
+	h := withAPI(t, httptest.NewServer(f.Handler(t)))
+	_, route := runUpgrade(t, h, checkUpgradeArgs{Project: "etcd", From: "v3.5.30"})
+	var steps []upgradeStep
+	topField(t, route, "steps", &steps)
+	if len(steps) != 2 || !slices.Equal(steps[0].Processing, []string{"v3.5.32"}) || steps[1].Processing != nil {
+		t.Errorf("steps %+v", steps)
+	}
+	if strings.Count(route, `"processing"`) != 1 || !strings.Contains(readFirst, "processing") {
+		t.Errorf("processing on a step without one, or read_first does not say what it means: %.400s", route)
+	}
+
+	// Folded steps keep every release still processing, oldest first.
+	b := &briefing.Briefing{Releases: &[]briefing.RangeRelease{{Version: "v1.1.0", Processing: true}, {Version: "v1.0.1"}, {Version: "v1.0.0", Processing: true}}}
+	if s := upgradeSteps(stepsIn{project: "p", b: b}); len(s) != 1 || !slices.Equal(s[0].Processing, []string{"v1.0.0", "v1.1.0"}) {
+		t.Errorf("folded: %+v", s)
 	}
 }

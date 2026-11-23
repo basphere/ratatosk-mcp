@@ -65,7 +65,8 @@ const readFirst = "This answer is a route: for each upgrade step it names every 
 	"details. Call a step's next to get its changes in full - who they affect and what to do - and read the evidence " +
 	"of a change with verify (or get_release) before you report it. Do not judge a change from its title alone: a " +
 	"change whose step you did not open is reported as \"not inspected\", never as no impact. If you fill a range " +
-	"listed in not_read from another source, name that source."
+	"listed in not_read from another source, name that source. A step with processing has releases still being " +
+	"analyzed and may name fewer changes than it will."
 
 // readFirstStack is added to a check_stack route.
 const readFirstStack = " A component with answer_kind \"briefing\" has one step: all of its change lines are " +

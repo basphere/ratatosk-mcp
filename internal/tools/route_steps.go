@@ -42,8 +42,12 @@ var stepKinds = []string{"security", "breaking", "deprecations"}
 
 // upgradeStep is one step of a route.
 type upgradeStep struct {
-	Line          string         `json:"line"`
-	Releases      string         `json:"releases"`
+	Line     string `json:"line"`
+	Releases string `json:"releases"`
+	// Processing names the step's releases still being analyzed, oldest
+	// first: their changes may not all be named yet. The briefing marks each
+	// such release; a route had dropped the mark (review, 2026-11-23).
+	Processing    []string       `json:"processing,omitempty"`
 	MajorBoundary bool           `json:"major_boundary,omitempty"` // a major other than the step before (or the version it starts above)
 	Counts        map[string]int `json:"counts"`
 	// Advisories is left out when the step's changes cite none: an empty
@@ -238,6 +242,9 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 		for _, r := range *in.b.Releases {
 			s := stepOf(r.Version)
 			s.versions = append(s.versions, r.Version)
+			if r.Processing {
+				s.Processing = append(s.Processing, r.Version)
+			}
 		}
 	}
 	cited := map[string][]string{}
@@ -289,9 +296,8 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 	var steps []upgradeStep
 	for _, m := range order {
 		s := byMinor[m]
-		slices.SortFunc(s.versions, func(a, b string) int {
-			return version.Compare(version.NormalizeVersion(a), version.NormalizeVersion(b))
-		})
+		slices.SortFunc(s.versions, byVersion)
+		slices.SortFunc(s.Processing, byVersion)
 		steps = append(steps, *s)
 	}
 	steps = foldSteps(steps)
@@ -344,6 +350,10 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 	return steps
 }
 
+func byVersion(a, b string) int {
+	return version.Compare(version.NormalizeVersion(a), version.NormalizeVersion(b))
+}
+
 func lastVersion(s *upgradeStep) string {
 	if len(s.versions) == 0 {
 		return ""
@@ -376,6 +386,7 @@ func foldSteps(steps []upgradeStep) []upgradeStep {
 			if len(last.MustRead) == 0 && len(s.MustRead) == 0 && last.major == s.major {
 				last.minors = append(last.minors, s.minors...)
 				last.versions = append(last.versions, s.versions...)
+				last.Processing = append(last.Processing, s.Processing...)
 				last.Lines = append(last.Lines, s.Lines...)
 				for k, v := range s.Counts {
 					last.Counts[k] += v
