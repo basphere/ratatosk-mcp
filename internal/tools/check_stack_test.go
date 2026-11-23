@@ -290,7 +290,7 @@ func TestFetchDocsStopsAfterTheFirstError(t *testing.T) {
 		}
 	})))
 	start := time.Now()
-	_, err := h.fetchDocs(context.Background(), f.Rows, "")
+	_, err := h.fetchDocs(context.Background(), f.Rows)
 	if err == nil {
 		t.Fatal("a 500 on one document must fail the fetch")
 	}
@@ -311,7 +311,7 @@ func TestFetchDocsReportsTheCallersDeadline(t *testing.T) {
 	h := withAPI(t, httptest.NewServer(f.Handler(t)))
 	ctx, cancel := context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
 	defer cancel()
-	docs, err := h.fetchDocs(ctx, f.Rows, "")
+	docs, err := h.fetchDocs(ctx, f.Rows)
 	if err == nil {
 		t.Fatalf("an expired deadline returned %d documents and no error", len(docs))
 	}

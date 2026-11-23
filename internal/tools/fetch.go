@@ -66,7 +66,7 @@ func fetchSet(rows []release.Row) []release.Row {
 // fetchDocs reads release documents through the cache, a few at a time. A 404
 // is "not on record" (the release list and the documents come from different
 // moments) and is skipped; anything else is an error.
-func (h *handlers) fetchDocs(ctx context.Context, rows []release.Row, lang string) (map[string]*release.Doc, error) {
+func (h *handlers) fetchDocs(ctx context.Context, rows []release.Row) (map[string]*release.Doc, error) {
 	out := make(map[string]*release.Doc, len(rows))
 	var mu sync.Mutex
 	var firstErr error
@@ -85,7 +85,7 @@ func (h *handlers) fetchDocs(ctx context.Context, rows []release.Row, lang strin
 		go func(r release.Row) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			b, err := h.api.ReleaseRaw(ctx, r.Project, r.Version, lang, true)
+			b, err := h.api.ReleaseRaw(ctx, r.Project, r.Version, answerLang, true)
 			mu.Lock()
 			defer mu.Unlock()
 			if err != nil {
@@ -124,7 +124,7 @@ func (h *handlers) fetchDocs(ctx context.Context, rows []release.Row, lang strin
 // must not depend on the running version: when the branch's releases at or
 // below the running version reach past those, it settles less than this does
 // and says so in note. Otherwise the two settle the same.
-func (h *handlers) fixedOnBranch(ctx context.Context, rows []release.Row, from, lang string) (map[string]bool, error) {
+func (h *handlers) fixedOnBranch(ctx context.Context, rows []release.Row, from string) (map[string]bool, error) {
 	fromKey := version.NormalizeVersion(from)
 	if len(fromKey) < 2 {
 		return nil, nil // no branch to read: nothing is settled, as before 1.2.0
@@ -140,7 +140,7 @@ func (h *handlers) fixedOnBranch(ctx context.Context, rows []release.Row, from, 
 			break
 		}
 	}
-	docs, err := h.fetchDocs(ctx, branch, lang)
+	docs, err := h.fetchDocs(ctx, branch)
 	if err != nil {
 		return nil, err
 	}

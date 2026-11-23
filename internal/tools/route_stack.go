@@ -65,12 +65,14 @@ func releaseNotesPage(docs []*release.Doc) string {
 
 // routeComponent is one check_stack component as a route.
 func routeComponent(rep *componentReport, steps []upgradeStep, kinds map[string]bool) json.RawMessage {
-	// The range's documents first, then the rest the call read, in version
+	// The range's documents first, then the others the call read, in version
 	// order: any of them names the repository.
 	docs := slices.Clone(rep.rangeDocs)
 	var rest []*release.Doc
 	for _, d := range rep.allDocs {
-		rest = append(rest, d)
+		if !slices.Contains(rep.rangeDocs, d) {
+			rest = append(rest, d)
+		}
 	}
 	slices.SortFunc(rest, func(a, b *release.Doc) int {
 		return version.Compare(version.NormalizeVersion(a.Version), version.NormalizeVersion(b.Version))

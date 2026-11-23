@@ -83,7 +83,7 @@ func (h *handlers) getReleaseTool(ctx context.Context, req *mcp.CallToolRequest,
 	// releases they name are read — the latest alone answered every id of
 	// another release as not found (independent review, 2026-11-20).
 	if ver == "" && len(ids) > 0 {
-		return h.pickedReleases(ctx, project, ids, answerLang)
+		return h.pickedReleases(ctx, project, ids)
 	}
 	if ver == "" {
 		// "Latest" is decided in one place, the API: /v2/projects carries each
@@ -210,7 +210,7 @@ type pickedRelease struct {
 // named entries. Ids of another project, ids that are not ids, and ids a
 // release does not have (or a release that is not on record) are listed in
 // not_found.
-func (h *handlers) pickedReleases(ctx context.Context, project string, ids []string, lang string) (*mcp.CallToolResult, any, error) {
+func (h *handlers) pickedReleases(ctx context.Context, project string, ids []string) (*mcp.CallToolResult, any, error) {
 	var order []string
 	byRelease := map[string][]string{}
 	notFound := []string{}
@@ -230,7 +230,7 @@ func (h *handlers) pickedReleases(ctx context.Context, project string, ids []str
 	}
 	releases := []pickedRelease{}
 	for _, v := range order {
-		raw, err := h.api.ReleaseRaw(ctx, project, v, lang, false)
+		raw, err := h.api.ReleaseRaw(ctx, project, v, answerLang, false)
 		if he, ok := err.(*upstream.HTTPError); ok && he.Status == 404 {
 			for _, id := range byRelease[v] {
 				notFound = append(notFound, truncate(id, 120))

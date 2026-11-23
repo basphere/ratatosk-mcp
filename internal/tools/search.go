@@ -80,7 +80,7 @@ func (h *handlers) searchTool(ctx context.Context, req *mcp.CallToolRequest, arg
 	if !isJSONObject(raw) {
 		return rawResult(raw), nil, nil
 	}
-	b, err := h.searchAnswer(ctx, raw, project, q, answerLang)
+	b, err := h.searchAnswer(ctx, raw, project, q)
 	if err != nil {
 		return errResult(fmt.Errorf("/v2/search: %w", err)), nil, nil
 	}
@@ -91,9 +91,9 @@ func (h *handlers) searchTool(ctx context.Context, req *mcp.CallToolRequest, arg
 // matches (the spec, revised 2026-11-20): a document is up to 870 KB (cilium
 // v1.20.0), the hosted endpoint shares one upstream allowance among its
 // callers, and the first build read up to 40 documents a call (20 releases,
-// in lang and in English). Each release is read once, in lang. A release past
-// the bound, or one that could not be read, carries no matches and is counted
-// in matches_not_computed. "BackendTLSPolicy" with project cilium matched 4
+// in the asked language and in English). Each release is read once, in
+// English. A release past the bound, or one that could not be read, carries
+// no matches and is counted in matches_not_computed. "BackendTLSPolicy" with project cilium matched 4
 // releases on 2026-11-20; without project, 11. If /v2/search ever names every
 // matching item itself, this reading goes.
 const searchMatchReleases = 8
@@ -209,23 +209,19 @@ func (d matchDoc) items() []matchItem {
 }
 
 // releaseMatches lists the items of one release that match q. The release is
-// read in lang only (one document per release — searchMatchReleases): titles
-// and bodies in that language, evidence quotes and advisory ids as published.
-// The website's index holds every language, so a query in English text can
-// match a release here on its English title alone; the server's own matched
-// item is always among the matches, so such a release still lists that one.
-func (h *handlers) releaseMatches(ctx context.Context, project, ver, lang string, find func(string) bool, matched *searchMatch) ([]searchMatch, error) {
-	read := func(l string) (matchDoc, error) {
-		var d matchDoc
-		b, err := h.api.ReleaseRaw(ctx, project, ver, l, true)
-		if err != nil {
-			return d, err
-		}
-		err = json.Unmarshal(b, &d)
-		return d, err
-	}
-	doc, err := read(lang)
+// read once, in English (one document per release — searchMatchReleases):
+// titles and bodies in English, evidence quotes and advisory ids as published.
+// The website's index holds every language, so a query in Korean or Japanese
+// text can match a release there on a title in that language alone; the
+// server's own matched item is always among the matches, so such a release
+// still lists that one.
+func (h *handlers) releaseMatches(ctx context.Context, project, ver string, find func(string) bool, matched *searchMatch) ([]searchMatch, error) {
+	var doc matchDoc
+	b, err := h.api.ReleaseRaw(ctx, project, ver, answerLang, true)
 	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
 		return nil, err
 	}
 	var out []searchMatch
@@ -261,7 +257,7 @@ func (h *handlers) releaseMatches(ctx context.Context, project, ver, lang string
 // and adds matches to the in_analysis releases matched through an item, and
 // matches_not_computed, first, for those that carry none. Everything else is
 // passed on as received.
-func (h *handlers) searchAnswer(ctx context.Context, raw []byte, project, q, lang string) ([]byte, error) {
+func (h *handlers) searchAnswer(ctx context.Context, raw []byte, project, q string) ([]byte, error) {
 	fields, err := readObject(raw)
 	if err != nil {
 		return nil, err
@@ -329,7 +325,7 @@ func (h *handlers) searchAnswer(ctx context.Context, raw []byte, project, q, lan
 				go func(jb job) {
 					defer wg.Done()
 					defer func() { <-sem }()
-					m, err := h.releaseMatches(ctx, jb.h.Project, jb.h.Version, lang, find, jb.h.Matched)
+					m, err := h.releaseMatches(ctx, jb.h.Project, jb.h.Version, find, jb.h.Matched)
 					if err != nil {
 						return // that release carries no matches; the row itself is still answered
 					}

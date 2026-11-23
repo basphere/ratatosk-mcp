@@ -186,7 +186,7 @@ func (h *handlers) checkUpgradeTool(ctx context.Context, req *mcp.CallToolReques
 	fromKey := version.NormalizeVersion(up.From)
 	fixed, err := map[string]bool(nil), listErr
 	if err == nil {
-		fixed, err = h.fixedOnBranch(ctx, rows, up.From, answerLang)
+		fixed, err = h.fixedOnBranch(ctx, rows, up.From)
 	}
 	if err != nil {
 		fixed = nil

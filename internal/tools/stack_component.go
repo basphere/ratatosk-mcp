@@ -30,7 +30,6 @@ type stackRun struct {
 	// times: how often each component was listed in the call.
 	times map[stackComponent]int
 	full  bool
-	lang  string
 	kinds map[string]bool
 
 	reports   []componentReport
@@ -88,7 +87,7 @@ func (r *stackRun) check(ctx context.Context, comp stackComponent) error {
 			overBudget = true
 		} else {
 			r.spent += len(set)
-			docs, docsErr = r.h.fetchDocs(ctx, set, r.lang)
+			docs, docsErr = r.h.fetchDocs(ctx, set)
 		}
 	}
 	if version.NormalizeVersion(comp.Version) == nil {

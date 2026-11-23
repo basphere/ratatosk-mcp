@@ -217,7 +217,7 @@ func (h *handlers) checkStackTool(ctx context.Context, req *mcp.CallToolRequest,
 		}
 	}
 
-	run := &stackRun{h: h, slugs: slugs, aliasOf: aliasOf, times: times, full: full, lang: answerLang, kinds: kindSet,
+	run := &stackRun{h: h, slugs: slugs, aliasOf: aliasOf, times: times, full: full, kinds: kindSet,
 		reports: make([]componentReport, 0, len(comps))}
 	for _, comp := range comps {
 		if err := run.check(ctx, comp); err != nil {
