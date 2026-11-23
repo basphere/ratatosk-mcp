@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/basphere/ratatosk-mcp/internal/briefing"
 	"github.com/basphere/ratatosk-mcp/internal/release"
 	"github.com/basphere/ratatosk-mcp/internal/upstream/upstreamtest"
@@ -327,5 +329,28 @@ func TestRouteSaysHowToReadLaterEvents(t *testing.T) {
 	}
 	if strings.Contains(read, "in full") {
 		t.Error("read_first still says next gives a step's changes in full")
+	}
+}
+
+// A change on a release without a version would be in no step while totals
+// counts it: the range is answered as the briefing, opened as a range of one
+// step is, so no change is left out unsaid (review, 2026-11-23).
+func TestRouteGivesWayToTheBriefingWhenAChangeHasNoVersion(t *testing.T) {
+	f := upstreamtest.NewEtcd()
+	f.Docs["v3.5.32"] = upstreamtest.Doc("", "", "",
+		`[{"id":"etcd@v3.5.32#z","kind":"security","title":"fix z","body":null,"severity":"high","advisories":["GHSA-zzzz"],"affects":{"text":"","status":"not_stated"}}]`, "")
+	h := withAPI(t, httptest.NewServer(f.Handler(t)))
+	for name, call := range map[string]func(h *handlers) (*mcp.CallToolResult, any, error){
+		"check_upgrade": upgradeCall(checkUpgradeArgs{Project: "etcd", From: "v3.5.30"}),
+		"check_stack":   stackCall(checkStackArgs{Components: []stackComponent{{Project: "etcd", Version: "v3.5.30"}}}),
+	} {
+		res, _, err := call(h)
+		if err != nil || res.IsError {
+			t.Fatalf("%s: %v %+v", name, err, res)
+		}
+		text := res.Content[0].(*mcp.TextContent).Text
+		if !strings.HasPrefix(text, `{"answer_kind":"briefing","report_ready":false,"not_included":`) || !strings.Contains(text, `"etcd@v3.5.32#z"`) {
+			t.Errorf("%s: %.400s", name, text)
+		}
 	}
 }

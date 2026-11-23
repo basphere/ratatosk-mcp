@@ -26,8 +26,8 @@ type Sparse struct {
 // every release and no warnings: from v3.5.30 the change on v3.6.8 is one the
 // running branch already fixed, which is the path that failed. The last shape
 // is a range of two steps, so check_stack and check_upgrade answer it with a
-// route, and one of its releases has no version: such a release made a step
-// named "" (review, 2026-11-23).
+// route, and one of its releases has no version and nothing in it: such a
+// release made a step named "" (review, 2026-11-23).
 func SparseShapes() []Sparse {
 	nullDoc := `{"project":null,"version":null,"released_at":null,"url":null,"counts":null,"warnings":null,"processing":null,` +
 		`"before_upgrade":null,"changes":null,"later":null}`
@@ -40,7 +40,7 @@ func SparseShapes() []Sparse {
 			`{"id":null,"kind":"breaking","affects":{"text":null,"status":null},"no_downgrade":{"text":null,"status":null},`+
 			`"removed_in":{"text":null,"status":"stated"}},null],"later":[null]}`, v)
 	}
-	versionless := strings.Replace(nullItems("-"), `"version":"-"`, `"version":null`, 1)
+	versionless := `{"version":null,"warnings":null,"before_upgrade":null,"changes":null,"later":null}`
 	return []Sparse{
 		{Name: "null bodies", Projects: `null`, Releases: `null`, Upgrade: `null`, Search: `null`,
 			Doc: func(string) string { return `null` }},

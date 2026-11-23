@@ -176,7 +176,9 @@ func minorOf(v string) (minor string, major int, key []int) {
 }
 
 // upgradeSteps computes the steps of a briefed range: one per minor, oldest
-// first, neighbouring steps with nothing to read folded into one.
+// first, neighbouring steps with nothing to read folded into one. It is nil
+// when a change or a before_upgrade item of the briefing has no version: that
+// one could be in no step, and the range is answered as its briefing instead.
 func upgradeSteps(in stepsIn) []upgradeStep {
 	covered := map[string]bool{}
 	for _, k := range stepKinds {
@@ -193,9 +195,12 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 	byMinor := map[string]*upgradeStep{}
 	keys := map[string][]int{}
 	var order []string
-	// A release without a version is in no step, nor is anything read from
-	// it: it made a step named "" (review, 2026-11-23). /v2 sends a version on
-	// every release; this is a server that does not.
+	// A release without a version is in no step: it made a step named ""
+	// (review, 2026-11-23). What was read from it is in no step either, and
+	// a route would leave it out unsaid while totals counts it, so a change or
+	// a before_upgrade item without a version gives no steps at all (review,
+	// 2026-11-23). /v2 sends a version on every release; this is a server that
+	// does not.
 	noVersion := func(v string) bool { return strings.TrimSpace(v) == "" }
 	stepOf := func(v string) *upgradeStep {
 		m, major, key := minorOf(v)
@@ -238,7 +243,7 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 			// the briefing's: it is the one the evidence is read by.
 			v := earliestOf(it.Version, it.AlsoIn)
 			if noVersion(v) {
-				continue
+				return nil
 			}
 			s := stepOf(v)
 			s.MustRead = append(s.MustRead, mustReadLine{ID: it.ID, Title: it.Title, Why: []string{"before_upgrade"}})
@@ -246,7 +251,7 @@ func upgradeSteps(in stepsIn) []upgradeStep {
 	}
 	for _, e := range stepEntries(in.b) {
 		if noVersion(e.version) {
-			continue
+			return nil
 		}
 		s := stepOf(e.version)
 		if covered[e.kind] {
