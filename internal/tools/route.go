@@ -64,9 +64,13 @@ var (
 			"top only.")
 )
 
-// notIncluded is what a briefing does not carry, said in the answer.
-const notIncluded = "evidence quotes, action details and workarounds are not in this answer; " +
-	"read them with the verify calls before you report a change"
+// notIncluded is what a briefing does not carry, said in the answer. The
+// measured text sent the reader to verify calls, which a briefing has none of,
+// and said action details and workarounds were missing, which it carries, the
+// workarounds cut (review, 2026-11-23).
+const notIncluded = "evidence quotes are not in this answer, except on a before_upgrade item without a body, and " +
+	"bodies and workarounds may be cut: before you report a change, read it whole with get_release(project, " +
+	"changes:[id, …])"
 
 // readFirst opens a route. The measured text said next gets a step's changes
 // "in full"; it answers a briefing, with capped bodies (review, 2026-11-23).

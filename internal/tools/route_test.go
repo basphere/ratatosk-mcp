@@ -139,6 +139,15 @@ func TestRouteAnswersOneStepAsABriefing(t *testing.T) {
 	if !slices.Equal(topKeys(t, one)[:3], []string{"answer_kind", "report_ready", "not_included"}) || string(writeObject(fo[3:])) != string(writeObject(fb)) {
 		t.Errorf("one step: %.300s", one)
 	}
+	// What the briefing does not carry, as it is: it has no verify calls, and
+	// it does carry action text, some evidence and cut workarounds (review,
+	// 2026-11-23).
+	var not string
+	topField(t, one, "not_included", &not)
+	if strings.Contains(not, "verify") || !strings.Contains(not, "get_release(project, changes:[id, …])") ||
+		!strings.Contains(not, "except on a before_upgrade item without a body") {
+		t.Errorf("not_included %q", not)
+	}
 }
 
 // Every counted change of a step is named by title — the ones with a mark in
