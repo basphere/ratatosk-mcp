@@ -5,8 +5,62 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
 
 ## [Unreleased]
 
+### Changed
+
+- **Pass `detail: "brief"` to receive the previous briefing response.**
+  Calling `check_stack` or `check_upgrade` without `detail` now returns a
+  route instead of a briefing. A route groups the range into minor-version
+  steps, listing every security, breaking, and deprecation change by title,
+  along with pre-filled `next` calls (to open a step as a briefing) and
+  `verify` calls (to read evidence). When a range covers only one step, a
+  briefing is returned with `answer_kind`, `report_ready`, and `not_included`
+  at the front; in `check_stack`, if at least one component has two or more
+  steps, the top-level answer is a route and single-step components appear in
+  place as briefings. Long briefings were too large to read in one pass
+  (measured on 2026-11-23 in English: kubernetes v1.28.6 to v1.37.2 was about
+  100,000 characters as a briefing versus about 38,500 characters as a route,
+  and five older components were about 341,000 characters versus about 124,000
+  characters), and alphabetical key ordering placed `hint` after the change
+  lists.
+- **Fixed top-level field order in briefings.** `check_upgrade` briefings now
+  emit top-level fields in this order (when present): `hint`, `summary`,
+  `gaps`, `note`, `server_version`, `project`, `from`, `to`,
+  `version_read_as`, `privacy`, `before_upgrade`, `later_for_from`,
+  `later_in_range`, `excluded_on_branch`, `changes`, `changes_omitted`,
+  `changes_more`, `releases`. `check_stack` briefings emit `hint`,
+  `server_version`, `privacy`, `components`, `could_not_check`. Previously,
+  keys were serialized alphabetically, placing `hint` after the change lists.
+  The `evidence` and `server_version` fields are new, and the wording of
+  `hint` has changed. Other field values are unchanged.
+- **Updated tool descriptions for `check_stack` and `check_upgrade`.** Both
+  descriptions now open with how to read the first response, and the `detail`
+  parameter description states that omitting it returns a route.
+
+### Removed
+
+- **`lang` parameter removed from five tools (`check_stack`, `check_upgrade`,
+  `get_release`, `list_releases`, `search`).** All tool responses are now
+  returned in English only, with quoted release-note passages kept in their
+  original language. **Clients that pass `lang` do not need to change**: the
+  five tools ignore `lang` without error regardless of value and return the
+  same response as when omitted, and the previous invalid-value error
+  (`lang must be "en", "ko" or "ja"`) is no longer returned. `list_projects`
+  never accepted `lang` and continues to reject it. Links (`url`) returned by
+  `list_releases` now point to English pages instead of varying by `lang`. The
+  REST API `lang` parameter is unaffected. Translation into another language
+  is left to the calling agent.
+
 ### Added
 
+- **Route response fields for `check_stack` and `check_upgrade`.** Added
+  top-level and component fields `answer_kind`, `report_ready`, `read_first`,
+  `not_included`, `not_read` (skipped version spans plus the project's GitHub
+  release-notes URL when release notes are on GitHub), `totals`, `shown_here`,
+  and `steps`, with per-step fields `line`, `releases`, `processing`,
+  `major_boundary`, `counts`, `advisories`, `must_read`, `lines`, `next`, and
+  `verify`. The route uses these fields to divide the range into steps and let
+  callers open only the steps they need to read. Full field definitions are in
+  the "How to read a route" section of `docs/tools.en.md`.
 - **`same_minor` at the top level of `check_stack`**: setting `true` at the
   top level applies `same_minor` to every component, stopping each range at
   the newest release of the running minor (v1.36.5 to the newest v1.36.x). A
@@ -36,14 +90,15 @@ Helm chart `appVersion`; see `docs/` for the release procedure.
   extra `get_release` call. Across the five-component stack above, this adds
   about 2,000 characters to the response (from 196,051 to 198,029 characters).
 - **`server_version` at the top level of `check_stack` and in a
-  `check_upgrade` briefing**: carries the version of the ratatosk-mcp server
-  that produced the response (such as `1.3.0` on a released image, or `dev` on
-  a non-release build), present in `check_stack` responses (`brief` and
-  `full`) and in `check_upgrade` briefings, and absent when `check_upgrade` is
-  called with `detail: "full"`. Although the protocol handshake exposes
-  `serverInfo`, an agent sees only tool responses and previously could not
-  tell which server version answered when an older server deployment remained
-  in the same cluster alongside a new one (2026-11-21).
+  `check_upgrade` route or briefing**: carries the version of the ratatosk-mcp
+  server that produced the response (such as `1.3.0` on a released image, or
+  `dev` on a non-release build), present in all `check_stack` responses
+  (route, `brief`, and `full`) and in `check_upgrade` routes and briefings,
+  and absent when `check_upgrade` is called with `detail: "full"`. Although
+  the protocol handshake exposes `serverInfo`, an agent sees only tool
+  responses and previously could not tell which server version answered when
+  an older server deployment remained in the same cluster alongside a new one
+  (2026-11-21).
 - **Hosted endpoint in the official registry manifest**: adds a `remotes` entry
   to `server.json` with transport `streamable-http` and URL
   `https://ratatosk.io/mcp`. The registered versions `0.10.0`, `1.0.0`,

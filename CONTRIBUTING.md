@@ -79,37 +79,41 @@ handlers for two tools) and required a separate cleanup pass to divide.
 
 ## Release number increment rules
 
-Release numbers follow `X.Y.Z`, and each position increments according to how
-the change affects clients:
+Release numbers follow `X.Y.Z` based on the scope of the change:
 
-- **Major (`X`)**: removing an existing tool, parameter, or response field, or
-  changing its name or meaning; changing a default value so the same call
-  returns a response with a different meaning; rejecting input that was
-  previously accepted.
-- **Minor (`Y`)**: adding a tool, parameter, response field, or newly accepted
-  input.
-- **Patch (`Z`)**: fixing behavior without adding surface area, including
-  values that differed from the documented meaning, server crashes, error
-  messages, wording in tool descriptions and `hint`, and security updates to
-  the server's own dependencies.
-- **No release**: documentation changes and test changes do not require a
-  release. Code cleanup does not require a release when it preserves existing
-  behavior.
+- **First number (`X`)**: incremented when the tool set is rebuilt from
+  scratch, such as when ratatosk.io changes its data classification and
+  requires redesigning the tools. `1.0.0` is an example (six tools released on
+  `/v2`).
+- **Second number (`Y`)**: incremented when tools change, including adding or
+  removing a tool or changing a tool's response shape. `1.3.0` is an example
+  (changing the default response of `check_stack` and `check_upgrade` to a
+  route).
+- **Third number (`Z`)**: incremented for adding, removing, or changing
+  parameters or response fields, and for smaller changes such as bug fixes,
+  documentation, tool descriptions, `hint` wording, and dependency security
+  updates in the server itself.
 
-When a release combines multiple kinds of changes, increment only the highest
-applicable position and reset lower positions to `0`. Shipping a change in
-meaning as a lower increment causes clients written against an older version
-to produce wrong answers without an error.
+When a release mixes changes at different levels, increment only the highest
+applicable number and reset lower numbers to `0` (any tool-level change
+increments `Y`; only parameter, fix, or documentation changes increment `Z`).
+
+The hosted endpoint (`/mcp`) always runs the latest release, while self-hosted
+container images are pinned by tag. Because the version number does not
+insulate callers from change, it serves as a signal of change magnitude; any
+removal or change is listed at the top of `CHANGELOG.md` under `Removed` or
+`Changed` together with what existing clients need to do.
 
 ## Version numbers in the docs
 
 - A parameter or response field added after 1.0.0 is marked in the tools
-  reference with the release it arrived in, all three numbers:
-  `Since 1.2.0.` (Korean `1.2.0부터.`, Japanese `1.2.0 以降。`). A minor
-  release (the second number) is what adds tools, parameters and fields, so
-  the third number of a `Since` mark is 0; a patch release fixes behaviour
-  and adds no mark. The docs test that refuses an older release number in
-  the docs lets these marks through and nothing else.
+  reference with the release it arrived in, all three numbers: `Since 1.2.0.`
+  (Korean `1.2.0부터.`, Japanese `1.2.0 以降。`). Parameters and response fields
+  may be introduced in any release. A `Since` mark gives the full three-part
+  number of the release that first introduced the parameter or field, which
+  may have a nonzero third part, such as `Since 1.3.1.` Releases that fix
+  behaviour do not get a mark. The docs test that refuses an older release
+  number in the docs lets these marks through and nothing else.
 - Prose does not name the current release ("the tools 1.2 provides"): it is
   wrong at the next release. The exceptions are the install commands and
   examples that pin an image tag, which the release procedure bumps, and

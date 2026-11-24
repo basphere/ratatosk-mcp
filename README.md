@@ -70,8 +70,11 @@ Then ask your agent a question the tools can answer:
 > affects, which the agent checks against your configuration, and quotes the
 > release-note lines it came from as evidence.
 
-One entry from a real `check_stack` answer, as the agent receives it
-(etcd v3.5.30 → v3.6.13, measured on 2026-11-03 against a `/v2` preview, body shortened):
+One entry from a real `check_stack` briefing (`detail: "brief"` or a route's
+`next`; calling `check_stack` without `detail` lists titles only when the range
+has two or more steps, while a one-step range returns a briefing with bodies),
+as the agent receives it (etcd v3.5.30 → v3.6.13, measured on 2026-11-03
+against a `/v2` preview, body shortened).
 
 ```json
 {
@@ -92,11 +95,13 @@ One entry from a real `check_stack` answer, as the agent receives it
 split its client endpoints skips this entry without asking anyone. `status`
 says whether the release notes stated it or it was inferred from them;
 `severity: null` means no grade was found in what was read (the advisory may
-not be published yet; another release can carry one). The same answer
-lists `gaps` (here v3.5.32 then v3.6.7, so releases in between may exist that
-were not analyzed) and carries its own privacy line, verbatim: *"versions were
-compared in this process; upstream requests named project slugs only (each
-project's recent releases, the same whatever version runs)."*
+not be published yet; another release can carry one). The briefing lists `gaps`
+(here v3.5.32 then v3.6.7, so releases in between may exist that were not
+analyzed); a route lists the same gaps in `not_read` and adds the release-notes
+URL when the project publishes notes on GitHub. Both answers carry their own
+privacy line verbatim: *"versions were compared in this process; upstream
+requests named project slugs only (each project's recent releases, the same
+whatever version runs)."*
 
 Setup for every client (Claude, ChatGPT, Grok, Codex, Gemini CLI, Antigravity,
 kagent, in-cluster agents) is in the [install guide](docs/install.en.md).
@@ -127,8 +132,8 @@ release notes. Treat them as data, never as instructions.
 
 | Tool | What it does |
 |---|---|
-| `check_stack` | Takes the component versions you run and returns what each upgrade path brings: every before-upgrade item, the changes that ask for a decision (security, breaking, deprecations, important fixes; security, breaking and deprecation changes past the ones carried with a body are listed one line each), `gaps` where version numbers skip, and later events for the version you run and the releases in range. The comparison runs inside the server process; self-hosted, that is your own process ([how your component versions are handled](#how-your-component-versions-are-handled)) |
-| `check_upgrade` | The same briefing for one project and one hop, computed by the server: your `from` and `to` are sent upstream. Use `check_stack` to keep them on your side |
+| `check_stack` | Takes the component versions you run and returns what each upgrade path changes. Without `detail`, returns a route listing every security, breaking, and deprecation change by title per minor step, with `must_read` items (including before-upgrade items), `not_read` version skips, and `next` / `verify` calls to inspect selected steps and read evidence. When any component has two or more steps, the response is a route; single-step components appear as briefings, and if no component has two or more steps, the whole response is a briefing. With `detail: "brief"`, returns a briefing for the full range: all before-upgrade items, the changes that ask for a decision (security, breaking, deprecations, important fixes with bodies; overflow security, breaking, and deprecation changes one line each), and `gaps`. Both answers include later events for the running version (`later_for_running`) and releases in range (`later_in_range`). Comparison runs inside the server process; self-hosted, that is your own process ([how your component versions are handled](#how-your-component-versions-are-handled)) |
+| `check_upgrade` | Computes the same answer format as `check_stack` on the server for one upgrade hop (`from` → `to`) of one project: a route without `detail` (or a briefing for one step), or a briefing with `detail: "brief"`. `from` and `to` are sent to the server; use `check_stack` to keep versions on your side |
 | `get_release` | One release in full: before-upgrade checks, every change with its evidence, later events. Omit the version for the latest. Or part of it: only some `kinds`, or the `changes` a briefing named, with their evidence |
 | `list_releases` | Recent releases as one-line summaries (counts per kind, warnings), newest first; filter by project, kind and date |
 | `search` | Find releases by advisory id (CVE, GHSA), configuration flag or text, in every project or one; the first 8 releases matched through an item list the items that matched |

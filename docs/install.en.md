@@ -492,8 +492,9 @@ docker run --rm -p 8080:8080 -e MCP_HTTP_ADDR=:8080 ghcr.io/basphere/ratatosk-mc
 Memory is the main constraint on concurrent checks. While a `check_stack`
 call runs, the server keeps the release documents it reads for that stack in
 memory. For a ten-component stack, measured memory use was about 30 MiB with
-`detail` at its default, `brief`, and about 50 MiB with `detail=full`, plus
-about 20 MiB for each additional full stack check running concurrently. The
+`detail: "brief"` and about 50 MiB with `detail=full`, plus about 20 MiB for
+each additional full stack check running concurrently. A call without `detail`
+also builds the same briefing first, then derives the route from it. The
 response cache adds up to `MCP_CACHE_MAX_MB` on top.
 
 In tests at the chart's 512Mi memory limit, 16 concurrent full stack checks

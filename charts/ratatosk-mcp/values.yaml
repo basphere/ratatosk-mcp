@@ -51,8 +51,9 @@ rateLimitPerMin: 0
 # 10 s for a slot, then gets 503 with Retry-After. The rate limit above bounds
 # each caller; this bounds the crowd, which is what keeps memory under the
 # limit when many callers arrive together. A stack-wide check_stack holds
-# about 30 MiB (brief) or 50 MiB (detail=full) while it runs; see "Memory and
-# concurrency" in docs/install.en.md to size it.
+# about 30 MiB (detail=brief; a call without detail builds the same briefing
+# first) or 50 MiB (detail=full) while it runs; see "Memory and concurrency"
+# in docs/install.en.md to size it.
 maxInflight: 0
 
 # Response cache budget in MiB (MCP_CACHE_MAX_MB). Answers are cached for five
